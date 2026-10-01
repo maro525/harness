@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Task Board</title>
+<link rel="stylesheet" href="/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='14'>&#128203;</text></svg>">
+</head>
+<body>
+<header class="bar">
+  <h1>Task Board</h1>
+  <input id="q" type="search" placeholder="Search title, id, branch…" autocomplete="off" spellcheck="false">
+  <select id="project"><option value="">All projects</option></select>
+  <select id="tier"><option value="">All tiers</option></select>
+  <label class="toggle"><input type="checkbox" id="staleOnly"> Stale status only</label>
+  <span class="spacer"></span>
+  <span id="status" class="status" title="Connection state">connecting…</span>
+</header>
+
+<main id="board" class="board" aria-live="polite"></main>
+
+<div id="empty" class="empty" hidden>
+  <p>No tasks match the current filters.</p>
+</div>
+
+<template id="cardTpl"></template>
+<script src="/app.js"></script>
+</body>
+</html>
