@@ -23,9 +23,9 @@ $ARGUMENTS の形式: "{task description}"
 - 全 STEP を自律的に順番に実行する。報告・通知はするが応答を待たずに次へ進む
 - 質問が必要なら質問し、回答を受け取ったら止まらず続行する
 - **[MUST]** の付いたステップは、どの tier でもスキップしない
-- Linear への投稿・ステータス変更に失敗したら、黙って飛ばさずユーザーに報告する
+- Linear への投稿・ステータス変更・description 更新に失敗したら、黙って飛ばさずユーザーに報告する
 - orchestrate はメインのセッション（primary agent）で動き、各フェーズは `@agent` / `task` で subagent として起動する。subagent の起動は同期なので、**返却を受け取るまで次の STEP に進まない**
-- 各フェーズ agent は TASK_FILE の自分の節（`## startproject` / `## team-implement` / `## team-review` / `## deploy`）と Linear コメントを自分で書く。orchestrator が書くのは `## Meta`（`tier:` / `status:`）と `#### 追加依頼 {n}`（STEP 3F）だけ
+- 各フェーズ agent は TASK_FILE の自分の節（`## startproject` / `## team-implement` / `## team-review` / `## deploy`）と Linear コメントを自分で書く。orchestrator が TASK_FILE に書くのは `## Meta`（`tier:` / `status:`）と `#### 追加依頼 {n}`（STEP 3F）だけ（description 更新は TASK_FILE を読んで Linear にだけ書く）
 - git は `AGENTS.md` の「GIT RULES」に従う
 
 **原則として止まるのは以下の Gate のみ。** ただし各フェーズが途中でユーザーに確認を求めた場合（startproject の要件ヒアリングなど）は、それに従う。
@@ -122,6 +122,8 @@ feature は LINEAR_ID のタスク内容から短いスネークケースで命�
 
 `##` 見出しはプロセス名で固定する（kanban がこの見出しでフェーズを判定する）。
 
+**[MUST]** 「状態管理」の「Linear の description 更新」を行う（この時点は Brief 未記入なので task description を概要に使う）。
+
 ---
 
 ## STEP 3: startproject を実行
@@ -135,6 +137,8 @@ subagent を呼び出して計画フェーズを委譲する:
 startproject 内で質問が発生した場合はユーザーが回答。回答後は startproject が続行。
 
 **Gate 1:** startproject が自己判断で発動し、ユーザーの承認（または修正）が済んでから返ってくる（詳細は `agents/startproject.md`）。
+**[MUST]** 「状態管理」の「Linear の description 更新」を行う。
+
 返却後は `GATE1` の値に関わらず即 STEP 4 へ進む。`GATE1`（`auto-approved` / `approved` / `revised`）は STEP 7 の完了報告に含める。
 
 ---
@@ -215,7 +219,7 @@ orchestrator が `### Plan` の末尾に以下を追記する（既存の Plan �
 
 ### F5: STEP 4 へ
 
-「状態管理」に従い `status` を `implementing` に戻し、Linear を "In Progress" にして STEP 4 を実行する。STEP 4 → 5 → 6 → 7 は通常モードと同じ（実装・レビューは `{m}回目` として追記。STEP 6 は 6a で既存 PR / MR へ追加 push して `#### 追加 push（追加依頼 {n}）` を `## deploy` の末尾に追記し、6b で `in-review` に戻し、6c でその記録を `docs(task):` として同じブランチに push する。Gate 2 の差し戻しも同じ）。
+「状態管理」に従い `status` を `implementing` に戻し、Linear を "In Progress" にし、**[MUST]** 「状態管理」の「Linear の description 更新」を行ってから STEP 4 を実行する。STEP 4 → 5 → 6 → 7 は通常モードと同じ（実装・レビューは `{m}回目` として追記。STEP 6 は 6a で既存 PR / MR へ追加 push して `#### 追加 push（追加依頼 {n}）` を `## deploy` の末尾に追記し、6b で `in-review` に戻し、6c でその記録を `docs(task):` として同じブランチに push する。Gate 2 の差し戻しも同じ）。
 
 > **kanban の副作用:** `## deploy` が埋まった TASK_FILE の `status` を `implementing` に戻すため、追加修正中は kanban が deploy 列に stale（status が古い）として表示する。仕様として許容する。STEP 6b で `in-review` に戻ると解消する。また tracked リポジトリでは 6c 後、分岐元を checkout している間は TASK_FILE が作業ツリーに無く kanban に表示されない（PR マージ後に表示される）。これも仕様として許容する。
 
@@ -225,7 +229,7 @@ orchestrator が `### Plan` の末尾に以下を追記する（既存の Plan �
 
 **完了次第即 STEP 5 へ。**
 
-開始時に「状態管理」に従い TASK_FILE の `status` を `implementing` に、Linear のステータスを "In Progress" に変更する。
+開始時に「状態管理」に従い TASK_FILE の `status` を `implementing` に、Linear のステータスを "In Progress" に変更し、続けて「Linear の description 更新」を行う。
 
 ```
 @team-implement "{task description} --tier={tier} --task-file={TASK_FILE} --linear-id={LINEAR_ID}"
@@ -251,6 +255,8 @@ team-implement が `ESCALATION: {新しい tier}: {理由}` を返した場合�
 
 ## STEP 5: team-review を実行
 
+開始時に「状態管理」に従い TASK_FILE の `status` を `reviewing` に更新し、続けて「Linear の description 更新」を行う。
+
 ```
 @team-review "{task description} --tier={tier} --task-file={TASK_FILE} --linear-id={LINEAR_ID}"
 ```
@@ -259,11 +265,13 @@ team-review は TASK_FILE の `## team-review` に `### {m}回目` として追�
 
 **Gate 2:**
 - PASS → 即 STEP 6
-- FAIL → ユーザーに報告し判断を待つ（STEP 4 に戻る場合は `status` を `implementing` に戻す）
+- FAIL → ユーザーに報告し判断を待つ（STEP 4 に戻る場合は `status` を `implementing` に戻す）。報告の前に「Linear の description 更新」を行う（`status` は `reviewing` のまま、フェーズ欄が「レビュー差し戻し（判断待ち）」になる）
 
 ---
 
 ## STEP 6: deploy を実行
+
+開始時に「状態管理」に従い TASK_FILE の `status` を `deploying` に更新し、続けて「Linear の description 更新」を行う。
 
 6a → 6b → 6c を順に実行し、**完了次第即 STEP 7 へ。** deploy 後の TASK_FILE の記録（`## deploy`・`status: in-review`）を作業ブランチ上でコミット・push してから分岐元に戻るための 3 段構造（6a の後は作業ブランチに留まっている）。
 
@@ -278,6 +286,8 @@ deploy はコミット・push・PR / MR 作成を行い、**作業ブランチ�
 ### 6b: `status` を `in-review` に（作業ブランチ上）
 
 orchestrator が「状態管理」に従い `## Meta` の `status` を `in-review` にする（6c でコミットされるので、STEP 7 ではなくここで書く）。
+
+**[MUST]** 「状態管理」の「Linear の description 更新」を行う（6a で deploy が `## deploy` に書いた PR / MR の URL を含める）。
 
 ### 6c: @deploy --finalize（TASK_FILE を commit → push → 分岐元へ）
 
@@ -332,16 +342,57 @@ deploy 行には PR / MR の URL に加えて 6c の結果（`docs(task):` コ�
 
 各 STEP の開始時に orchestrator が `## Meta` の `status` を更新する（フェーズ agent は更新しない）。例外は `in-review` で、STEP 6b（deploy 返却後、作業ブランチ上）で書き、6c の `docs(task):` コミットに含める。`done` には orchestrator はしない。PR がマージされた後に人間が変更する。
 
-| タイミング | status | Linear ステータス | 実行者 |
-|------|--------|------|------|
-| STEP 2（作成時） | `planning` | — | orchestrator |
-| STEP 3F F5（追加修正の開始 = STEP 4 開始と同じ） | `implementing` | "In Progress" | orchestrator |
-| STEP 4 開始（Gate 2 で戻った場合も） | `implementing` | "In Progress" | orchestrator |
-| STEP 5 開始 | `reviewing` | — | orchestrator |
-| STEP 6 開始 | `deploying` | — | orchestrator |
-| STEP 6a（deploy 内） | — | "In Review" | deploy agent |
-| STEP 6b（deploy 返却後、作業ブランチ上） | `in-review`（PR を出してマージ待ち） | — | orchestrator |
-| STEP 7 | —（報告のみ。書き込みなし） | — | — |
+| タイミング | status | Linear ステータス | description 更新 | 実行者 |
+|------|--------|------|------|------|
+| STEP 2（作成時） | `planning` | — | ✓ | orchestrator |
+| STEP 3 完了後（startproject 返却直後） | `planning` のまま | — | ✓ | orchestrator |
+| STEP 3F F5（追加修正の開始 = STEP 4 開始と同じ） | `implementing` | "In Progress" | ✓ | orchestrator |
+| STEP 4 開始（Gate 2 で戻った場合も） | `implementing` | "In Progress" | ✓ | orchestrator |
+| STEP 5 開始 | `reviewing` | — | ✓ | orchestrator |
+| Gate 2 の FAIL | `reviewing` のまま | — | ✓（差し戻し・判断待ちを表示） | orchestrator |
+| STEP 6 開始 | `deploying` | — | ✓ | orchestrator |
+| STEP 6a（deploy 内） | — | "In Review" | — | deploy agent |
+| STEP 6b（deploy 返却後、作業ブランチ上） | `in-review`（PR を出してマージ待ち） | — | ✓（PR / MR URL を含める） | orchestrator |
+| STEP 7 | —（報告のみ。書き込みなし） | — | — | — |
+
+### Linear の description 更新
+
+issue を開けば現状が分かるよう、description 末尾の管理セクションを TASK_FILE から作り直して置き換える。コメント投稿（履歴）とは別物で、description は常に最新の要約。
+
+`LINEAR_ID` が `NOLINEAR` なら何もしない。
+
+1. 直前に Linear MCP の `get_issue` で最新の description を取得する
+2. 行頭が `## 🤖 Orchestrate` の行を探し、その行から末尾までを捨てる（無ければ全文を残す）。それより上（人の記述）は一字も変えない
+3. 残りの末尾の空行を整え、空行 1 つ + 下のテンプレートを連結する
+4. Linear MCP の `save_issue` で description だけ更新する（タイトル・ステータス等は渡さない）
+5. 失敗したら黙って飛ばさず報告する。フローは止めない
+
+- HTML コメント（`<!-- -->`）は Linear で消える可能性があるので目印に使わない。目印は見出し行そのもの
+- 管理セクションの中で `## ` レベルの見出しを使わない（`###` まで）
+
+**テンプレート:**
+
+```markdown
+## 🤖 Orchestrate
+> orchestrate が自動更新するセクション。この見出しより下は毎回書き換わるため、追記は見出しより上に書く。
+
+### 概要・目的
+{Brief の Goal と Scope を 2〜4 行に要約。Brief が未記入（STEP 2 時点）なら task description}
+
+### 大まかな方法
+{Design の採用方針を 1〜3 行に要約。未記入なら「（計画中）」}
+
+### 具体的な方法
+{Plan の各項目を `- [ ]` のチェックリストで。`## team-implement` に最新回があれば `- [x]`。`#### 追加依頼 {n}` は「追加依頼 {n}: {依頼内容}」の 1 項目にする。未記入なら「（計画中）」}
+
+### 現在のフェーズ
+- フェーズ: {status}（{表示名}）{回数があれば「・{m}回目」、Gate 2 の FAIL なら「・レビュー差し戻し（判断待ち）」}
+- Tier: {tier}
+- PR / MR: {`## deploy` の URL。無ければ「—」}
+- 更新: {YYYY-MM-DD HH:MM}（`date '+%Y-%m-%d %H:%M'`）
+```
+
+status の表示名: `planning`=計画中 / `implementing`=実装中 / `reviewing`=レビュー中 / `deploying`=デプロイ中 / `in-review`=PR レビュー待ち。
 
 ---
 
