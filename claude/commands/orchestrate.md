@@ -3,7 +3,7 @@ name: orchestrate
 description: Project orchestrator — classify tier, create task file, run startproject → team-implement → team-review → deploy in sequence. With --task-file, adds changes to an existing PR/MR (followup mode); with --phase and --ai, runs one phase of an existing task file with an external CLI (pi / cline / opencode / codex).
 model: opus[1m]
 color: green
-allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, AskUserQuestion, TodoWrite, mcp__linear-server__get_issue, mcp__linear-server__save_issue, mcp__linear-server__save_comment, mcp__linear-server__list_issue_statuses
+allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, AskUserQuestion, TaskStop, TodoWrite, mcp__linear-server__get_issue, mcp__linear-server__save_issue, mcp__linear-server__save_comment, mcp__linear-server__list_issue_statuses
 ---
 
 # orchestrate
@@ -32,7 +32,7 @@ $ARGUMENTS
 **引数を受け取ったら「モード判定」を行い、通常モードは STEP 0 から、追加修正モードは STEP 3F から、フェーズ指定モードは STEP 3P から開始する。通常・追加修正モードは追加の指示がない限り STEP 7 まで完走する。フェーズ指定モードは 1 フェーズを 1 回実行して STEP 7 の報告で終わる。**
 
 - 全 STEP を自律的に順番に実行する。報告・通知はするが応答を待たずに次へ進む
-- 質問が必要なら質問し、回答を受け取ったら止まらず続行する
+- 質問が必要なら質問し、回答を受け取ったら止まらず続行する。ユーザーへの質問は「状態管理」の「質問の中継（Linear）」に従う（Linear の issue コメントに投稿し、返信かターミナル入力の先着で受ける。キーが無い・`NOLINEAR` なら `AskUserQuestion`）
 - **[MUST]** の付いたステップは、どの tier でもスキップしない
 - Linear への投稿・ステータス変更・description 更新に失敗したら、黙って飛ばさずユーザーに報告する
 - orchestrate はメインのセッションで動き、各 command は fork（バックグラウンド）で動く。command を起動したら**完了通知で返却を受け取るまで次の手順に進まない**
@@ -43,8 +43,8 @@ $ARGUMENTS
 
 | Gate | タイミング | 動作 |
 |---|---|---|
-| Gate 1 | startproject が計画提示時に自己判断で発動（tier=S は orchestrate が解釈に迷ったときだけ。STEP 3） | startproject 内でユーザー承認を待つ。orchestrate は返却を待つだけ |
-| Gate 2 | team-review の FAIL 時 | ユーザーに報告し判断を待つ |
+| Gate 1 | startproject が計画提示時に自己判断で発動（tier=S は orchestrate が解釈に迷ったときだけ。STEP 3） | startproject が `GATE1: pending` で返したら orchestrator が「質問の中継」で承認を聞く。`approved` / `revised` なら startproject 内で承認済み |
+| Gate 2 | team-review の FAIL 時 | ユーザーに報告し「質問の中継」で判断を聞く |
 
 ## モード判定
 
@@ -59,7 +59,7 @@ $ARGUMENTS
 - (a) / (b) の存在確認は作業ツリーで行い、無ければ git の履歴でも探す（tracked リポジトリでは STEP 6c 後、PR がマージされるまで TASK_FILE は作業ブランチにしか無く、分岐元の作業ツリーには無い。切り替えは STEP 3F F1）
   - (a): `git log --all --format=%H -1 -- {TASK_FILE}` がコミットを返せば「既存の `task-*.md`」とみなして追加修正モードにし、F1 の「TASK_FILE が作業ツリーに無い場合」の切り替えへ進む。作業ツリーにも履歴にも無ければ、通常モードに落とさず中止して案内する（パスの誤りか、別のリポジトリ）
   - (b): `git log --all --name-only --format= -- '.claude/docs/decisions/task-{LINEAR_ID}-*.md'` で作業ブランチにだけある TASK_FILE も探す
-- (b) で該当ファイルが複数あれば `AskUserQuestion` で選ばせる
+- (b) で該当ファイルが複数あれば「質問の中継」で選ばせる（phase 名 `mode`）
 - フェーズ指定モードは、既存 TASK_FILE の 1 フェーズだけを **別の AI（pi / cline / opencode / codex）** で 1 回実行し、結果を次の回・次の候補として TASK_FILE に追記するときに使う。Claude の command は呼ばず、`~/.agents/skills/{phase}/SKILL.md`（一般向けフェーズ定義）を外部 CLI に読ませる。CLI の呼び出し表は harness リポジトリの `agents/README.md`「外部 CLI のフェーズ実行」（`~/.claude` には同期されないので、読み方は STEP 3P P2）。TASK_FILE の見出しは通常モードと同じ（`### {m}回目` / `### 案 {k}`）で、使った AI は見出しの直下の `利用AI:` 行で示す（STEP 3P P1）
 - 呼び出し形: `/orchestrate "--task-file={TASK_FILE} --phase={phase} --ai={pi|cline|opencode|codex}[:{model}]"`、候補の採用は `/orchestrate "--task-file={TASK_FILE} --phase=startproject --adopt=案 {k}"`
 - 追加修正モードは、`/orchestrate` が PR / MR を出したタスクに追加の変更（レビュー指摘への対応、仕様の追加など）を加えるときに使う。既存 PR への追加変更は必ずこのモードを通し、orchestrator が直接編集して push しない（`$HOME/.claude/rules/tool-routing.md` の「/orchestrate で作った PR への追加変更」）
@@ -157,6 +157,8 @@ TASK_FILE = .claude/docs/decisions/task-{LINEAR_ID}-{feature}.md
 
 **[MUST]** 「状態管理」の「Linear の description 更新」を行う（この時点は Brief 未記入なので task description を概要に使う）。
 
+続けて「質問の中継（Linear）」の `ASK_MODE` を決める（`--check`）。
+
 ## STEP 3: startproject を実行
 
 ### tier=S
@@ -170,7 +172,7 @@ startproject は起動せず、orchestrator が関連コードを読んで計画
 | `## startproject` > `### Plan` | 実装タスクリスト |
 
 - コードを読んで S に収まらない（ファイル数・設計判断・リスクが S を超える）と分かったら、tier を上げて報告し、下の「tier=M / L」を実行する
-- タスクの解釈が複数考えられるときだけ `AskUserQuestion` で確認する（Gate 1 相当）。確認した場合の `GATE1` は `approved` / `revised`、確認しなければ `skipped`
+- タスクの解釈が複数考えられるときだけ「質問の中継」で確認する（Gate 1 相当。phase 名 `plan`）。確認した場合の `GATE1` は `approved` / `revised`、確認しなければ `skipped`
 - **[MUST]** 計画の要約を `mcp__linear-server__save_comment` で LINEAR_ID に投稿する
 - **[MUST]** 「状態管理」の「Linear の description 更新」を行う。
 
@@ -179,10 +181,12 @@ startproject は起動せず、orchestrator が関連コードを読んで計画
 ### tier=M / L
 
 ```
-/startproject "{task description} --tier={tier} --task-file={TASK_FILE} --linear-id={LINEAR_ID}"
+/startproject "{task description} --tier={tier} --task-file={TASK_FILE} --linear-id={LINEAR_ID} --ask={ASK_MODE}"
 ```
 
-startproject は `agent: Plan` の読み取り専用コマンド。`BRIEF` / `DESIGN` / `PLAN` / `LINEAR_COMMENT` / `GATE1` を返してくる。途中の質問にはユーザーが回答し、計画完成後に返却される。
+startproject は `agent: Plan` の読み取り専用コマンド。`BRIEF` / `DESIGN` / `PLAN` / `LINEAR_COMMENT` / `GATE1` を返してくる。質問があるときは `### QUESTIONS` を返して終了する（`--ask=linear`、または fork 内で `AskUserQuestion` が使えなかったとき）。
+
+**`### QUESTIONS` だけが返ってきた場合**（PHASE 1 のヒアリング）: TASK_FILE には書かず、「質問の中継」で聞いて回答ファイルを作り、`--answers-file={ASK_LOG}` を足して同じ引数で startproject を再起動する。返却に計画が揃うまで繰り返す（1 フェーズ 3 往復まで）。
 
 **[MUST]** 返却内容を TASK_FILE に書き込む:
 
@@ -196,7 +200,14 @@ startproject は `agent: Plan` の読み取り専用コマンド。`BRIEF` / `DE
 
 **[MUST]** 「状態管理」の「Linear の description 更新」を行う。
 
-**Gate 1:** startproject が自己判断で発動し、ユーザーの承認（または修正）が済んでから返却してくる（詳細は startproject.md）。`GATE1`（`auto-approved` / `approved` / `revised`）の値に関わらず即 STEP 4 へ進み、値は STEP 7 の完了報告に含める。
+**Gate 1:** startproject が自己判断で発動する（詳細は startproject.md）。`GATE1` が `auto-approved` / `approved` / `revised` なら即 STEP 4 へ進み、値は STEP 7 の完了報告に含める。
+
+`GATE1: pending`（`### QUESTIONS` に種別 `gate1`）なら、上の書き込み・`LINEAR_COMMENT` 投稿・description 更新を**先に済ませてから**（Linear で計画を読んでから答えられるように）「質問の中継」で承認を聞く:
+
+| 回答 | 動作 |
+|---|---|
+| 承認 | `GATE1` を `approved` として STEP 4 へ（startproject は再起動しない） |
+| 修正 | `--answers-file={ASK_LOG}` を足して startproject を再起動し、返却（`GATE1: revised`）で `## startproject` を上書きし、`LINEAR_COMMENT` を投稿し直して description を更新してから STEP 4 へ |
 
 ## STEP 3F: 追加修正モード
 
@@ -329,7 +340,7 @@ STEP 3F F1 と同じ場所から `LINEAR_ID` / `tier` / task description / `bran
 
 1. 環境変数 `HARNESS` が設定されていて `$HARNESS/agents/README.md` がある → それ（`echo "${HARNESS:-}"` で確認）
 2. `$HOME/src/harness/agents/README.md` がある → それ
-3. どちらも無ければ中止し、`AskUserQuestion` で harness リポジトリのチェックアウトのパスを尋ねる（推測で続けない）
+3. どちらも無ければ中止し、「質問の中継」で harness リポジトリのチェックアウトのパスを尋ねる（phase 名 `phase`。推測で続けない）
 
 外部 CLI に読ませる一般向けフェーズ定義は `SKILL_PATH = $HOME/.agents/skills/{phase}/SKILL.md`。無ければ中止し、`{HARNESS}/sync-agents.sh` の実行を案内する。プロンプトは `.claude/logs/phase-{phase}-{ai}-{YYYYMMDD-HHMM}.prompt.txt` に書き（`mkdir -p .claude/logs`。`.claude/` は gitignore 済み）、CLI には `"$(cat {prompt_file})"` で渡す。**実行日時は orchestrate が `date '+%Y-%m-%d %H:%M'` で取ってプロンプトに入れる**（CLI 側で推定させず、見出しの `{日時}` を orchestrate 側で確定させる。ログファイル名の日時と揃う）。
 
@@ -464,7 +475,7 @@ team-review は `VERDICT` / `REVIEW` / `LINEAR_COMMENT` を返してくる。
 
 **[MUST]** `LINEAR_COMMENT` の本文を `mcp__linear-server__save_comment` で LINEAR_ID に投稿する。
 
-**Gate 2:** `VERDICT` が `PASS` なら即 STEP 6 へ。`FAIL` ならユーザーに報告し判断を待ち、team-implement に戻るか確認する。報告の前に **[MUST]** 「状態管理」の「Linear の description 更新」を行う（`status` は `reviewing` のままで、フェーズ欄が「レビュー差し戻し（判断待ち）」になる）。
+**Gate 2:** `VERDICT` が `PASS` なら即 STEP 6 へ。`FAIL` ならユーザーに報告し、team-implement に戻るかを「質問の中継」で確認する（phase 名 `gate2`。指摘の要約と選択肢「1. 差し戻して直す / 2. ここで止める」を質問に書く）。報告の前に **[MUST]** 「状態管理」の「Linear の description 更新」を行う（`status` は `reviewing` のままで、フェーズ欄が「レビュー差し戻し（判断待ち）」になる）。
 
 ## STEP 6: deploy を実行
 
@@ -521,7 +532,13 @@ TASK_FILE だけを `docs(task):` でコミットして同じ作業ブランチ�
 - team-implement: ...
 - team-review: ...
 - deploy: ...
+
+### 質問
+- {phase}: {質問の要旨} → {回答の要旨}（{Linear | ターミナル}{Linear なら返信 URL}）
+- ログ: .claude/logs/ask-{LINEAR_ID}-….md
 ```
+
+「### 質問」は質問しなかったら「なし」の 1 行にする。Gate 1 を中継で聞いた場合は startproject 行の Gate 1 にも経路を添える（例: `Gate 1: approved（Linear）`）。
 
 deploy 行には PR / MR の URL に加えて 6c の `FINALIZE` の結果（`docs(task):` コミットの hash・push 先・現在のブランチ。中止ならその理由）を添える（TASK_FILE には書かない）。**現在のブランチは必ず示す**（6c を実行しなかった・中止した・P7 を飛ばしたときは作業ブランチに留まっている。`git branch --show-current` で確認する）。`status` は 6b で `in-review` にしてあるので STEP 7 では書かない。
 
@@ -540,6 +557,7 @@ orchestrator は以下を変数として保持し、全 command に引数で渡�
 | `tier` | STEP 0（追加修正モードは STEP 3F F1 で `## Meta` の `tier:` から復元。F3 の再設計で更新） |
 | `LINEAR_ID` | STEP 1（追加修正モードは STEP 3F F1 で `## Meta` の `linear_id:` から復元） |
 | `TASK_FILE` | STEP 2（追加修正モードは引数または Linear ID から特定。フェーズ指定モードは引数の `--task-file` 必須） |
+| `ASK_MODE` | STEP 2 の直後（追加修正・フェーズ指定モード、モード判定では最初に質問が要った時点）。`linear` / `terminal`。「質問の中継（Linear）」 |
 
 作業ブランチとその分岐元は、引数ではなく TASK_FILE の `## Meta` の `branch:` / `base:` で受け渡す（STEP 4 で記入。追加修正モードでは既存の値をそのまま使う。フェーズ指定モードの team-implement は外部 CLI が書き、未書き込みなら P4 で代筆する）。
 
@@ -601,3 +619,73 @@ issue を開けば現状が分かるよう、description 末尾の管理セク�
 ```
 
 status の表示名: `planning`=計画中 / `implementing`=実装中 / `reviewing`=レビュー中 / `deploying`=デプロイ中 / `in-review`=PR レビュー待ち。
+
+### 質問の中継（Linear）
+
+orchestrate 中にユーザーへ聞く質問を LINEAR_ID の issue コメントに投稿し、**Linear の返信とターミナル入力の先着**で回答を受けて続行する。スクリプトは `~/.claude/scripts/linear-ask.sh`（harness の `claude/scripts/`。`sync-claude.sh` で配布）。
+
+| 質問箇所 | phase 名（ログ名に使う） |
+|---|---|
+| STEP 3 tier=S の解釈確認 | `plan` |
+| STEP 3 tier=M / L の startproject の `### QUESTIONS`（ヒアリング・Gate 1） | `startproject` |
+| Gate 2 の FAIL 判断（STEP 5） | `gate2` |
+| モード判定 (b) の TASK_FILE 選択 | `mode` |
+| STEP 3P P2 の harness パス | `phase` |
+
+STEP 1 の Linear ID の質問は対象外（投稿先がまだ無い）で、ターミナルのまま。
+
+#### ASK_MODE を決める
+
+STEP 2 の直後に 1 回だけ決める（追加修正・フェーズ指定モード、モード判定では最初に質問が要った時点で決める）。
+
+| 条件 | `ASK_MODE` |
+|---|---|
+| `LINEAR_ID` が `NOLINEAR`、またはユーザーがターミナルで聞くよう指示した | `terminal` |
+| `~/.claude/scripts/linear-ask.sh --check` が exit 0 | `linear` |
+| exit 3（キーが無い・ファイルのモードが 600 でない・キーが無効） | `terminal`。stderr の案内を 1 行でユーザーに伝える |
+| exit 4 / スクリプトが無い | `terminal`。理由を報告する（無ければ `sync-claude.sh` を案内） |
+
+- キーは `LINEAR_API_KEY` か `~/.config/harness/linear.env`（`LINEAR_API_KEY=...` の 1 行、600）からスクリプトが自分で読む。**orchestrator はキーを読まない・コマンドに書かない・表示しない**。`settings.json` にも置かない
+- `terminal` では従来どおり `AskUserQuestion` で聞く。下の手順は 1（質問ファイル）と 6（記録・startproject の再起動）だけ行う
+
+#### 手順（`ASK_MODE=linear`）
+
+1. **質問ファイルを作る。** `mkdir -p .claude/logs` し、`ASK_LOG=.claude/logs/ask-{LINEAR_ID}-{phase}-{YYYYMMDD-HHMM}.md` に質問（startproject なら返却の `### QUESTIONS` を `#### STATE` ごと）を書く。同じフェーズの 2 往復目以降は同じファイルに `## 往復 {r}` で追記する
+2. **投稿本文を作る。** `{ASK_LOG}.body.md` に下のテンプレートで書く（選択肢は番号付き。Gate 1 は「計画は直前の計画コメントと description の『🤖 Orchestrate』を参照」と添える）
+3. **投稿する。** `COMMENT_ID=$(uuidgen | tr A-Z a-z)`（無ければ `cat /proc/sys/kernel/random/uuid`）を決め、**フォアグラウンド**で投稿だけ行う:
+   `~/.claude/scripts/linear-ask.sh --issue {LINEAR_ID} --body-file {ASK_LOG}.body.md --comment-id {COMMENT_ID} --post-only < /dev/null`
+   exit 0 なら stdout の `comment_url:` が投稿 URL（同じ `--comment-id` での再実行は投稿し直さない）。exit 3 / 4 は手順 5 の exit 3 / 4 と同じ扱い
+4. **待機を起動し、ターミナルにも知らせてターンを終える。** 同じ `--comment-id` で **background Bash** で待機を起動する:
+   `timeout -k 1m 245m ~/.claude/scripts/linear-ask.sh --issue {LINEAR_ID} --body-file {ASK_LOG}.body.md --comment-id {COMMENT_ID} --timeout 14400 < /dev/null`
+   `< /dev/null` を外さない。`2>/dev/null` は付けない（診断は stderr、回答は stdout）。起動後、「Linear に質問を投稿しました（{comment_url}）。Linear で返信するか、ここで回答してください（先着を使います）」と質問の要旨を示し、`AskUserQuestion` は使わずに応答を待つ（URL は手順 3 で取得済みなので待機の出力を待たない）
+5. **先着を採用する。**
+
+   | 先に来たもの | 動作 |
+   |---|---|
+   | 完了通知・exit 0 | stdout の `---` より下が回答（経路 Linear、`reply_url:` / `reply_author:` を記録）。Linear の再シリアライズ（`*` 箇条書き・`1\.` のエスケープ）は気にせず読む |
+   | ターミナルでのユーザーの回答 | `TaskStop` でバックグラウンドタスクを止め、`linear-ask.sh --reply-to {COMMENT_ID} --body-file {file}` で「（ターミナルで回答）{回答の要約}」を返信する（フォアグラウンドでよい。失敗しても報告だけで続行）。後から来た完了通知は無視する |
+   | exit 2 / 124 / 137（タイムアウト） | ユーザーに報告し、同じ `--comment-id` で 1 回だけ再アームする（投稿し直さずに待ち直す）。2 回目のタイムアウトは `AskUserQuestion` に切り替える |
+   | exit 3 / 4 | 理由を報告し、`ASK_MODE=terminal` にして `AskUserQuestion` で聞き直す |
+
+6. **記録して続行する。** `ASK_LOG` に回答・経路（Linear / ターミナル）・`comment_url`・`reply_url`・返信者（`reply_author`）を追記し、回答を使って止まらず続行する。startproject は `--answers-file={ASK_LOG}` で再起動する（Gate 1 の承認は再起動しない。STEP 3）
+
+- **往復は 1 フェーズ 3 回まで。** 4 回目が要るときは `AskUserQuestion` で聞く
+- 返信者は問わない（issue に書ける人なら誰でも答えられる）が、`reply_author` を `ASK_LOG` に残す。空本文の返信は回答にしない。自分の投稿と「（ターミナルで回答）」の返信は本文末尾の `[claude-q:…]` で回答から除外される（目印は部分一致。HTML コメントは使わない）
+- 待機中に別の質問を並行して出さない（同時に待つのは 1 件だけ）
+
+**投稿本文のテンプレート:**
+
+```markdown
+**🤖 orchestrate からの質問**（{phase}）
+
+このコメントに**返信**で答えてください（例: `Q1: 2` / `Q2: 自由記述`）。ターミナルで答えても構いません（先に来た方を使います）。
+
+**Q1.** {質問}
+1. {選択肢}
+2. {選択肢}
+推奨: {番号}（{理由}）
+
+**Q2.** ...
+```
+
+`[claude-q:…]` の目印はスクリプトが末尾に足すので本文には書かない。

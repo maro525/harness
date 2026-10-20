@@ -21,7 +21,7 @@ $ARGUMENTS の形式: "{task description}"
 **$ARGUMENTS を受け取ったら「モード判定」を行い、通常モードは STEP 0 から、追加修正モードは STEP 3F から開始する。追加の指示がない限り STEP 7 まで完走する。**
 
 - 全 STEP を自律的に順番に実行する。報告・通知はするが応答を待たずに次へ進む
-- 質問が必要なら質問し、回答を受け取ったら止まらず続行する
+- 質問が必要なら質問し、回答を受け取ったら止まらず続行する。ユーザーへの質問は「状態管理」の「質問の中継（Linear）」に従う（Linear の issue コメントに投稿して返信を待つ。キーが無い・`NOLINEAR` なら `question` tool）
 - **[MUST]** の付いたステップは、どの tier でもスキップしない
 - Linear への投稿・ステータス変更・description 更新に失敗したら、黙って飛ばさずユーザーに報告する
 - orchestrate はメインのセッション（primary agent）で動き、各フェーズは `@agent` / `task` で subagent として起動する。subagent の起動は同期なので、**返却を受け取るまで次の STEP に進まない**
@@ -32,8 +32,8 @@ $ARGUMENTS の形式: "{task description}"
 
 | Gate | タイミング | 動作 |
 |------|-----------|------|
-| Gate 1 | startproject が計画提示時に自己判断で発動 | startproject 内でユーザー承認を待つ。orchestrate は返却を待つだけ |
-| Gate 2 | team-review の FAIL 時 | ユーザーに報告し判断を待つ |
+| Gate 1 | startproject が計画提示時に自己判断で発動 | startproject が `GATE1: pending` で返したら orchestrator が「質問の中継」で承認を聞く。`approved` / `revised` なら startproject 内で承認済み |
+| Gate 2 | team-review の FAIL 時 | ユーザーに報告し「質問の中継」で判断を聞く |
 
 ## モード判定
 
@@ -47,7 +47,7 @@ $ARGUMENTS を受け取ったら最初にモードを決め、判定結果（モ
 - (a) / (b) の存在確認は作業ツリーで行い、無ければ git の履歴でも探す（tracked リポジトリでは STEP 6c 後、PR がマージされるまで TASK_FILE は作業ブランチにしか無く、分岐元の作業ツリーには無い。切り替えは STEP 3F F1）
   - (a): `git log --all --format=%H -1 -- {TASK_FILE}` がコミットを返せば「既存の `task-*.md`」とみなして追加修正モードにし、F1 の「TASK_FILE が作業ツリーに無い場合」の切り替えへ進む。作業ツリーにも履歴にも無ければ、通常モードに落とさず中止して案内する（パスの誤りか、別のリポジトリ）
   - (b): `git log --all --name-only --format= -- '.claude/docs/decisions/task-{LINEAR_ID}-*.md'` で作業ブランチにだけある TASK_FILE も探す
-- (b) で該当ファイルが複数あれば `question` tool で選ばせる
+- (b) で該当ファイルが複数あれば「質問の中継」で選ばせる（phase 名 `mode`）
 - 追加修正モードは、`/orchestrate` が PR / MR を出したタスクに追加の変更（レビュー指摘への対応、仕様の追加など）を加えるときに使う。既存 PR への追加変更は必ずこのモードを通し、orchestrator が直接編集して push しない（`AGENTS.md` の「GIT RULES」の「`/orchestrate` で作った PR への追加変更」）
 - 呼び出し形: `/orchestrate "{追加の依頼} --task-file={TASK_FILE}"`（または `/orchestrate "{LINEAR_ID} {追加の依頼}"`）
 
@@ -124,6 +124,8 @@ feature は LINEAR_ID のタスク内容から短いスネークケースで命�
 
 **[MUST]** 「状態管理」の「Linear の description 更新」を行う（この時点は Brief 未記入なので task description を概要に使う）。
 
+続けて「質問の中継（Linear）」の `ASK_MODE` を決める（`--check`）。
+
 ---
 
 ## STEP 3: startproject を実行
@@ -131,15 +133,15 @@ feature は LINEAR_ID のタスク内容から短いスネークケースで命�
 subagent を呼び出して計画フェーズを委譲する:
 
 ```
-@startproject "{task description} --tier={tier} --task-file={TASK_FILE} --linear-id={LINEAR_ID}"
+@startproject "{task description} --tier={tier} --task-file={TASK_FILE} --linear-id={LINEAR_ID} --ask={ASK_MODE}"
 ```
 
-startproject 内で質問が発生した場合はユーザーが回答。回答後は startproject が続行。
+startproject は質問があると `### QUESTIONS` を返して終了する（`--ask=linear`、または `question` tool が届かないとき）。「質問の中継」で聞いて回答ファイルを作り、`--answers-file={ASK_LOG}` を足して同じ引数で再起動する（1 フェーズ 3 往復まで）。
 
-**Gate 1:** startproject が自己判断で発動し、ユーザーの承認（または修正）が済んでから返ってくる（詳細は `agents/startproject.md`）。
+**Gate 1:** startproject が自己判断で発動する（詳細は `agents/startproject.md`）。`GATE1: pending` で返ってきたら（startproject は計画を TASK_FILE に書き、計画コメントを投稿済み）、description を更新してから「質問の中継」で承認を聞く。承認なら `GATE1` を `approved` として STEP 4 へ（再起動しない）。修正なら `--answers-file={ASK_LOG}` を足して再起動し、`GATE1: revised` の返却を待つ。
 **[MUST]** 「状態管理」の「Linear の description 更新」を行う。
 
-返却後は `GATE1` の値に関わらず即 STEP 4 へ進む。`GATE1`（`auto-approved` / `approved` / `revised`）は STEP 7 の完了報告に含める。
+返却後、`GATE1` が `pending` 以外なら即 STEP 4 へ進む（`pending` は上の Gate 1 の手順で承認を聞いてから）。`GATE1`（`auto-approved` / `approved` / `revised`。`pending` は聞いた結果の値に置き換える）は STEP 7 の完了報告に含める。
 
 ---
 
@@ -265,7 +267,7 @@ team-review は TASK_FILE の `## team-review` に `### {m}回目` として追�
 
 **Gate 2:**
 - PASS → 即 STEP 6
-- FAIL → ユーザーに報告し判断を待つ（STEP 4 に戻る場合は `status` を `implementing` に戻す）。報告の前に「Linear の description 更新」を行う（`status` は `reviewing` のまま、フェーズ欄が「レビュー差し戻し（判断待ち）」になる）
+- FAIL → ユーザーに報告し、「質問の中継」で判断を聞く（phase 名 `gate2`。STEP 4 に戻る場合は `status` を `implementing` に戻す）。報告の前に「Linear の description 更新」を行う（`status` は `reviewing` のまま、フェーズ欄が「レビュー差し戻し（判断待ち）」になる）
 
 ---
 
@@ -318,7 +320,13 @@ TASK_FILE だけを `docs(task):` でコミットして同じ作業ブランチ�
 - team-implement: ...
 - team-review: ...
 - deploy: ...
+
+### 質問
+- {phase}: {質問の要旨} → {回答の要旨}（{Linear | ターミナル}）
+- ログ: .claude/logs/ask-{LINEAR_ID}-….md
 ```
+
+「### 質問」は質問しなかったら「なし」の 1 行にする。
 
 deploy 行には PR / MR の URL に加えて 6c の結果（`docs(task):` コミットの hash・push 先・現在のブランチ。中止ならその理由）を添える（TASK_FILE には書かない）。**現在のブランチは必ず示す**（6c を実行しなかった・中止したときは作業ブランチに留まっている。`git branch --show-current` で確認する）。`status` は 6b で `in-review` にしてあるので STEP 7 では書かない。
 
@@ -335,6 +343,7 @@ deploy 行には PR / MR の URL に加えて 6c の結果（`docs(task):` コ�
 | `tier` | STEP 0（追加修正モードは STEP 3F F1 で `## Meta` の `tier:` から復元。F3 の再設計で更新） |
 | `LINEAR_ID` | STEP 1（追加修正モードは STEP 3F F1 で `## Meta` の `linear_id:` から復元） |
 | `TASK_FILE` | STEP 2（追加修正モードは $ARGUMENTS または Linear ID から特定） |
+| `ASK_MODE` | STEP 2 の直後（追加修正モード・モード判定では最初に質問が要った時点）。`linear` / `terminal`。「質問の中継（Linear）」 |
 
 作業ブランチとその分岐元は、引数ではなく TASK_FILE の `## Meta` の `branch:` / `base:` で受け渡す（STEP 4 で team-implement が記入。追加修正モードでは既存の値をそのまま使う）。
 
@@ -393,6 +402,30 @@ issue を開けば現状が分かるよう、description 末尾の管理セク�
 ```
 
 status の表示名: `planning`=計画中 / `implementing`=実装中 / `reviewing`=レビュー中 / `deploying`=デプロイ中 / `in-review`=PR レビュー待ち。
+
+### 質問の中継（Linear）
+
+Claude Code 版（`~/.claude/commands/orchestrate.md` の同名節）と同じプロトコルで、スクリプトも同じ `~/.claude/scripts/linear-ask.sh`（harness の `sync-claude.sh` で配布）を使う。違いは**待機がフォアグラウンドでターミナル先着が無い**こと（OpenCode には完了通知もタスク停止も無いため）。
+
+| 質問箇所 | phase 名 |
+|---|---|
+| STEP 3 の startproject の `### QUESTIONS`（ヒアリング・Gate 1） | `startproject` |
+| Gate 2 の FAIL 判断 | `gate2` |
+| モード判定 (b) の TASK_FILE 選択 | `mode` |
+
+STEP 1 の Linear ID の質問は対象外（ターミナルのまま）。
+
+**ASK_MODE:** `LINEAR_ID` が `NOLINEAR` かユーザーの指示があれば `terminal`。それ以外は `~/.claude/scripts/linear-ask.sh --check` が exit 0 なら `linear`、3（キー不備）/ 4（API 失敗）/ スクリプトが無ければ `terminal` にして理由を報告する。キーはスクリプトが `LINEAR_API_KEY` か `~/.config/harness/linear.env`（600）から読む。orchestrator はキーを読まない・表示しない。`terminal` は `question` tool で聞く。
+
+**手順（`linear`）:**
+
+1. `ASK_LOG=.claude/logs/ask-{LINEAR_ID}-{phase}-{YYYYMMDD-HHMM}.md` に質問（startproject なら `### QUESTIONS` を `#### STATE` ごと）を書き、`{ASK_LOG}.body.md` に投稿本文を Claude Code 版のテンプレートで書く（返信で答えてもらう旨は残し、「ターミナルで答えても構いません」は書かない）
+2. `COMMENT_ID` を `uuidgen`（無ければ `/proc/sys/kernel/random/uuid`）で決め、まず投稿だけ行う: `~/.claude/scripts/linear-ask.sh --issue {LINEAR_ID} --body-file {ASK_LOG}.body.md --comment-id {COMMENT_ID} --post-only < /dev/null`。exit 0 なら stdout の `comment_url:` と質問の要旨をユーザーに示す
+3. 同じ `--comment-id` で `--post-only` を外し `--timeout 540` を付けて**フォアグラウンド**で待つ（bash tool の timeout に収まる長さ。bash tool の上限は実機未検証）。exit 2 なら同じコマンドを再実行する（投稿し直さずに待ち直す。合計 4 時間まで。超えたら `question` tool）。手順 2・3 で exit 3 / 4 なら理由を報告して `question` tool に切り替える
+4. exit 0 なら stdout の `---` より下が回答。`ASK_LOG` に回答・`comment_url`・`reply_url`・返信者（`reply_author`）を追記して続行する（startproject は `--answers-file={ASK_LOG}` で再起動。Gate 1 の承認は再起動しない）
+
+- 往復は 1 フェーズ 3 回まで。4 回目は `question` tool で聞く
+- 返信者は問わない（`reply_author` は `ASK_LOG` に残す）。目印 `[claude-q:…]` はスクリプトが付け、部分一致で自分の投稿を除外する
 
 ---
 

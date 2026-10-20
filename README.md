@@ -11,7 +11,8 @@ harness/
 ├── claude/                  # Claude Code 版 (~/.claude)
 │   ├── commands/            # orchestrate / startproject / team-implement / team-review / deploy
 │   ├── rules/               # adaptive-execution.md (tier 分類) / tool-routing.md (委譲先)
-│   └── hooks/agent-router.py  # UserPromptSubmit hook。意図を検出して /orchestrate へ誘導
+│   ├── hooks/agent-router.py  # UserPromptSubmit hook。意図を検出して /orchestrate へ誘導
+│   └── scripts/linear-ask.sh  # orchestrate の質問を Linear に投稿し、返信を待つ
 ├── opencode/                # OpenCode 版 (~/.config/opencode)
 │   ├── README.md            # OpenCode 版と Claude 版の違い
 │   ├── commands/
@@ -44,3 +45,21 @@ hook の登録（`settings.json` の `hooks.UserPromptSubmit`）と `Skill(orche
 `agents/README.md` は HOME に配布しない。orchestrate のフェーズ指定モードは `$HARNESS`（未設定なら `~/src/harness`）から直接読む。別の場所に clone したら `HARNESS` を設定する。
 
 kanban は `uv tool install --editable ~/src/harness/kanban`（詳細は `kanban/README.md`）。
+
+## Linear への質問の中継
+
+orchestrate 中の質問（startproject のヒアリング・Gate 1、Gate 2 など）を Linear の issue コメントに投稿し、返信かターミナル入力の先着で回答を受ける（`claude/commands/orchestrate.md`「質問の中継（Linear）」）。投稿と待機は `~/.claude/scripts/linear-ask.sh`（`sync-claude.sh` が実行ビット付きで配布）。`--post-only` で投稿して URL を示してから、同じ `--comment-id` で返信を待つ（`--help` で使い方）。
+
+Linear の個人 API キー（Settings > Security & access > Personal API keys）を次のファイルに置く:
+
+```bash
+mkdir -p ~/.config/harness
+( umask 077; read -rsp 'Linear API key: ' k; echo; printf 'LINEAR_API_KEY=%s\n' "$k" > ~/.config/harness/linear.env )
+chmod 600 ~/.config/harness/linear.env   # 既存ファイルを上書きした場合も 600 に
+~/.claude/scripts/linear-ask.sh --check   # ok なら有効
+```
+
+- 環境変数 `LINEAR_API_KEY` があればそちらを優先する。ファイルは `source` せず、所有者が自分でない・group / other に権限があるファイルは拒否する
+- `~/.claude/settings.json` には置かない（dotfiles で公開管理しているため）。`~/.bashrc.local` も Claude Code の非対話 Bash には読まれない
+- キーが無い・無効、または Linear ID が `NOLINEAR` なら従来どおりターミナル（`AskUserQuestion`）で聞く
+- exit code: 0 回答 / 2 タイムアウト / 3 キー不備 / 4 API 失敗 / 64 引数誤り / 130・143 シグナル。`--help` で使い方
