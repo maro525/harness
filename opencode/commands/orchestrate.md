@@ -344,6 +344,7 @@ deploy 行には PR / MR の URL に加えて 6c の結果（`docs(task):` コ�
 | `LINEAR_ID` | STEP 1（追加修正モードは STEP 3F F1 で `## Meta` の `linear_id:` から復元） |
 | `TASK_FILE` | STEP 2（追加修正モードは $ARGUMENTS または Linear ID から特定） |
 | `ASK_MODE` | STEP 2 の直後（追加修正モード・モード判定では最初に質問が要った時点）。`linear` / `terminal`。「質問の中継（Linear）」 |
+| `SESSION_INFO` | その実行で最初に「Linear の description 更新」をするとき 1 回だけ集め、以降は使い回す（フェーズには渡さない）。「実行セッション情報の取得」 |
 
 作業ブランチとその分岐元は、引数ではなく TASK_FILE の `## Meta` の `branch:` / `base:` で受け渡す（STEP 4 で team-implement が記入。追加修正モードでは既存の値をそのまま使う）。
 
@@ -372,7 +373,7 @@ issue を開けば現状が分かるよう、description 末尾の管理セク�
 
 1. 直前に Linear MCP の `get_issue` で最新の description を取得する
 2. 行頭が `## 🤖 Orchestrate` の行を探し、その行から末尾までを捨てる（無ければ全文を残す）。それより上（人の記述）は一字も変えない
-3. 残りの末尾の空行を整え、空行 1 つ + 下のテンプレートを連結する
+3. 残りの末尾の空行を整え、空行 1 つ + 下のテンプレートを連結する（「実行セッション」は `SESSION_INFO` から。未取得ならここで「実行セッション情報の取得」を行う）
 4. Linear MCP の `save_issue` で description だけ更新する（タイトル・ステータス等は渡さない）
 5. 失敗したら黙って飛ばさず報告する。フローは止めない
 
@@ -399,9 +400,47 @@ issue を開けば現状が分かるよう、description 末尾の管理セク�
 - Tier: {tier}
 - PR / MR: {`## deploy` の URL。無ければ「—」}
 - 更新: {YYYY-MM-DD HH:MM}（`date '+%Y-%m-%d %H:%M'`）
+
+### 実行セッション
+> 最後にこのセクションを更新した orchestrate のセッション。追加修正を別セッションで実行すると、そのセッションに置き換わる。
+- ツール: OpenCode {version}
+- モデル: {自身のモデル ID（`provider/model`）}
+- セッション ID: `{session_id}`（推定。再開: `{cwd}` で `opencode -s {session_id}`）
+- セッション URL: —
+- 実行者: {Linear の表示名}（git: {git_user}）
+- ホスト / 環境: {host}（{os}{wsl があれば「・WSL {wsl}」}）
+- リポジトリ / ブランチ: {origin} / {`## Meta` の `branch:`。空なら `base:`}
 ```
 
 status の表示名: `planning`=計画中 / `implementing`=実装中 / `reviewing`=レビュー中 / `deploying`=デプロイ中 / `in-review`=PR レビュー待ち。
+
+#### 実行セッション情報の取得
+
+`SESSION_INFO` はその orchestrate 実行で最初の description 更新の直前に 1 回だけ集め、以降の更新では使い回す（毎回変わるのは「更新」の時刻と `branch:` だけ）。取れなかった値は「—」にする（行ごと消さない。テンプレートの見出しと項目は固定）。
+
+```bash
+printf '%s=%s\n' \
+  version "$(opencode --version 2>/dev/null)" \
+  host "$(hostname)" \
+  os "$(uname -sr)" \
+  wsl "${WSL_DISTRO_NAME:-}" \
+  cwd "$(pwd)" \
+  git_user "$(git config --get user.name)" \
+  origin "$(git remote get-url origin 2>/dev/null | sed -E 's#://[^/@]*@#://#')"
+timeout 30 opencode session list -n 1 --format json < /dev/null
+```
+
+| 項目 | 出どころ・注意 |
+|---|---|
+| `session_id` | OpenCode は bash tool にセッション ID を渡さない（渡すのは `OPENCODE=1` / `OPENCODE_PID` / `OPENCODE_RUN_ID` で、`OPENCODE_RUN_ID` はプロセス単位の ID でありセッション ID ではない。1.14 系で確認）。代わりに `opencode session list` の先頭（最近更新された順）の `id`（`ses_…`）を使い、その `directory` が `cwd` と一致するときだけ採用する。同じディレクトリで別の OpenCode を同時に動かしていると別セッションを指しうるので「推定」と付ける。取れなければ「—」 |
+| セッション URL | ローカルのセッションに URL は無い（共有 URL は `--share` 時だけで、取得手段は未確認）ので常に「—」 |
+| モデル | 環境変数には無い。orchestrator 自身のモデル ID を書く |
+| 実行者 | Linear MCP の `get_user`（`query: "me"`）の `displayName`（無ければ `name`）。呼べなければ「—」にして git の `user.name` だけを書く |
+| `origin` | URL に埋め込まれた認証情報（`https://{token}@…`）は sed で落とす |
+
+- 環境変数は上のように**名前を指定して**読む。`env` / `printenv` / `set` で一覧を出さない（トークンが出力に残る）
+- 載せない: `OPENCODE_PID` / `OPENCODE_SERVER_PASSWORD` などの PID・認証情報、API キー、メールアドレス（`get_user` が返しても書かない）
+- セッションの履歴は持たない。過去のセッションは Linear のコメント履歴と description の版履歴で追える
 
 ### 質問の中継（Linear）
 

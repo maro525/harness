@@ -3,7 +3,7 @@ name: orchestrate
 description: Project orchestrator — classify tier, create task file, run startproject → team-implement → team-review → deploy in sequence. With --task-file, adds changes to an existing PR/MR (followup mode); with --phase and --ai, runs one phase of an existing task file with an external CLI (pi / cline / opencode / codex).
 model: opus[1m]
 color: green
-allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, AskUserQuestion, TaskStop, TodoWrite, mcp__linear-server__get_issue, mcp__linear-server__save_issue, mcp__linear-server__save_comment, mcp__linear-server__list_issue_statuses
+allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent, Skill, AskUserQuestion, TaskStop, TodoWrite, mcp__linear-server__get_issue, mcp__linear-server__save_issue, mcp__linear-server__save_comment, mcp__linear-server__list_issue_statuses, mcp__linear-server__get_user
 ---
 
 # orchestrate
@@ -558,6 +558,7 @@ orchestrator は以下を変数として保持し、全 command に引数で渡�
 | `LINEAR_ID` | STEP 1（追加修正モードは STEP 3F F1 で `## Meta` の `linear_id:` から復元） |
 | `TASK_FILE` | STEP 2（追加修正モードは引数または Linear ID から特定。フェーズ指定モードは引数の `--task-file` 必須） |
 | `ASK_MODE` | STEP 2 の直後（追加修正・フェーズ指定モード、モード判定では最初に質問が要った時点）。`linear` / `terminal`。「質問の中継（Linear）」 |
+| `SESSION_INFO` | その実行で最初に「Linear の description 更新」をするとき 1 回だけ集め、以降は使い回す（フェーズには渡さない）。「実行セッション情報の取得」 |
 
 作業ブランチとその分岐元は、引数ではなく TASK_FILE の `## Meta` の `branch:` / `base:` で受け渡す（STEP 4 で記入。追加修正モードでは既存の値をそのまま使う。フェーズ指定モードの team-implement は外部 CLI が書き、未書き込みなら P4 で代筆する）。
 
@@ -589,7 +590,7 @@ issue を開けば現状が分かるよう、description 末尾の管理セク�
 
 1. 直前に `mcp__linear-server__get_issue` で最新の description を取得する
 2. 行頭が `## 🤖 Orchestrate` の行を探し、その行から末尾までを捨てる（無ければ全文を残す）。それより上（人の記述）は一字も変えない
-3. 残りの末尾の空行を整え、空行 1 つ + 下のテンプレートを連結する
+3. 残りの末尾の空行を整え、空行 1 つ + 下のテンプレートを連結する（「実行セッション」は `SESSION_INFO` から。未取得ならここで「実行セッション情報の取得」を行う）
 4. `mcp__linear-server__save_issue` で description だけ更新する（タイトル・ステータス等は渡さない）
 5. 失敗したら黙って飛ばさず報告する。フローは止めない
 
@@ -616,9 +617,51 @@ issue を開けば現状が分かるよう、description 末尾の管理セク�
 - Tier: {tier}
 - PR / MR: {`## deploy` の URL。無ければ「—」}
 - 更新: {YYYY-MM-DD HH:MM}（`date '+%Y-%m-%d %H:%M'`）
+
+### 実行セッション
+> 最後にこのセクションを更新した orchestrate のセッション。追加修正・フェーズ指定を別セッションで実行すると、そのセッションに置き換わる。
+- ツール: Claude Code {version}（{entrypoint}）
+- モデル: {自身のモデル ID（システムプロンプト記載のもの）}
+- セッション ID: `{session_id}`（再開: `{cwd}` で `claude --resume {session_id}`）
+- セッション URL: {`https://claude.ai/code/{bridge_session_id}`}
+- 実行者: {Linear の表示名}（git: {git_user}）
+- ホスト / 環境: {host}（{os}{wsl があれば「・WSL {wsl}」}）
+- リポジトリ / ブランチ: {origin} / {`## Meta` の `branch:`。空なら `base:`}
 ```
 
 status の表示名: `planning`=計画中 / `implementing`=実装中 / `reviewing`=レビュー中 / `deploying`=デプロイ中 / `in-review`=PR レビュー待ち。
+
+#### 実行セッション情報の取得
+
+`SESSION_INFO` はその orchestrate 実行で最初の description 更新の直前に 1 回だけ集め、以降の更新では使い回す（毎回変わるのは「更新」の時刻と `branch:` だけ）。取れなかった値は「—」にする（行ごと消さない。テンプレートの見出しと項目は固定）。
+
+```bash
+v="$(basename "${CLAUDE_CODE_EXECPATH:-}")"; [[ "$v" =~ ^[0-9][0-9.]*$ ]] || v=""
+printf '%s=%s\n' \
+  session_id "${CLAUDE_CODE_SESSION_ID:-}" \
+  bridge_session_id "${CLAUDE_CODE_BRIDGE_SESSION_ID:-}" \
+  entrypoint "${CLAUDE_CODE_ENTRYPOINT:-}" \
+  version "$v" \
+  host "$(hostname)" \
+  os "$(uname -sr)" \
+  wsl "${WSL_DISTRO_NAME:-}" \
+  cwd "$(pwd)" \
+  git_user "$(git config --get user.name)" \
+  origin "$(git remote get-url origin 2>/dev/null | sed -E 's#://[^/@]*@#://#')"
+```
+
+| 項目 | 出どころ・注意 |
+|---|---|
+| `session_id` | ローカルのセッション UUID（`~/.claude/projects/` の `{id}.jsonl`）。`claude --resume` は同じディレクトリで実行する必要があるので `cwd` を添える |
+| `bridge_session_id` | `session_…`。Remote Control / claude.ai 連携時だけ入る。空ならセッション URL は「—」 |
+| `version` | `CLAUDE_CODE_EXECPATH` の末尾がバージョン番号のときだけ使う（npm 版などで形式が違えば「—」） |
+| モデル | 環境変数には無い。orchestrator 自身のモデル ID を書く |
+| 実行者 | `mcp__linear-server__get_user`（`query: "me"`）の `displayName`（無ければ `name`）。呼べなければ「—」にして git の `user.name` だけを書く |
+| `origin` | URL に埋め込まれた認証情報（`https://{token}@…`）は sed で落とす |
+
+- 環境変数は上のように**名前を指定して**読む。`env` / `printenv` / `set` で一覧を出さない（トークンが出力に残る）
+- 載せない: `CLAUDE_CODE_MESSAGING_TOKEN` / `CLAUDE_CODE_MESSAGING_SOCKET` / `CLAUDE_PID` などのトークン・ローカル IPC・PID、API キー、メールアドレス（`get_user` が返しても書かない）
+- セッションの履歴は持たない。過去のセッションは Linear のコメント履歴と description の版履歴で追える
 
 ### 質問の中継（Linear）
 
