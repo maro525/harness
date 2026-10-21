@@ -69,7 +69,7 @@ python3 -m taskboard --print --recursive ~/src
 | `--host` | Bind address (default `127.0.0.1`) |
 | `--poll SECONDS` | Change-detection interval (default 1.0) |
 | `--open` | Open a browser on start |
-| `--print` | Print a text summary and exit |
+| `--print` | Print a text summary (including waiting questions) and exit |
 | `-v`, `--verbose` | Log HTTP requests |
 
 ## How a card gets its column
@@ -117,6 +117,37 @@ When evidence runs ahead of `status:`, the card is flagged **stale** — an ambe
 badge, and a `--print` listing. That flag is the point of the tool, not a
 defect: it shows you exactly which tasks moved on without anyone updating the
 file.
+
+## Pending questions
+
+`/orchestrate` relays its questions to the Linear issue and records each one in
+`.claude/logs/ask-{LINEAR_ID}-{phase}-{YYYYMMDD-HHMM}.md` (see "質問の中継
+（Linear）" in `claude/commands/orchestrate.md`). The board reads those logs so
+a task that is blocked on a person is obvious at a glance.
+
+- **Where it looks.** For each `.claude/docs/decisions` folder, only the
+  sibling `.claude/logs` folder, non-recursively. A task folder outside that
+  layout gets no questions: there is no well-defined logs folder to trust.
+- **What counts.** The last `#### 待機状態` block in the file is the current
+  one (later rounds are appended under `## 往復 {r}`). Only `state: waiting` is
+  shown; `resolved`, `expired` and `terminal` are not. If one task has several
+  waiting logs, the newest `posted_at` wins, then the newest file.
+- **On the card.** A blue highlight and a `waiting` badge, plus the question
+  summary (up to three `- 質問:` items or `Q1.` lines, else the first prose
+  line, capped at 160 characters), how long ago it was asked, the time left
+  until `deadline`, and a link to the Linear comment. A question still waiting
+  after its deadline turns red and reads "overdue" -- it is never hidden.
+- **Filters.** "Waiting questions only" narrows the board; search also matches
+  the summary. Waiting cards sort first in each column, and the header shows
+  `N waiting`. `--print` lists them too.
+- **Live.** The ask logs join the same stat sweep as the task files, so
+  answering (the log flips to `resolved`) clears the highlight within a poll or
+  two. They are cached separately: a log change never reparses a task file.
+- **Time is computed in the browser** and redrawn every 30 seconds (paused
+  while the tab is hidden). The JSON carries only the ISO timestamps, so the
+  payload and its `ETag` change only when a log changes.
+- **Untrusted content.** The logs quote Linear. Everything is HTML-escaped,
+  and only `https://linear.app/` URLs become links.
 
 ## Design notes
 
@@ -167,6 +198,10 @@ understood shows up as a card with a parse error rather than disappearing.
 `/api/board` returns one object per card with `phase`, `declaredPhase`,
 `evidencePhase` and `staleStatus`, so the classification is inspectable rather
 than buried. The review verdict that feeds `evidencePhase` is not exposed.
+
+Each card also has `question`: `null`, or the waiting question as
+`{phase, path, summary, commentUrl, postedAt, deadline, round}` (times are ISO
+8601 strings or `null`). The top level has `waitingCount`.
 
 ## Development
 

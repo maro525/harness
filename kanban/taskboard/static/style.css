@@ -12,6 +12,11 @@
   --stale-line: #f0c070;
   --err-bg: #fdeaea;
   --err-fg: #a61b1b;
+  --ask-bg: #eef4ff;
+  --ask-fg: #1d4ed8;
+  --ask-line: #3b82f6;
+  --overdue-bg: #fdeaea;
+  --overdue-fg: #b91c1c;
   --radius: 8px;
   --gap: 10px;
 }
@@ -31,6 +36,11 @@
     --stale-line: #6b5220;
     --err-bg: #3a1d1d;
     --err-fg: #ff9a9a;
+    --ask-bg: #172440;
+    --ask-fg: #9cc2ff;
+    --ask-line: #4f8cff;
+    --overdue-bg: #3a1d1d;
+    --overdue-fg: #ff9a9a;
   }
 }
 
@@ -123,6 +133,19 @@ input[type="search"]:focus, select:focus { outline: 2px solid var(--accent); out
 .card:hover { border-color: var(--accent); }
 .card.stale { border-left-color: var(--stale-line); background: var(--stale-bg); }
 .card.err   { border-left-color: var(--err-fg); background: var(--err-bg); }
+/* After .stale / .err on purpose: a question waiting on a person outranks both. */
+.card.asking {
+  border-color: var(--ask-line);
+  border-left: 4px solid var(--ask-line);
+  background: var(--ask-bg);
+  box-shadow: 0 0 0 1px var(--ask-line);
+}
+.card.asking.overdue {
+  border-color: var(--overdue-fg);
+  border-left-color: var(--overdue-fg);
+  background: var(--overdue-bg);
+  box-shadow: 0 0 0 1px var(--overdue-fg);
+}
 
 .card .t { font-weight: 550; margin-bottom: 4px; overflow-wrap: anywhere; }
 .card .m { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; color: var(--muted); font-size: 11px; }
@@ -139,6 +162,27 @@ input[type="search"]:focus, select:focus { outline: 2px solid var(--accent); out
 .tag.tier { font-weight: 650; }
 .tag.stale { background: var(--stale-fg); color: var(--stale-bg); border-color: transparent; }
 .tag.pr a { color: inherit; text-decoration: none; }
+.tag.ask { background: var(--ask-fg); color: var(--ask-bg); border-color: transparent; font-weight: 650; }
+.card.overdue .tag.ask { background: var(--overdue-fg); color: var(--overdue-bg); }
+
+.card .q {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--ask-line);
+  font-size: 12px;
+}
+.card.overdue .q { border-top-color: var(--overdue-fg); }
+.card .q .qs { overflow-wrap: anywhere; margin-bottom: 3px; }
+.card .q .qm {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.card .q a { color: var(--ask-fg); font-weight: 600; }
+.card.overdue .q [data-deadline] { color: var(--overdue-fg); font-weight: 650; }
 
 .more {
   width: 100%;

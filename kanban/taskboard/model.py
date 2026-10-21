@@ -64,6 +64,37 @@ class ParsedTask:
 
 
 @dataclass(frozen=True, slots=True)
+class PendingQuestion:
+    """A relayed question still waiting for an answer (`state: waiting`).
+
+    Parsed from `.claude/logs/ask-{LINEAR_ID}-{phase}-{stamp}.md`. Times stay
+    ISO 8601 strings: elapsed / remaining time is computed by the client, so
+    the JSON (and with it the ETag) only changes when the log does.
+    """
+
+    linear_id: str
+    phase: str
+    stamp: str
+    path: str
+    summary: str | None
+    comment_url: str | None
+    posted_at: str | None
+    deadline: str | None
+    round: int = 1
+
+    def to_json(self) -> dict[str, object]:
+        return {
+            "phase": self.phase,
+            "path": self.path,
+            "summary": self.summary,
+            "commentUrl": self.comment_url,
+            "postedAt": self.posted_at,
+            "deadline": self.deadline,
+            "round": self.round,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class Card:
     """A ParsedTask placed into a board column."""
 
@@ -73,6 +104,8 @@ class Card:
     evidence_phase: Phase | None
     #: True when the evidence in the file is further along than `status:` says.
     stale_status: bool
+    #: The task's waiting question, attached at scan time from the ask logs.
+    question: PendingQuestion | None = None
 
     def to_json(self) -> dict[str, object]:
         t = self.task
@@ -95,6 +128,7 @@ class Card:
             "decisionTags": sorted(t.decision_tags),
             "mtime": t.mtime,
             "parseError": t.parse_error,
+            "question": self.question.to_json() if self.question else None,
         }
 
 
@@ -123,4 +157,5 @@ class Board:
                 for name in (*PHASE_ORDER, "unknown")
             },
             "staleCount": sum(1 for c in self.cards if c.stale_status),
+            "waitingCount": sum(1 for c in self.cards if c.question is not None),
         }

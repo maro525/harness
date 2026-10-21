@@ -208,7 +208,8 @@ def test_placeholder_bodies_count_as_empty(body: str) -> None:
 
 def test_project_derived_from_claude_path() -> None:
     assert (
-        project_name("/home/d/src/example-app/.claude/docs/decisions/task-A-1-x.md") == "example-app"
+        project_name("/home/d/src/example-app/.claude/docs/decisions/task-A-1-x.md")
+        == "example-app"
     )
 
 

@@ -6,7 +6,7 @@ import argparse
 import sys
 import webbrowser
 
-from .model import PHASE_ORDER
+from .model import PHASE_ORDER, Card
 from .scanner import Scanner
 from .server import DEFAULT_POLL_SECONDS, run
 
@@ -83,7 +83,23 @@ def print_summary(folders: tuple[str, ...], recursive: bool) -> int:
             )
         if len(stale) > 10:
             print(f"    ... and {len(stale) - 10} more")
+    print_waiting(board.cards)
     return 0
+
+
+def print_waiting(cards: tuple[Card, ...]) -> None:
+    """List tasks with a relayed question still waiting for an answer."""
+    waiting = [(c, c.question) for c in cards if c.question is not None]
+    if not waiting:
+        return
+    print(f"\n  {len(waiting)} task(s) are waiting for an answer:")
+    for card, question in waiting:
+        deadline = question.deadline or "no deadline"
+        print(f"    {card.task.task_id:<16} [{question.phase}] deadline {deadline}")
+        if question.summary:
+            print(f"      {question.summary}")
+        if question.comment_url:
+            print(f"      {question.comment_url}")
 
 
 def main(argv: list[str] | None = None) -> int:

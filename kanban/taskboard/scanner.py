@@ -25,10 +25,12 @@ from __future__ import annotations
 
 import os
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+from datetime import datetime
 from typing import ClassVar
 
-from .model import Board, Card
+from .asklog import ASK_PREFIX, ASK_SUFFIX, parse_ask_file
+from .model import Board, Card, PendingQuestion
 from .parser import parse_file
 from .phases import classify
 
@@ -60,6 +62,9 @@ PRUNE_DIRS: frozenset[str] = frozenset(
 
 #: The conventional location of TASK_FILEs inside a project.
 DECISIONS_SUFFIX = os.path.join(".claude", "docs", "decisions")
+
+#: Ask logs live beside the decisions folder: `.claude/logs`.
+LOGS_DIRNAME = "logs"
 
 #: Cache key: a file is unchanged when both mtime and size are unchanged.
 _CacheKey = tuple[int, int]
@@ -93,15 +98,15 @@ def discover_decision_dirs(root: str, max_depth: int = 8) -> list[str]:
     return sorted(found)
 
 
-def list_task_files(folder: str) -> list[tuple[str, _CacheKey]]:
-    """Return (path, cache_key) for each TASK_FILE directly inside `folder`."""
+def _list_files(folder: str, prefix: str, suffix: str) -> list[tuple[str, _CacheKey]]:
+    """Return (path, cache_key) for each `{prefix}*{suffix}` file directly in `folder`."""
     entries: list[tuple[str, _CacheKey]] = []
     try:
         with os.scandir(folder) as iterator:
             for entry in iterator:
-                if not entry.name.startswith(TASK_PREFIX):
+                if not entry.name.startswith(prefix):
                     continue
-                if not entry.name.endswith(TASK_SUFFIX):
+                if not entry.name.endswith(suffix):
                     continue
                 try:
                     stat = entry.stat()
@@ -113,6 +118,45 @@ def list_task_files(folder: str) -> list[tuple[str, _CacheKey]]:
     except OSError:
         return []
     return entries
+
+
+def list_task_files(folder: str) -> list[tuple[str, _CacheKey]]:
+    """Return (path, cache_key) for each TASK_FILE directly inside `folder`."""
+    return _list_files(folder, TASK_PREFIX, TASK_SUFFIX)
+
+
+def logs_dir_for(folder: str) -> str | None:
+    """`.claude/logs` for a `.claude/docs/decisions` folder, else None.
+
+    Only the conventional layout is trusted: a task folder passed from
+    anywhere else has no well-defined logs sibling, and guessing would bind
+    unrelated questions to its cards.
+    """
+    normalized = os.path.normpath(folder)
+    if not normalized.endswith(os.sep + DECISIONS_SUFFIX):
+        return None
+    claude_dir = os.path.dirname(os.path.dirname(normalized))
+    return os.path.join(claude_dir, LOGS_DIRNAME)
+
+
+def list_ask_files(folder: str) -> list[tuple[str, _CacheKey]]:
+    """Return (path, cache_key) for each ask log directly inside `folder`."""
+    return _list_files(folder, ASK_PREFIX, ASK_SUFFIX)
+
+
+def _recency_key(question: PendingQuestion, mtime_ns: int) -> tuple[float, str, int]:
+    """Sort key: posted_at when it parses, then the filename stamp, then mtime.
+
+    The stamp (`YYYYMMDD-HHMM`, sorts lexically) is the time the log was
+    created; mtime only says when it was last touched, so it comes last.
+    """
+    posted = 0.0
+    if question.posted_at:
+        try:
+            posted = datetime.fromisoformat(question.posted_at).timestamp()
+        except ValueError:
+            posted = 0.0
+    return posted, question.stamp, mtime_ns
 
 
 @dataclass(slots=True)
@@ -127,6 +171,9 @@ class Scanner:
     roots: tuple[str, ...]
     recursive: bool = False
     _cache: dict[str, tuple[_CacheKey, Card]] = field(default_factory=dict)
+    #: Ask logs, kept apart from `_cache` so a log change never reparses a
+    #: task file. Value: (cache key, waiting question or None).
+    _ask_cache: dict[str, tuple[_CacheKey, PendingQuestion | None]] = field(default_factory=dict)
     _folders: tuple[str, ...] = ()
     _folders_resolved_at: float = 0.0
 
@@ -156,15 +203,23 @@ class Scanner:
     def fingerprint(self) -> tuple[int, int]:
         """A cheap signature of the current on-disk state.
 
-        Changes whenever any task file is added, removed, resized or touched.
-        This is the ~6.5 ms stat sweep that drives change detection.
+        Changes whenever any task file or ask log is added, removed, resized or
+        touched. This is the ~6.5 ms stat sweep that drives change detection.
+        The kind prefix keeps a task file and an ask log from ever cancelling
+        each other out in the XOR.
         """
         count = 0
         digest = 0
         for folder in self.folders():
             for path, key in list_task_files(folder):
                 count += 1
-                digest ^= hash((path, key))
+                digest ^= hash(("task", path, key))
+            logs = logs_dir_for(folder)
+            if logs is None:
+                continue
+            for path, key in list_ask_files(logs):
+                count += 1
+                digest ^= hash(("ask", path, key))
         return count, digest
 
     def scan(self) -> Board:
@@ -178,20 +233,26 @@ class Scanner:
         if not folders:
             errors.append("No task folders found. Check the paths you passed.")
 
+        seen_asks: set[str] = set()
         for folder in folders:
+            questions = self._waiting_questions(folder, seen_asks)
             for path, key in list_task_files(folder):
                 seen.add(path)
                 cached = self._cache.get(path)
                 if cached is not None and cached[0] == key:
-                    cards.append(cached[1])
-                    continue
-                mtime_ns, size = key
-                card = classify(parse_file(path, mtime_ns / 1e9, size))
-                self._cache[path] = (key, card)
-                cards.append(card)
+                    card = cached[1]
+                else:
+                    mtime_ns, size = key
+                    card = classify(parse_file(path, mtime_ns / 1e9, size))
+                    self._cache[path] = (key, card)
+                question = questions.get(card.task.task_id.upper())
+                # The cached card stays question-free; attach a copy per scan.
+                cards.append(replace(card, question=question) if question else card)
 
         for stale_path in self._cache.keys() - seen:
             del self._cache[stale_path]
+        for stale_path in self._ask_cache.keys() - seen_asks:
+            del self._ask_cache[stale_path]
 
         cards.sort(key=lambda c: (-c.task.mtime, c.task.task_id))
         elapsed_ms = (time.perf_counter() - started) * 1000
@@ -202,3 +263,25 @@ class Scanner:
             scan_ms=elapsed_ms,
             errors=tuple(errors),
         )
+
+    def _waiting_questions(self, folder: str, seen: set[str]) -> dict[str, PendingQuestion]:
+        """LINEAR_ID -> newest waiting question among the folder's ask logs."""
+        logs = logs_dir_for(folder)
+        if logs is None:
+            return {}
+        best: dict[str, tuple[tuple[float, str, int], PendingQuestion]] = {}
+        for path, key in list_ask_files(logs):
+            seen.add(path)
+            cached = self._ask_cache.get(path)
+            if cached is not None and cached[0] == key:
+                question = cached[1]
+            else:
+                question = parse_ask_file(path, os.path.basename(path))
+                self._ask_cache[path] = (key, question)
+            if question is None:
+                continue
+            rank = _recency_key(question, key[0])
+            current = best.get(question.linear_id)
+            if current is None or rank > current[0]:
+                best[question.linear_id] = (rank, question)
+        return {linear_id: question for linear_id, (_, question) in best.items()}
