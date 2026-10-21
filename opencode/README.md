@@ -62,6 +62,7 @@ Claude Code 版と完全に一致しない点:
 | OpenCode セカンドオピニオン（team-review）・設計相談（startproject） | `opencode run` で別モデル（`timeout -k 1m 20m`、不可時は「OpenCode 不可」） | `task` subagent（別コンテキスト）で代替。不可時は「Second Opinion 不可」/「設計相談不可」。`opencode run` の gotcha・完了通知・timeout は該当なし |
 | 追加修正モード（既存 PR への追加変更） | `/orchestrate` STEP 3F、`/deploy` の Ad-hoc ガード | 同じ構成で移植済み（`commands/orchestrate.md` / `agents/deploy.md` / `AGENTS.md` GIT RULES） |
 | 共通ルール（tier 基準・Git ルール） | `~/.claude/rules/*.md` | `AGENTS.md` に集約 |
+| 質問の中継（Linear） | API キー不要。Linear MCP の `save_comment` で目印付きで投稿し、background Bash の `sleep` タイマーの完了通知で起きて `list_comments` でスレッド返信を確かめる。Linear 返信とターミナル入力の先着（`TaskStop` でタイマーを止める） | `~/.claude/scripts/linear-ask.sh`（`sync-claude.sh` で配布。Linear API キーが要る）で `--post-only` 投稿→URL 提示のあと、**フォアグラウンド**で `--timeout 540` ずつ再アームして待つ。ターミナル先着なし。実機未検証 |
 
 ## Limitations
 
