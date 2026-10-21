@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from taskboard.scanner import Scanner, discover_decision_dirs, list_task_files
+from taskboard.scanner import Scanner, discover_decision_dirs, list_task_files, logs_dir_for
 
 TASK = """\
 # Task: ABC-1 — first
@@ -143,3 +143,157 @@ def test_worktrees_are_pruned_to_avoid_duplicate_cards(tmp_path: Path) -> None:
 
     board = Scanner(roots=(str(tmp_path),), recursive=True).scan()
     assert len(board.cards) == 1
+
+
+# -- pending questions (ask logs) -------------------------------------------
+
+ASK_WAITING = """\
+# 質問
+
+Q1. どちらにしますか？ 1. A 2. B
+
+#### 待機状態
+- state: waiting
+- comment_url: https://linear.app/x/issue/ABC-1#comment-1234abcd
+- posted_at: 2026-10-21T04:00:00Z
+- deadline: 2026-10-21T08:00:00Z
+"""
+
+
+def write_ask(logs: Path, name: str, text: str, mtime: int = 1_800_000_000) -> Path:
+    logs.mkdir(parents=True, exist_ok=True)
+    path = logs / name
+    path.write_text(text, encoding="utf-8")
+    os.utime(path, (mtime, mtime))
+    return path
+
+
+def logs_of(folder: Path) -> Path:
+    return folder.parent.parent / "logs"
+
+
+def by_id(board) -> dict:
+    return {c.task.task_id: c for c in board.cards}
+
+
+def test_logs_dir_for_conventional_and_foreign_folders(folder: Path, tmp_path: Path) -> None:
+    assert logs_dir_for(str(folder)) == str(logs_of(folder))
+    assert logs_dir_for(str(folder) + os.sep) == str(logs_of(folder))
+    assert logs_dir_for(str(tmp_path)) is None
+
+
+def test_waiting_question_is_attached_to_matching_card(folder: Path) -> None:
+    write_ask(logs_of(folder), "ask-ABC-1-plan-20261021-1300.md", ASK_WAITING)
+    board = Scanner(roots=(str(folder),)).scan()
+    cards = by_id(board)
+    assert cards["ABC-1"].question is not None
+    assert cards["ABC-1"].question.phase == "plan"
+    assert cards["ABC-2"].question is None
+    payload = board.to_json()
+    assert payload["waitingCount"] == 1
+    card_json = next(c for c in payload["cards"] if c["id"] == "ABC-1")
+    assert card_json["question"]["commentUrl"].startswith("https://linear.app/")
+    assert card_json["question"]["postedAt"] == "2026-10-21T04:00:00Z"
+
+
+def test_question_for_unknown_id_is_not_attached(folder: Path) -> None:
+    write_ask(logs_of(folder), "ask-ZZZ-9-plan-20261021-1300.md", ASK_WAITING)
+    board = Scanner(roots=(str(folder),)).scan()
+    assert all(c.question is None for c in board.cards)
+    assert board.to_json()["waitingCount"] == 0
+
+
+def test_resolved_question_is_not_attached(folder: Path) -> None:
+    text = ASK_WAITING.replace("state: waiting", "state: resolved")
+    write_ask(logs_of(folder), "ask-ABC-1-plan-20261021-1300.md", text)
+    board = Scanner(roots=(str(folder),)).scan()
+    assert by_id(board)["ABC-1"].question is None
+
+
+def test_newest_waiting_question_wins(folder: Path) -> None:
+    logs = logs_of(folder)
+    write_ask(logs, "ask-ABC-1-plan-20261021-1300.md", ASK_WAITING, mtime=1_900_000_000)
+    newer = ASK_WAITING.replace("04:00:00", "06:00:00").replace("Q1. どちら", "Q1. 新しい")
+    write_ask(logs, "ask-ABC-1-gate2-20261021-1500.md", newer, mtime=1_800_000_000)
+    question = by_id(Scanner(roots=(str(folder),)).scan())["ABC-1"].question
+    assert question is not None
+    assert question.phase == "gate2", "posted_at beats mtime"
+
+
+def test_same_posted_at_tie_breaks_on_filename_stamp(folder: Path) -> None:
+    logs = logs_of(folder)
+    write_ask(logs, "ask-ABC-1-plan-20261021-1300.md", ASK_WAITING, mtime=1_900_000_000)
+    write_ask(logs, "ask-ABC-1-gate2-20261021-1500.md", ASK_WAITING, mtime=1_800_000_000)
+    question = by_id(Scanner(roots=(str(folder),)).scan())["ABC-1"].question
+    assert question is not None
+    assert question.phase == "gate2", "stamp beats mtime when posted_at ties"
+
+
+def test_same_posted_at_and_stamp_falls_back_to_mtime(folder: Path) -> None:
+    logs = logs_of(folder)
+    write_ask(logs, "ask-ABC-1-plan-20261021-1300.md", ASK_WAITING, mtime=1_800_000_000)
+    write_ask(logs, "ask-ABC-1-gate2-20261021-1300.md", ASK_WAITING, mtime=1_900_000_000)
+    question = by_id(Scanner(roots=(str(folder),)).scan())["ABC-1"].question
+    assert question is not None
+    assert question.phase == "gate2"
+
+
+def test_huge_round_number_does_not_break_scan(folder: Path) -> None:
+    text = (
+        ASK_WAITING + "\n## 往復 " + "9" * 5000 + "\n\nQ1. x\n\n" + ASK_WAITING.split("\n\n", 2)[2]
+    )
+    write_ask(logs_of(folder), "ask-ABC-1-plan-20261021-1300.md", text)
+    board = Scanner(roots=(str(folder),)).scan()
+    assert by_id(board)["ABC-1"].question is not None
+    assert board.to_json()["waitingCount"] == 1
+
+
+def test_fingerprint_changes_when_only_an_ask_log_changes(folder: Path) -> None:
+    scanner = Scanner(roots=(str(folder),))
+    path = write_ask(logs_of(folder), "ask-ABC-1-plan-20261021-1300.md", ASK_WAITING)
+    before = scanner.fingerprint()
+    path.write_text(ASK_WAITING.replace("waiting", "resolved"), encoding="utf-8")
+    os.utime(path, (1_800_000_100, 1_800_000_100))
+    assert scanner.fingerprint() != before
+
+
+def test_ask_log_change_updates_card_without_reparsing_tasks(folder: Path, monkeypatch) -> None:
+    scanner = Scanner(roots=(str(folder),))
+    path = write_ask(logs_of(folder), "ask-ABC-1-plan-20261021-1300.md", ASK_WAITING)
+    assert by_id(scanner.scan())["ABC-1"].question is not None
+
+    import taskboard.scanner as scanner_module
+
+    def fail(*_args, **_kwargs):
+        raise AssertionError("task files must not be reparsed for an ask log change")
+
+    monkeypatch.setattr(scanner_module, "parse_file", fail)
+    path.write_text(ASK_WAITING.replace("state: waiting", "state: resolved"), encoding="utf-8")
+    os.utime(path, (1_800_000_100, 1_800_000_100))
+    assert by_id(scanner.scan())["ABC-1"].question is None
+
+
+def test_deleted_ask_log_drops_question_and_cache(folder: Path) -> None:
+    scanner = Scanner(roots=(str(folder),))
+    path = write_ask(logs_of(folder), "ask-ABC-1-plan-20261021-1300.md", ASK_WAITING)
+    assert by_id(scanner.scan())["ABC-1"].question is not None
+    path.unlink()
+    assert by_id(scanner.scan())["ABC-1"].question is None
+    assert scanner._ask_cache == {}
+
+
+def test_foreign_folder_ignores_neighbouring_logs(tmp_path: Path) -> None:
+    folder = tmp_path / "tasks"
+    folder.mkdir()
+    (folder / "task-ABC-1-first.md").write_text(TASK, encoding="utf-8")
+    write_ask(tmp_path / "logs", "ask-ABC-1-plan-20261021-1300.md", ASK_WAITING)
+    write_ask(folder / "logs", "ask-ABC-1-plan-20261021-1300.md", ASK_WAITING)
+    board = Scanner(roots=(str(folder),)).scan()
+    assert board.cards[0].question is None
+
+
+def test_question_does_not_leak_into_cached_card(folder: Path) -> None:
+    scanner = Scanner(roots=(str(folder),))
+    write_ask(logs_of(folder), "ask-ABC-1-plan-20261021-1300.md", ASK_WAITING)
+    scanner.scan()
+    assert all(card.question is None for _, card in scanner._cache.values())

@@ -282,3 +282,66 @@ def test_failed_scan_does_not_swallow_the_change(decisions: Path) -> None:
     stub.raise_on_scan = None
     assert state.refresh() is True, "the change was lost when the scan failed"
     assert state.board.cards[0].phase == "done"
+
+
+ASK_WAITING = """\
+Q1. どちらにしますか？
+
+#### 待機状態
+- state: waiting
+- comment_url: https://linear.app/x/issue/ABC-1#comment-1234abcd
+- posted_at: 2026-10-21T04:00:00Z
+- deadline: 2026-10-21T08:00:00Z
+"""
+
+
+def write_ask(decisions: Path, text: str, mtime: int) -> Path:
+    logs = decisions.parent.parent / "logs"
+    logs.mkdir(exist_ok=True)
+    path = logs / "ask-ABC-1-plan-20261021-1300.md"
+    path.write_text(text, encoding="utf-8")
+    os.utime(path, (mtime, mtime))
+    return path
+
+
+def test_board_api_includes_question_and_waiting_count(decisions: Path) -> None:
+    write_ask(decisions, ASK_WAITING, 1_800_000_000)
+    srv = serve(roots=(str(decisions),), port=0)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        payload = json.loads(get(f"http://127.0.0.1:{srv.server_address[1]}/api/board").read())
+    finally:
+        srv.shutdown()
+        srv.server_close()
+    assert payload["waitingCount"] == 1
+    question = payload["cards"][0]["question"]
+    assert question["summary"] == "どちらにしますか？"
+    assert question["deadline"] == "2026-10-21T08:00:00Z"
+
+
+def test_board_api_question_is_null_without_logs(server: str) -> None:
+    payload = json.loads(get(f"{server}/api/board").read())
+    assert payload["waitingCount"] == 0
+    assert payload["cards"][0]["question"] is None
+
+
+def test_resolving_a_question_bumps_version(decisions: Path) -> None:
+    path = write_ask(decisions, ASK_WAITING, 1_800_000_000)
+    state = BoardState(Scanner(roots=(str(decisions),)), poll_seconds=60)
+    first = state.version
+    assert state.board.cards[0].question is not None
+
+    path.write_text(ASK_WAITING.replace("state: waiting", "state: resolved"), encoding="utf-8")
+    os.utime(path, (1_800_000_100, 1_800_000_100))
+    assert state.refresh() is True
+    assert state.version == first + 1
+    assert state.board.cards[0].question is None
+
+
+def test_touching_an_ask_log_without_change_keeps_version(decisions: Path) -> None:
+    path = write_ask(decisions, ASK_WAITING, 1_800_000_000)
+    state = BoardState(Scanner(roots=(str(decisions),)), poll_seconds=60)
+    first = state.version
+    os.utime(path, (1_800_000_100, 1_800_000_100))
+    assert state.refresh() is False, "same question content must keep the ETag"
+    assert state.version == first

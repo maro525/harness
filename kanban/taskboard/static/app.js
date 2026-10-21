@@ -26,6 +26,13 @@ const PAGE_SIZE = 40;
 const POLL_MS = 3000;
 /** Consecutive SSE failures tolerated before switching to polling. */
 const SSE_FAIL_LIMIT = 3;
+/** How often elapsed / remaining times on waiting questions are redrawn. */
+const CLOCK_MS = 30000;
+/**
+ * Only Linear comment URLs become links. The ask logs are untrusted data, and
+ * escaping alone would still let a `javascript:` URL through as an href.
+ */
+const LINEAR_URL = /^https:\/\/linear\.app\//;
 
 const el = {
   board: document.getElementById("board"),
@@ -34,6 +41,7 @@ const el = {
   project: document.getElementById("project"),
   tier: document.getElementById("tier"),
   staleOnly: document.getElementById("staleOnly"),
+  askOnly: document.getElementById("askOnly"),
   status: document.getElementById("status"),
 };
 
@@ -77,7 +85,8 @@ async function refresh() {
 function liveLabel() {
   if (!data) return "…";
   const stale = data.staleCount ? ` · ${data.staleCount} stale` : "";
-  return `${data.cards.length} tasks · ${data.scanMs} ms${stale}`;
+  const waiting = data.waitingCount ? ` · ${data.waitingCount} waiting` : "";
+  return `${data.cards.length} tasks · ${data.scanMs} ms${stale}${waiting}`;
 }
 
 /* -- filtering -------------------------------------------------------- */
@@ -88,6 +97,7 @@ function currentFilters() {
     project: el.project.value,
     tier: el.tier.value,
     staleOnly: el.staleOnly.checked,
+    askOnly: el.askOnly.checked,
   };
 }
 
@@ -95,19 +105,97 @@ function matches(card, f) {
   if (f.project && card.project !== f.project) return false;
   if (f.tier && card.tier !== f.tier) return false;
   if (f.staleOnly && !card.staleStatus) return false;
+  if (f.askOnly && !card.question) return false;
   if (!f.q) return true;
-  const hay = `${card.id} ${card.title} ${card.branch || ""} ${card.project} ${card.statusRaw || ""}`;
+  const summary = (card.question && card.question.summary) || "";
+  const hay = `${card.id} ${card.title} ${card.branch || ""} ${card.project} ${card.statusRaw || ""} ${summary}`;
   return hay.toLowerCase().includes(f.q);
+}
+
+/* -- waiting questions ------------------------------------------------ */
+
+/** Milliseconds since the epoch, or NaN for a missing / unparsable time. */
+const timeOf = (iso) => (iso ? Date.parse(iso) : NaN);
+
+function formatSpan(ms) {
+  const minutes = Math.max(0, Math.floor(ms / 60000));
+  if (minutes < 1) return "<1m";
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 48) return `${hours}h ${minutes % 60}m`;
+  return `${Math.floor(hours / 24)}d ${hours % 24}h`;
+}
+
+function elapsedText(postedAt, now) {
+  const t = timeOf(postedAt);
+  return Number.isNaN(t) ? "posted ?" : `asked ${formatSpan(now - t)} ago`;
+}
+
+function deadlineText(deadline, now) {
+  const t = timeOf(deadline);
+  if (Number.isNaN(t)) return "no deadline";
+  return t > now ? `${formatSpan(t - now)} left` : `overdue ${formatSpan(now - t)}`;
+}
+
+/** A question still marked waiting after its deadline: shown, never hidden. */
+function isOverdue(question, now) {
+  const t = timeOf(question && question.deadline);
+  return !Number.isNaN(t) && t <= now;
+}
+
+function questionHtml(q, now) {
+  const link = q.commentUrl && LINEAR_URL.test(q.commentUrl)
+    ? `<a href="${escapeHtml(q.commentUrl)}" target="_blank" rel="noreferrer">Linear</a>`
+    : "";
+  const tip = [
+    `phase: ${q.phase}${q.round > 1 ? ` (round ${q.round})` : ""}`,
+    q.postedAt ? `posted: ${q.postedAt}` : null,
+    q.deadline ? `deadline: ${q.deadline}` : null,
+    q.path,
+  ]
+    .filter(Boolean)
+    .join("\n");
+  return (
+    `<div class="q" title="${escapeHtml(tip)}">` +
+    `<div class="qs">${escapeHtml(q.summary || "(question text not found)")}</div>` +
+    `<div class="qm">` +
+    `<span data-since="${escapeHtml(q.postedAt || "")}">${escapeHtml(elapsedText(q.postedAt, now))}</span>` +
+    `<span data-deadline="${escapeHtml(q.deadline || "")}">${escapeHtml(deadlineText(q.deadline, now))}</span>` +
+    link +
+    `</div>` +
+    `</div>`
+  );
+}
+
+/** Redraw elapsed / remaining times in place; no refetch, no re-render. */
+function tickClocks() {
+  if (document.hidden) return;
+  const now = Date.now();
+  for (const node of el.board.querySelectorAll("[data-since]")) {
+    node.textContent = elapsedText(node.dataset.since, now);
+  }
+  for (const node of el.board.querySelectorAll("[data-deadline]")) {
+    node.textContent = deadlineText(node.dataset.deadline, now);
+    const card = node.closest(".card");
+    const t = timeOf(node.dataset.deadline);
+    if (card) card.classList.toggle("overdue", !Number.isNaN(t) && t <= now);
+  }
 }
 
 /* -- rendering -------------------------------------------------------- */
 
 function cardHtml(card) {
+  const now = Date.now();
+  const q = card.question;
   const classes = ["card"];
+  if (q) classes.push("asking");
+  if (q && isOverdue(q, now)) classes.push("overdue");
   if (card.staleStatus) classes.push("stale");
   if (card.parseError) classes.push("err");
 
-  const tags = [`<span class="tag id">${escapeHtml(card.id)}</span>`];
+  const tags = [];
+  if (q) tags.push(`<span class="tag ask">waiting</span>`);
+  tags.push(`<span class="tag id">${escapeHtml(card.id)}</span>`);
   if (card.tier) tags.push(`<span class="tag tier">${escapeHtml(card.tier)}</span>`);
   tags.push(`<span class="tag">${escapeHtml(card.project)}</span>`);
   if (card.staleStatus) {
@@ -139,6 +227,7 @@ function cardHtml(card) {
     `<div class="${classes.join(" ")}" title="${escapeHtml(tip)}">` +
     `<div class="t">${escapeHtml(card.title)}</div>` +
     `<div class="m">${tags.join("")}</div>` +
+    (q ? questionHtml(q, now) : "") +
     `</div>`
   );
 }
@@ -156,6 +245,11 @@ function render() {
     if (!matches(card, f)) continue;
     (buckets[card.phase] || (buckets[card.phase] = [])).push(card);
     total++;
+  }
+  // Waiting questions first within each column; the sort is stable, so the
+  // server's most-recently-modified order holds inside each group.
+  for (const name of Object.keys(buckets)) {
+    buckets[name].sort((a, b) => Number(!!b.question) - Number(!!a.question));
   }
 
   const html = [];
@@ -234,7 +328,7 @@ function connect() {
 /* -- wiring ----------------------------------------------------------- */
 
 let debounce;
-for (const node of [el.q, el.project, el.tier, el.staleOnly]) {
+for (const node of [el.q, el.project, el.tier, el.staleOnly, el.askOnly]) {
   node.addEventListener("input", () => {
     clearTimeout(debounce);
     debounce = setTimeout(() => {
@@ -251,5 +345,8 @@ el.board.addEventListener("click", (event) => {
   shown[name] = (shown[name] || PAGE_SIZE) + PAGE_SIZE;
   render();
 });
+
+setInterval(tickClocks, CLOCK_MS);
+document.addEventListener("visibilitychange", tickClocks);
 
 refresh().then(connect);
