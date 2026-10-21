@@ -12,7 +12,7 @@ harness/
 │   ├── commands/            # orchestrate / startproject / team-implement / team-review / deploy
 │   ├── rules/               # adaptive-execution.md (tier 分類) / tool-routing.md (委譲先)
 │   ├── hooks/agent-router.py  # UserPromptSubmit hook。意図を検出して /orchestrate へ誘導
-│   └── scripts/linear-ask.sh  # orchestrate の質問を Linear に投稿し、返信を待つ
+│   └── scripts/linear-ask.sh  # OpenCode 版 orchestrate の質問の中継用（Linear API キーが要る）
 ├── opencode/                # OpenCode 版 (~/.config/opencode)
 │   ├── README.md            # OpenCode 版と Claude 版の違い
 │   ├── commands/
@@ -48,9 +48,12 @@ kanban は `uv tool install --editable ~/src/harness/kanban`（詳細は `kanban
 
 ## Linear への質問の中継
 
-orchestrate 中の質問（startproject のヒアリング・Gate 1、Gate 2 など）を Linear の issue コメントに投稿し、返信かターミナル入力の先着で回答を受ける（`claude/commands/orchestrate.md`「質問の中継（Linear）」）。投稿と待機は `~/.claude/scripts/linear-ask.sh`（`sync-claude.sh` が実行ビット付きで配布）。`--post-only` で投稿して URL を示してから、同じ `--comment-id` で返信を待つ（`--help` で使い方）。
+orchestrate 中の質問（startproject のヒアリング・Gate 1、Gate 2 など）を Linear の issue コメントに投稿し、スレッド返信かターミナル入力の先着で回答を受ける。Linear ID が `NOLINEAR` なら従来どおりターミナルで聞く。
 
-Linear の個人 API キー（Settings > Security & access > Personal API keys）を次のファイルに置く:
+- **Claude Code 版**（`claude/commands/orchestrate.md`「質問の中継（Linear）」）: **API キー不要。** Linear MCP の `save_comment` で目印 `[claude-q:{MARK}]` 付きで投稿し、background Bash の `sleep` タイマーの完了通知で起きて `list_comments` でスレッド返信を確かめる（無ければタイマーを再起動、最大 4 時間 + 再アーム 1 回）。待機状態は `.claude/logs/ask-*.md` に残るので、会話が圧縮されても再開できる
+- **OpenCode 版**（`opencode/commands/orchestrate.md`）: `~/.claude/scripts/linear-ask.sh`（`sync-claude.sh` が実行ビット付きで配布）で投稿・待機する。Linear の個人 API キー（Settings > Security & access > Personal API keys）が要る
+
+OpenCode 版のキーの置き方:
 
 ```bash
 mkdir -p ~/.config/harness
@@ -60,6 +63,6 @@ chmod 600 ~/.config/harness/linear.env   # 既存ファイルを上書きした�
 ```
 
 - 環境変数 `LINEAR_API_KEY` があればそちらを優先する。ファイルは `source` せず、所有者が自分でない・group / other に権限があるファイルは拒否する
-- `~/.claude/settings.json` には置かない（dotfiles で公開管理しているため）。`~/.bashrc.local` も Claude Code の非対話 Bash には読まれない
-- キーが無い・無効、または Linear ID が `NOLINEAR` なら従来どおりターミナル（`AskUserQuestion`）で聞く
+- `~/.claude/settings.json` には置かない（dotfiles で公開管理しているため）
+- キーが無い・無効なら OpenCode 版はターミナル（`question` tool）で聞く
 - exit code: 0 回答 / 2 タイムアウト / 3 キー不備 / 4 API 失敗 / 64 引数誤り / 130・143 シグナル。`--help` で使い方

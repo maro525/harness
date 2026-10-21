@@ -444,7 +444,7 @@ timeout 30 opencode session list -n 1 --format json < /dev/null
 
 ### 質問の中継（Linear）
 
-Claude Code 版（`~/.claude/commands/orchestrate.md` の同名節）と同じプロトコルで、スクリプトも同じ `~/.claude/scripts/linear-ask.sh`（harness の `sync-claude.sh` で配布）を使う。違いは**待機がフォアグラウンドでターミナル先着が無い**こと（OpenCode には完了通知もタスク停止も無いため）。
+投稿と待機は `~/.claude/scripts/linear-ask.sh`（harness の `sync-claude.sh` で配布。Linear の個人 API キーが要る）で行う。Claude Code 版（`~/.claude/commands/orchestrate.md` の同名節）は API キーを使わず Linear MCP と background の `sleep` タイマーで中継するが、OpenCode には完了通知もタスク停止も無いので、この版はスクリプトで**フォアグラウンド**で待ち、ターミナル先着は無い。目印 `[claude-q:…]`・返信の判定（目印を含まない最古の返信）・ログの形式は両版で共通。
 
 | 質問箇所 | phase 名 |
 |---|---|
@@ -458,7 +458,7 @@ STEP 1 の Linear ID の質問は対象外（ターミナルのまま）。
 
 **手順（`linear`）:**
 
-1. `ASK_LOG=.claude/logs/ask-{LINEAR_ID}-{phase}-{YYYYMMDD-HHMM}.md` に質問（startproject なら `### QUESTIONS` を `#### STATE` ごと）を書き、`{ASK_LOG}.body.md` に投稿本文を Claude Code 版のテンプレートで書く（返信で答えてもらう旨は残し、「ターミナルで答えても構いません」は書かない）
+1. `ASK_LOG=.claude/logs/ask-{LINEAR_ID}-{phase}-{YYYYMMDD-HHMM}.md` に質問（startproject なら `### QUESTIONS` を `#### STATE` ごと）を書き、`{ASK_LOG}.body.md` に投稿本文を Claude Code 版のテンプレートで書く（返信で答えてもらう旨は残し、先頭の `@{MENTION}` 行（API 経由の投稿で通知されるかは未検証）・「ターミナルで答えても構いません」・末尾の `[claude-q:{MARK}]` 行は書かない。目印はスクリプトが付ける）
 2. `COMMENT_ID` を `uuidgen`（無ければ `/proc/sys/kernel/random/uuid`）で決め、まず投稿だけ行う: `~/.claude/scripts/linear-ask.sh --issue {LINEAR_ID} --body-file {ASK_LOG}.body.md --comment-id {COMMENT_ID} --post-only < /dev/null`。exit 0 なら stdout の `comment_url:` と質問の要旨をユーザーに示す
 3. 同じ `--comment-id` で `--post-only` を外し `--timeout 540` を付けて**フォアグラウンド**で待つ（bash tool の timeout に収まる長さ。bash tool の上限は実機未検証）。exit 2 なら同じコマンドを再実行する（投稿し直さずに待ち直す。合計 4 時間まで。超えたら `question` tool）。手順 2・3 で exit 3 / 4 なら理由を報告して `question` tool に切り替える
 4. exit 0 なら stdout の `---` より下が回答。`ASK_LOG` に回答・`comment_url`・`reply_url`・返信者（`reply_author`）を追記して続行する（startproject は `--answers-file={ASK_LOG}` で再起動。Gate 1 の承認は再起動しない）
