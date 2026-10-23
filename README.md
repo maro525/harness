@@ -49,11 +49,14 @@ kanban は `uv tool install --editable ~/src/harness/kanban`（詳細は `kanban
 
 ## dotfiles との契約
 
-`~/.claude` と `~/.config/opencode` は [maro525/_dotfiles](https://github.com/maro525/_dotfiles) と共有している。ファイルの所有者は名前で分けているが、**中身の参照関係**は名前でしか結ばれていないため、以下を契約として `checks/crossrefs.sh` で機械検査する（CI は無いので `sync-opencode.sh` の末尾から呼ぶ。失敗しても同期は成功扱い）。
+`~/.claude` と `~/.config/opencode` は [maro525/_dotfiles](https://github.com/maro525/_dotfiles) と共有している。**参照方向は harness → dotfiles の一方向**で、dotfiles は本リポジトリの存在を知らない（dotfiles 単体で完結し、harness は後から任意で足せるレイヤー）。したがって相互参照の検査はすべてこのリポジトリ側に置き、dotfiles の sync スクリプトからは呼ばない。dotfiles が見つからない場合、`checks/crossrefs.sh` は検査せずに成功終了する。
+
+`checks/crossrefs.sh` が検査する内容（CI は無いので `sync-opencode.sh` の末尾から呼ぶ。失敗しても同期は成功扱い）:
 
 1. `opencode/{commands,agents}/*.md` が `` `AGENTS.md` の「X」 `` の形で参照する節 X は、dotfiles の `opencode/AGENTS.md` に `## X` として実在すること（現在: `GIT RULES` / `ADAPTIVE EXECUTION` / `OpenCode 仕様メモ`）
-2. dotfiles の `opencode/AGENTS.md` が `` `agents/x.md` `` / `` `commands/x.md` `` の形で参照するファイルは、`opencode/` 配下に実在すること
-3. dotfiles の `opencode/AGENTS.md` が本リポジトリの `claude/rules/*.md` を要約している節には `正:` の注記があること（正はこちら側。dotfiles は OpenCode 向けの要約）
+2. `` `AGENTS.md` の「X」の「Y」 `` の形で参照する下位項目 Y は、dotfiles の X 節の中に実在すること（バッククォート・強調は無視して比較）
+3. X 節に、本リポジトリの手順が前提にしている語（`ADAPTIVE EXECUTION` → エスカレーション、`GIT RULES` → 保護ブランチ）があること
+4. dotfiles の `opencode/AGENTS.md` が `` `agents/x.md` `` / `` `commands/x.md` `` の形で参照するファイルは、`opencode/` 配下に実在すること
 
 ```bash
 ./checks/crossrefs.sh              # dotfiles を $DOTFILES / ~/src/_dotfiles / ../_dotfiles から探す
