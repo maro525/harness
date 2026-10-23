@@ -48,7 +48,7 @@ Phases and models per tier (how each phase is launched: `orchestrate.md` "tier å
 | **M** | best | opus | opus | haiku |
 | **L** | best | best | opus | haiku |
 
-Both tables below use the same invocation: `timeout -k 1m 20m opencode run --agent plan -m github-copilot/gpt-5.6-sol` (details in `$HOME/.claude/rules/tool-routing.md`). Inside `/startproject` (no Agent tool) and `context: fork` commands, run it directly; elsewhere via a subagent.
+Both tables below use the same invocation: `timeout -k 1m 20m opencode run --agent plan -m github-copilot/gpt-6-astra` (details in `$HOME/.claude/rules/tool-routing.md`). Inside `/startproject` (no Agent tool) and `context: fork` commands, run it directly; elsewhere via a subagent.
 
 ### External Research (firecrawl MCP + OpenCode)
 

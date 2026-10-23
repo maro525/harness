@@ -20,6 +20,7 @@ harness/
 ├── agents/                  # Claude 以外の CLI (pi / cline / opencode / codex) 向け Agent Skills (~/.agents/skills)
 │   ├── README.md            # 外部 CLI のフェーズ実行（orchestrate STEP 3P が直接読む）
 │   └── skills/
+├── checks/crossrefs.sh      # dotfiles との相互参照チェック（下記「dotfiles との契約」）
 ├── kanban/                  # TASK_FILE を読む読み取り専用の kanban ボード (taskboard)
 ├── lib/sync-common.sh
 ├── sync-claude.sh
@@ -45,6 +46,19 @@ hook の登録（`settings.json` の `hooks.UserPromptSubmit`）と `Skill(orche
 `agents/README.md` は HOME に配布しない。orchestrate のフェーズ指定モードは `$HARNESS`（未設定なら `~/src/harness`）から直接読む。別の場所に clone したら `HARNESS` を設定する。
 
 kanban は `uv tool install --editable ~/src/harness/kanban`（詳細は `kanban/README.md`）。
+
+## dotfiles との契約
+
+`~/.claude` と `~/.config/opencode` は [maro525/_dotfiles](https://github.com/maro525/_dotfiles) と共有している。ファイルの所有者は名前で分けているが、**中身の参照関係**は名前でしか結ばれていないため、以下を契約として `checks/crossrefs.sh` で機械検査する（CI は無いので `sync-opencode.sh` の末尾から呼ぶ。失敗しても同期は成功扱い）。
+
+1. `opencode/{commands,agents}/*.md` が `` `AGENTS.md` の「X」 `` の形で参照する節 X は、dotfiles の `opencode/AGENTS.md` に `## X` として実在すること（現在: `GIT RULES` / `ADAPTIVE EXECUTION` / `OpenCode 仕様メモ`）
+2. dotfiles の `opencode/AGENTS.md` が `` `agents/x.md` `` / `` `commands/x.md` `` の形で参照するファイルは、`opencode/` 配下に実在すること
+3. dotfiles の `opencode/AGENTS.md` が本リポジトリの `claude/rules/*.md` を要約している節には `正:` の注記があること（正はこちら側。dotfiles は OpenCode 向けの要約）
+
+```bash
+./checks/crossrefs.sh              # dotfiles を $DOTFILES / ~/src/_dotfiles / ../_dotfiles から探す
+./checks/crossrefs.sh ~/src/_dotfiles
+```
 
 ## Linear への質問の中継
 
