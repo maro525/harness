@@ -1,5 +1,6 @@
 #!/bin/bash
-# Shared sync helpers for sync-claude.sh / sync-opencode.sh / sync-agents.sh.
+# Shared sync helpers for sync-pi.sh / sync-claude.sh / sync-opencode.sh / sync-cline.sh.
+# A copy lives in maro525/harness (its sync scripts); port fixes to both.
 #
 # Provides:
 #   - Interactive diff + a/p/h/H/s/d/q prompt for syncing HOME <-> repo
@@ -26,6 +27,25 @@ SYNC_COMMON_SOURCED=1
 INTERACTIVE=1
 PROMPT_ACTION=""
 DIFF_RESULT=0
+
+# Skills installed from the Cloudflare plugin bundle — vendor content, not
+# personal config, so they stay out of the repo (cloudflare/ alone is 300+
+# files of reference docs). The same bundle lands in ~/.claude/skills,
+# ~/.config/opencode/skills and ~/.cline/skills, so all three sync scripts
+# exclude this one list.
+SYNC_COMMON_CLOUDFLARE_SKILLS=(
+  agents-sdk
+  cloudflare
+  cloudflare-email-service
+  cloudflare-one
+  cloudflare-one-migrations
+  durable-objects
+  sandbox-sdk
+  turnstile-spin
+  web-perf
+  workers-best-practices
+  wrangler
+)
 
 # Print usage and exit. Args: script_name, description.
 sync_common::usage() {

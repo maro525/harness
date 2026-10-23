@@ -34,5 +34,13 @@ for rel in "${HARNESS_FILES[@]}"; do
   sync_common::sync_file "$SOURCE/$rel" "$DEST/$rel" "$rel" || true
 done
 
+# Cross-repo 参照チェック（checks/crossrefs.sh の「契約」を参照）。
+# dotfiles の opencode/AGENTS.md の節名や harness のファイル名を変えたときに、
+# 相手側の参照が壊れていないかを確認する。失敗しても同期は成功扱い（警告のみ）。
+if [[ -f "$SCRIPT_DIR/checks/crossrefs.sh" ]]; then
+  bash "$SCRIPT_DIR/checks/crossrefs.sh" ||
+    echo "Warning: cross-repo 参照チェックに失敗（上記 NG を確認）" >&2
+fi
+
 echo ""
 echo "Done."
