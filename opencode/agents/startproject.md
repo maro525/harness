@@ -1,7 +1,7 @@
 ---
 description: Project kickoff subagent — understand codebase, research/design, create plan. Writes Brief / Design / Plan under the startproject section of TASK_FILE.
 mode: subagent
-model: github-copilot/gpt-5.6-sol
+model: github-copilot/gpt-6-astra
 variant: xhigh
 permission:
   edit: allow

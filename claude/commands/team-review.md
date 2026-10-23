@@ -72,7 +72,7 @@ S は orchestrate から Agent ツール経由（sonnet）で起動されるた�
 変更内容が長いのでプロンプトはファイルに落として渡す。呼び出し方・待ち方・失敗時の扱いは `$HOME/.claude/rules/tool-routing.md` の「OpenCode リサーチの実行」に従う。呼べなければこのレビュアーは飛ばし、結果に「OpenCode 不可: {理由}」と書く。
 
 ```bash
-timeout -k 1m 20m opencode run --agent plan -m github-copilot/gpt-5.6-sol "$(cat {prompt_file})" < /dev/null
+timeout -k 1m 20m opencode run --agent plan -m github-copilot/gpt-6-astra "$(cat {prompt_file})" < /dev/null
 ```
 
 プロンプトの中身:

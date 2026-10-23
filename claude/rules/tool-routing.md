@@ -20,7 +20,7 @@
 | PDF (URL) / 複数ページ | **firecrawl MCP** | `firecrawl_parse` / `firecrawl_scrape` |
 | 音声・動画 | **未対応** | 委託先なし。ユーザーに扱い方を確認する |
 | Library research | **firecrawl MCP + OpenCode** | `firecrawl_search` で一次情報 + OpenCode で実装知見 |
-| Design decisions | **OpenCode** | Subagent（`timeout -k 1m 20m opencode run --agent plan -m github-copilot/gpt-5.6-sol`） |
+| Design decisions | **OpenCode** | Subagent（`timeout -k 1m 20m opencode run --agent plan -m github-copilot/gpt-6-astra`） |
 | git（書き込み系） | **`/deploy` skill** | Ad-hoc Git モード。読み取り系は Claude が直接 |
 | `/orchestrate` で作った PR への追加変更 | **`/orchestrate` 追加修正モード** | `/orchestrate "{追加の依頼} --task-file={TASK_FILE}"`。直接編集して Ad-hoc push しない（下記「Git Operations」） |
 | docker/ruff/uv (in `context: fork` skills) | **Direct** | スキル内で直接実行 |
@@ -44,7 +44,7 @@
 **これが唯一動く呼び出し形。他のファイルはこの節を参照する。**
 
 ```bash
-timeout -k 1m 20m opencode run --agent plan -m github-copilot/gpt-5.6-sol "{research question}" < /dev/null
+timeout -k 1m 20m opencode run --agent plan -m github-copilot/gpt-6-astra "{research question}" < /dev/null
 ```
 
 | 要素 | 外すと壊れる理由 |
@@ -52,7 +52,7 @@ timeout -k 1m 20m opencode run --agent plan -m github-copilot/gpt-5.6-sol "{rese
 | `--agent plan` **必須** | 既定の `build` は非対話実行だとパーミッション確認で**無言ハング**する。stderr にも何も出ない |
 | `< /dev/null` **必須** | stdin が**開いたパイプ**だと永久にハングする。`run_in_background: true` がまさにその状態（フォアグラウンドには自動で付くがバックグラウンドには付かない）。**バックグラウンド実行と必ずセット** |
 | `2>/dev/null` を**付けない** | エラーを stderr に出しつつ **exit code 0** で終わる。潰すと「成功したのに出力が空」に見える |
-| モデルは `github-copilot/gpt-5.6-sol` | `openai/gpt-5.6-sol` は残高切れ（`insufficient_quota`）で**必ず失敗する**。課金が復活したら第一候補に戻す |
+| モデルは `github-copilot/gpt-6-astra` | `openai/gpt-5.6-sol` は残高切れ（`insufficient_quota`）で**必ず失敗した**（課金が復活したら `openai/` を第一候補に戻す） |
 | **バックグラウンド実行必須** | 込み入った質問は 10 分超。Bash ツールの既定 10 分で kill されると出力ゼロになり、ハングと見分けがつかない |
 | `timeout -k 1m 20m` **必須** | 失敗後にプロセスが終わらないことがある（429 の後に MCP の認証待ちで止まり、完了通知が来ないまま待ち続けた）。`-k 1m` は SIGTERM で終わらないとき 1 分後に SIGKILL する。exit code 124（SIGTERM）/ 137（SIGKILL）はどちらも「OpenCode 不可: タイムアウト」として扱う |
 | cwd は **git リポジトリ** | 非 git ディレクトリ（`/tmp` 等）だと起動時の `service=vcs` 初期化で無言ハングする |
@@ -95,7 +95,7 @@ Return CONCISE summary.
 
 # 系統 2: 実装知見
 Run OpenCode research on: {topic}
-timeout -k 1m 20m opencode run --agent plan -m github-copilot/gpt-5.6-sol "{research question}" < /dev/null
+timeout -k 1m 20m opencode run --agent plan -m github-copilot/gpt-6-astra "{research question}" < /dev/null
 Keep `--agent plan` and `< /dev/null`, do NOT append 2>/dev/null — see
 "OpenCode リサーチの実行" in $HOME/.claude/rules/tool-routing.md. Expect over 10 minutes.
 Save full output to: .claude/docs/research/{topic}-opencode.md
