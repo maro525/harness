@@ -13,7 +13,7 @@ agents/
     ├── startproject/SKILL.md    # 計画: Brief / Design / Plan（--label ありなら ### 案 {k} + 利用AI 行）
     ├── team-implement/SKILL.md  # 実装: feature ブランチ + TDD、### {m}回目 + 利用AI 行、Meta の branch/base
     ├── team-review/SKILL.md     # レビュー: 観点別（Quality/Logic → Security → Simplify）、判定 PASS/FAIL
-    └── deploy/SKILL.md          # commit → push → PR/MR（gh / glab）、#### PR / MR + 利用AI 行。作業ブランチに留まる（TASK_FILE のコミットと分岐元への復帰は呼び出し元）
+    └── deploy/SKILL.md          # commit → push → PR/MR（gh / glab）、#### PR / MR + 利用AI 行 + 紐づけ行。作業ブランチに留まる（TASK_FILE のコミットと分岐元への復帰は呼び出し元）
 ```
 
 配布先は `~/.agents/skills/{name}/`（`./sync-agents.sh`）。Cline だけは `~/.cline/skills/{name}` → `~/.agents/skills/{name}` の symlink で読ませる。
@@ -161,6 +161,7 @@ timeout -k 1m 30m {上表のコマンド} "$(cat {prompt_file})" < /dev/null > {
 | 外部リサーチ・設計相談 | firecrawl + `opencode run` | 使えるツールがあれば。無ければ「不可: {理由}」 |
 | deploy の Ad-hoc Git モード | あり | なし（Deploy Workflow のみ） |
 | 分岐元への復帰 / TASK_FILE のコミット | deploy は作業ブランチに留まり、`/deploy --finalize`（STEP 6c / 3P P7）が TASK_FILE だけを `docs(task):` でコミット・push して分岐元へ戻る | 作業ブランチに留まり TASK_FILE は未コミット。コミット・push・復帰は呼び出し元（orchestrate 経由なら P7、手動なら自分） |
+| PR / MR と issue の紐づけ | deploy がタイトルの `({LINEAR_ID})`・本文の `## 関連`（`Part of {LINEAR_ID}`・Meta の `issue:` の行）を書き、`紐づけ:` を返す。Linear への `links` 添付は orchestrate STEP 6b | 同じ規則で書き、RESULT に `linked:` を返す。`links` 添付はしない（フェーズ指定モードでは orchestrate が STEP 3P P6 で行う）。team-implement のブランチ名も同じ `feature/{linear_id を小文字}-{短い名前}`。`--issue` は orchestrate が Meta に書く（P1） |
 | 共通ルールの参照 | `$HOME/.claude/rules/*.md` | 各 SKILL.md に内包 |
 
 一般向け定義から Claude 版を生成することはしない（構造が違う）。Claude 版を変えたら、この表を見て対応する SKILL.md を手で追随させる。

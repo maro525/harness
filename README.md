@@ -60,6 +60,31 @@ kanban は `uv tool install --editable ~/src/harness/kanban`（詳細は `kanban
 ./checks/crossrefs.sh ~/src/_dotfiles
 ```
 
+## PR / MR と issue の紐づけ
+
+deploy は PR / MR を作る・追記するときに、Linear issue と GitHub / GitLab issue を機械的に紐づける（定義は `claude/commands/deploy.md`「紐づけの規則」。OpenCode 版・`agents/skills/deploy` も同じ）。
+
+| 対象 | 紐づけ方 |
+|---|---|
+| Linear | タイトル末尾の ` ({LINEAR_ID})`、本文末尾 `## 関連` の `Part of {LINEAR_ID}`、ブランチ名 `feature/{linear_id を小文字}-{短い名前}`（team-implement が付ける）。連携で PR が添付されていなければ `save_issue` の `links` で代わりに添付する（新規作成時のみ。Claude 版は orchestrate STEP 6b、OpenCode 版は deploy agent） |
+| GitHub / GitLab issue | `/orchestrate "… --issue=closes:#12,#34"` で渡す。`## Meta` に `- issue: closes #12, refs #34` が残り、本文の `## 関連` に `Closes #12` / `Related to #34` が入る。接頭辞なしは `refs`（参照だけ）。閉じるのは `closes:` を明示したときだけ。`#N` の自動検出はしない |
+
+```text
+--issue={ref}[,{ref}...]    {ref} = [closes:|refs:]{#N | owner/repo#N | URL}
+```
+
+- 追加修正モードで `--issue` を渡すと、Meta に追記され、既存 PR / MR の本文に無い行だけが `### 関連（追加依頼 {n}）` として足される。旧形式（「関連 Linear タスク: {ID}」だけ）の PR には `Part of {LINEAR_ID}` が補われる（タイトルは変えない）
+- 禁則: Linear ID は大文字、参照は 1 行に 1 つ、コードフェンスの中に書かない、行頭を `/` にしない（GitLab の quick action になる）
+- deploy の返却（`## deploy`）に `紐づけ:` 行が入る。base がデフォルトブランチでない（`Closes` が自動で閉じない）・ブランチ名に ID が無い・`links` で代わりに添付した、は申し送りに書かれる
+
+### Linear 連携の前提と状態遷移（仕様メモ）
+
+- 現在、Linear の GitHub 連携は有効にしていない（NSKETCH-1983 Gate 1）。issue から PR に辿る経路は `links` による添付で、マージしても Linear の状態は自動では変わらない
+- Linear の magic word: closing（`Closes` / `Fixes` / `Resolves` / `Completes` / `Implements` 系）はマージ時に team の「On PR merge」の状態へ移す。non-closing（`Part of` / `Ref` / `Refs` など。GitLab では `Refs` が無く `Updates` がある）は状態を変えない。本文はあとから編集しても紐づく
+- `Part of` を使うのは、GitHub / GitLab の両方で non-closing として読まれ、マージで自動 Done にしないため（Gate 1 Q1）
+- 連携を有効にする場合は、PR を開いたとき・マージしたときの状態遷移（team の Settings > Workflow の Git automations）を先に決める。タイトル・ブランチ名の ID だけで紐づいた PR がマージ時に closing として扱われるかは未確認なので、有効化したら確かめ、自動 Done にしたくなければ「On PR merge」の自動化を外す。連携が自動で添付した PR が `get_issue` の `attachments` に載るか（`links` との二重添付）も確かめる
+- GitHub の `Closes #N` は base がデフォルトブランチの PR でだけ効く。GitLab はデフォルトブランチへマージされたときに閉じ、`Related to #N` は関連 issue になる
+
 ## Linear への質問の中継
 
 orchestrate 中の質問（startproject のヒアリング・Gate 1、Gate 2 など）を Linear の issue コメントに投稿し、スレッド返信かターミナル入力の先着で回答を受ける。Linear ID が `NOLINEAR` なら従来どおりターミナルで聞く。

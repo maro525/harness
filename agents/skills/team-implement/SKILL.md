@@ -58,7 +58,9 @@ $ARGUMENTS: "{task description} --task-file={TASK_FILE} [--tier=S|M|L] [--linear
 | `## Meta` の `branch:` | 動作 |
 |---|---|
 | あり（差し戻し・追加修正） | そのブランチに切り替えて使う。`base:` は既存の値を残す |
-| なし | 現在のブランチを base として `git checkout -b feature/{短い名前}` で作成する |
+| なし | 現在のブランチを base として `git checkout -b feature/{LINEAR_ID を小文字}-{短い名前}` で作成する（LINEAR_ID が無い／`NOLINEAR` なら `feature/{短い名前}`） |
+
+- ブランチ名: 短い名前は英小文字とハイフン（例: `feature/nsketch-1983-deploy-issue-linking`）。Linear はブランチ名の ID でも PR を issue に紐づける。既存の `branch:` は名前が規則と違っても変えない
 
 - **main / master / release / staging 上では作業しない。** そこにいたら必ず feature ブランチを切る
 - 切り替え前後で作業ツリーにスコープ外の未コミット変更があっても触らない（stash・破棄・巻き込みをしない）

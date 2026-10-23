@@ -13,8 +13,24 @@ agent: build
 $ARGUMENTS の形式: "{task description}"
 例: "PROJ-573をやりたいです"
 例: "カート機能にクーポン適用を追加する"
+例（issue の紐づけ）: "PROJ-573をやりたいです --issue=closes:#12,#34"
 例（追加修正モード）: "レビュー指摘の型エラーを直す --task-file=.claude/docs/decisions/task-PROJ-573-coupon.md"
 ```
+
+### `--issue`（GitHub / GitLab issue の紐づけ）
+
+```
+--issue={ref}[,{ref}...]
+{ref} = [closes:|refs:]{#N | owner/repo#N | URL}
+```
+
+- 接頭辞なしは `refs`（参照だけ。PR / MR 本文は `Related to {ref}`）。閉じるのは `closes:` を明示したときだけ（本文は `Closes {ref}`）。`#N` を本文やタスク説明から自動で拾うことはしない（誤ってクローズするため）
+- URL は GitHub の `https://github.com/{owner}/{repo}/issues/{N}`、GitLab の `https://{host}/{group}/{project}/-/issues/{N}` を受け付け、そのまま使う（`#N` に変換しない）
+- **正規化:** 各要素を `closes {ref}` / `refs {ref}` にして `, ` でつなぐ（例: `--issue=closes:#12,#34` → `closes #12, refs #34`）。これが `ISSUE_REFS` で、`## Meta` の `- issue:` 行に書く。同じ `{ref}` が重複したら 1 つにまとめ、`closes` と `refs` が両方あれば `closes` を残す
+- **検証:** 上の形に当てはまらない要素が 1 つでもあれば、TASK_FILE を作る前（追加修正モードでは Meta に書く前）に中止し、正しい書き方を示して案内する（推測で直さない）
+- `--issue=…` は task description から取り除いてから各フェーズに渡す。フェーズには引数で渡さず、`## Meta` の `issue:` で受け渡す（deploy が読む）
+- `--issue` が無ければ `ISSUE_REFS` は空で、GitHub / GitLab issue は紐づけない（`issue:` の行が無い旧 TASK_FILE も同じ扱い）
+- Linear issue は `--issue` と関係なく `LINEAR_ID` で紐づく（タイトル末尾の `({LINEAR_ID})`・本文の `Part of {LINEAR_ID}`・ブランチ名。`agents/deploy.md`「紐づけの規則」）
 
 ## 実行原則
 
@@ -25,7 +41,7 @@ $ARGUMENTS の形式: "{task description}"
 - **[MUST]** の付いたステップは、どの tier でもスキップしない
 - Linear への投稿・ステータス変更・description 更新に失敗したら、黙って飛ばさずユーザーに報告する
 - orchestrate はメインのセッション（primary agent）で動き、各フェーズは `@agent` / `task` で subagent として起動する。subagent の起動は同期なので、**返却を受け取るまで次の STEP に進まない**
-- 各フェーズ agent は TASK_FILE の自分の節（`## startproject` / `## team-implement` / `## team-review` / `## deploy`）と Linear コメントを自分で書く。orchestrator が TASK_FILE に書くのは `## Meta`（`tier:` / `status:`）と `#### 追加依頼 {n}`（STEP 3F）だけ（description 更新は TASK_FILE を読んで Linear にだけ書く）
+- 各フェーズ agent は TASK_FILE の自分の節（`## startproject` / `## team-implement` / `## team-review` / `## deploy`）と Linear コメントを自分で書く。orchestrator が TASK_FILE に書くのは `## Meta`（`tier:` / `status:` / `issue:`）と `#### 追加依頼 {n}`（STEP 3F）だけ（description 更新は TASK_FILE を読んで Linear にだけ書く）
 - git は `AGENTS.md` の「GIT RULES」に従う
 
 **原則として止まるのは以下の Gate のみ。** ただし各フェーズが途中でユーザーに確認を求めた場合（startproject の要件ヒアリングなど）は、それに従う。
@@ -99,6 +115,7 @@ feature は LINEAR_ID のタスク内容から短いスネークケースで命�
 - status: planning
 - branch:
 - base:
+- issue: {ISSUE_REFS。--issue が無ければ空}
 
 ## startproject
 ### Brief
@@ -157,6 +174,7 @@ startproject は質問があると `### QUESTIONS` を返して終了する（`-
 |------|------|
 | `# Task: {LINEAR_ID} — {task description}`（先頭行） | 元の task description |
 | `## Meta` の `linear_id:` / `tier:` / `status:` / `branch:` / `base:` | `LINEAR_ID` / `tier` / 前提確認の材料 |
+| `## Meta` の `issue:` | `ISSUE_REFS`（行が無い・空なら空） |
 | `## deploy` の `PR/MR:` | 既存 PR / MR の URL |
 | `## startproject` > `### Plan` の `#### 追加依頼 {n}` | 追加依頼の通し番号 n（既存の最大 + 1 を次の n にする） |
 | `## team-implement` / `## team-review` の `### {m}回目` | 実装・レビューの回数 m（既存の最大 + 1 を次の m にする） |
@@ -213,9 +231,12 @@ orchestrator が `### Plan` の末尾に以下を追記する（既存の Plan �
 - 既存 PR: {PR/MR URL}
 - 扱い: team-implement / team-review の {m}回目
 - 前提: 上の Plan は既存 PR で実装済み。この追加依頼だけを実装する
+- issue: {今回の --issue を正規化したもの。--issue が無ければこの行は書かない}
 ```
 
 前提行は「そのまま追加」のときの文言。F3 で再設計した場合は F3 の手順 4 の文言に差し替える。
+
+`--issue` があれば、同時に `## Meta` の `issue:` に追記する（既存の要素の後ろに `, ` でつなぎ、重複は「`--issue`」の正規化どおりまとめる。行が無い旧 TASK_FILE なら `base:` の次に `- issue:` 行を足す）。`ISSUE_REFS` も更新する。deploy の STEP 3-B が本文に無い行だけを `### 関連（追加依頼 {n}）` として既存 PR / MR に追記する。
 
 以降の task description は `"{元の task description}（追加依頼 {n}: {追加の依頼}）"` とする。
 
@@ -285,6 +306,8 @@ team-review は TASK_FILE の `## team-review` に `### {m}回目` として追�
 
 deploy はコミット・push・PR / MR 作成を行い、**作業ブランチに留まったまま** `## deploy` を記入して Linear を "In Review" にする（TASK_FILE 自体はコードのコミットに含めない。分岐元には戻らない）。既存の PR / MR があれば（追加修正モード）新規作成せず追加 push と本文追記を行い、`## deploy` は上書きせず `#### 追加 push（追加依頼 {n}）` を末尾に追記する（詳細は `agents/deploy.md`）。
 
+PR / MR のタイトル末尾の `({LINEAR_ID})`・本文末尾の `## 関連`（`Part of {LINEAR_ID}` と `## Meta` の `issue:` の行）と、Linear issue への PR の添付（連携で添付されていなければ `save_issue` の `links` で代わりに添付。新規作成型のみ）も deploy agent が行う（`agents/deploy.md`「紐づけの規則」・4-1b）。
+
 ### 6b: `status` を `in-review` に（作業ブランチ上）
 
 orchestrator が「状態管理」に従い `## Meta` の `status` を `in-review` にする（6c でコミットされるので、STEP 7 ではなくここで書く）。
@@ -314,6 +337,7 @@ TASK_FILE だけを `docs(task):` でコミットして同じ作業ブランチ�
 - Tier: {tier}
 - Task File: {TASK_FILE}
 - Mode: 通常 | 追加修正（追加依頼 {n}、{m}回目）
+- Issue: {ISSUE_REFS | なし}
 
 ### 各フェーズのサマリー
 - startproject: ...（Gate 1: {GATE1}）
@@ -328,7 +352,7 @@ TASK_FILE だけを `docs(task):` でコミットして同じ作業ブランチ�
 
 「### 質問」は質問しなかったら「なし」の 1 行にする。
 
-deploy 行には PR / MR の URL に加えて 6c の結果（`docs(task):` コミットの hash・push 先・現在のブランチ。中止ならその理由）を添える（TASK_FILE には書かない）。**現在のブランチは必ず示す**（6c を実行しなかった・中止したときは作業ブランチに留まっている。`git branch --show-current` で確認する）。`status` は 6b で `in-review` にしてあるので STEP 7 では書かない。
+deploy 行には PR / MR の URL、`## deploy` の `紐づけ:` 行（追加 push は追記した行）、`Linear 添付:` の結果（新規作成型のみ）、紐づけの申し送り（base がデフォルトブランチでない・ブランチ名に ID が無い）があればそれに加えて 6c の結果（`docs(task):` コミットの hash・push 先・現在のブランチ。中止ならその理由）を添える（TASK_FILE には書かない）。**現在のブランチは必ず示す**（6c を実行しなかった・中止したときは作業ブランチに留まっている。`git branch --show-current` で確認する）。`status` は 6b で `in-review` にしてあるので STEP 7 では書かない。
 
 追加修正モードでは startproject 行を「（追加修正モード: スキップ）」または再設計時の結果にし、deploy 行に既存 PR / MR の URL を書く。
 
@@ -343,6 +367,7 @@ deploy 行には PR / MR の URL に加えて 6c の結果（`docs(task):` コ�
 | `tier` | STEP 0（追加修正モードは STEP 3F F1 で `## Meta` の `tier:` から復元。F3 の再設計で更新） |
 | `LINEAR_ID` | STEP 1（追加修正モードは STEP 3F F1 で `## Meta` の `linear_id:` から復元） |
 | `TASK_FILE` | STEP 2（追加修正モードは $ARGUMENTS または Linear ID から特定） |
+| `ISSUE_REFS` | 「Input」の「`--issue`」で正規化（無ければ空）。STEP 2 で `## Meta` の `issue:` に書く。追加修正モードは STEP 3F F1 で `issue:` から復元し、F4 で追記。フェーズには渡さず `## Meta` で受け渡す |
 | `ASK_MODE` | STEP 2 の直後（追加修正モード・モード判定では最初に質問が要った時点）。`linear` / `terminal`。「質問の中継（Linear）」 |
 | `SESSION_INFO` | その実行で最初に「Linear の description 更新」をするとき 1 回だけ集め、以降は使い回す（フェーズには渡さない）。「実行セッション情報の取得」 |
 
