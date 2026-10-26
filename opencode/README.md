@@ -69,11 +69,33 @@ Claude Code 版と完全に一致しない点:
 
 Claude 版のリサーチ・設計相談は `~/.claude/scripts/ai-fallback.sh`（`sync-claude.sh` が配布）で次の連鎖を順に試す。詳細は `../claude/rules/tool-routing.md`「OpenCode リサーチの実行」。
 
+**エンジン**: `opencode2`（v2）→ `opencode`（v1）→ `pi` の順で、入っているものを使う（1 つのエンジンで連鎖を回し、quota 以外の理由で落ちたら次のエンジンで同じモデルから再開する）。
+
+| エンジン | 実体 | この環境での状態 |
+|---|---|---|
+| v2 | `opencode2` 2.1.4 | **本線**。`run --standalone --agent plan` で動く（実測 `PONG`） |
+| v1 | `opencode` 1.14.48 | `run` が全モデルで `NOT NULL constraint failed: session_message.seq` |
+| pi | `pi -p --no-session` | 最後の砦。`opencode-go/*` は `oc-sdk-go/*` に読み替え |
+
 | 順 | モデル | OpenCode からそのまま使えるか |
 |---|---|---|
-| 1 | `github-copilot/gpt-6-astra` | 使える（`~/.local/share/opencode/auth.json` の `github-copilot`） |
-| 2 | `opencode-go/deepseek-v4-pro` | 使える（同 `opencode-go`） |
+| 1 | `github-copilot/gpt-6-astra` | 使える。ただし Copilot の**月間 quota 切れ**で `quota` 判定になる（実測） |
+| 2 | `opencode-go/deepseek-v4-pro` | モデルは `opencode2 models` に出るが、この環境では **401（invalid credential）** |
 | 3 | `ollama-cloud/deepseek-v4.1-flash` | **provider 登録が必要**（下記）。未登録ならスクリプトが `pi -p --model` に切り替える |
+
+### v1 と v2 の CLI 差分
+
+| 項目 | v1（`opencode`） | v2（`opencode2`） |
+|---|---|---|
+| 承認 | `--dangerously-skip-permissions` | `--auto` |
+| モデル | `-m provider/model` | `-m provider/model#variant` |
+| サーバ | 暗黙にローカル起動 | 背景サービスが既定。`--standalone` で専用サーバ、`--server <url>` で接続 |
+| ログ | `--log-level ERROR`（大文字） | `--log-level error`（小文字、`all`/`none` など） |
+| ログ出力 | `~/.local/share/opencode/log/` に 1 セッション 1 ファイル | 同ディレクトリの `opencode.log` 1 本に追記 |
+| サブコマンド | 限定的 | `models` / `auth`(list, login, export, import, switch) / `service` / `session` / `serve` / `debug`(agents, config, paths, heap-dump) / `plugin` / `mcp` |
+| 設定キー | `permission: "allow"` / `mcp` 直下 | `permissions[]` / `mcp.servers` に正規化（v1 形式も読める） |
+
+config / data / DB / log のパスは v1 と v2 で共通（`opencode2 debug paths` で確認）。
 
 ### フォールバック先の登録
 

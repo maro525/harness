@@ -60,22 +60,28 @@
 - **quota 以外の理由で落ちたときはエンジンを切り替える。** OpenCode 側の不具合（DB 破損・インストール不全）は次のモデルでも同じ壁に当たるので、その場合だけ `pi -p --no-session --model` に切り替えて連鎖を続ける（stderr に `switching to pi` を出す）。quota のときは切り替えない
 - **記録は必須。** 成果物（`DESIGN` / `## team-review` / PR 本文など）に `利用AI: {AI_MODEL}` を書き、落とした候補があれば `（{model} は {理由} で skip）` を添える。スクリプトは stderr に `AI_ENGINE` / `AI_MODEL` / `AI_SKIPPED` を出す
 - 全候補が失敗したときだけ OpenCode なしで続け、成果物に「OpenCode 不可: {理由}」と書く
-- OpenCode が無い環境では同じスクリプトが `pi -p --no-session --model` に切り替える（`opencode-go/*` は pi 側の `oc-sdk-go/*` に読み替える）。pi は `ollama-cloud/*` をそのまま受ける
+- エンジンも連鎖する: `opencode2`（v2）→ `opencode`（v1）→ `pi` の順で、入っているものを使う。1 つのエンジンでモデル連鎖を回し、**quota 以外**の理由（DB 破損・認証エラー・タイムアウトなど）で落ちたら次のエンジンで同じモデルから再開する。`pi` に回ったときは `opencode-go/*` を `oc-sdk-go/*` に読み替える
+- v1 と v2 の差分（`--auto`・`--standalone`・`--log-level` の大小文字・`-m provider/model#variant`）は下の「ラッパーが内部で使うコマンド」の表を参照
 - 3 番目の候補を OpenCode から使うには provider 登録が要る（`../opencode/README.md`「フォールバック先の登録」）。未登録なら 3 番目は pi 側に切り替わる
 - 長文プロンプトはファイルに落として渡す（スクリプトはファイルパスか `-`（stdin）を受ける）
 - ツール呼び出しで止まらせたくなければ、プロンプト冒頭に `DO NOT USE ANY TOOLS`
 
 #### ラッパーが内部で使うコマンド
 
-手で叩いて切り分けるときの形。要素を外すと壊れる。
+手で叩いて切り分けるときの形。要素を外すと壊れる。**v2（`opencode2`）が本線、v1（`opencode`）は代替、どちらも無ければ `pi`**。
 
 ```bash
+# v2
+timeout -k 1m 20m opencode2 run --standalone --agent plan --print-logs --log-level error -m {model} "{research question}" < /dev/null
+# v1
 timeout -k 1m 20m opencode run --agent plan --print-logs --log-level ERROR -m {model} "{research question}" < /dev/null
 ```
 
 | 要素 | 外すと壊れる理由 |
 |------|-----------------|
-| `--agent plan` **必須** | 既定の `build` は非対話実行だとパーミッション確認で**無言ハング**する。stderr にも何も出ない |
+| `--agent plan` **必須** | 既定の `build` は非対話実行だとパーミッション確認で**無言ハング**する（v1 で確認。v2 は `--auto` でも回避できるが、リサーチ用途では使わない）。stderr にも何も出ない |
+| `--standalone`（v2） **必須** | v2 の `run` は既定で背景サービスに繋ぐ。`--standalone` で回ごとに専用サーバを立てる（前回の状態を引きずらない）。**サーバログが stderr に出るのも `--standalone` のときだけ**なので、429 の検知に必要 |
+| `--log-level` の値は CLI ごとに違う | v2 は小文字（`error`）、v1 は大文字（`ERROR`）。間違えると理由が取れない |
 | `< /dev/null` **必須** | stdin が**開いたパイプ**だと永久にハングする。`run_in_background: true` がまさにその状態（フォアグラウンドには自動で付くがバックグラウンドには付かない）。**バックグラウンド実行と必ずセット** |
 | `2>/dev/null` を**付けない** | エラーを stderr に出しつつ **exit code 0** で終わる。潰すと「成功したのに出力が空」に見える |
 | モデルは連鎖の 1 番目から | `openai/gpt-5.6-sol` は残高切れ（`insufficient_quota`）で**必ず失敗した**（課金が復活したら `AI_CHAIN` の先頭に戻す）。モデルを手で選ばず `ai-fallback.sh` に任せる |
@@ -84,8 +90,9 @@ timeout -k 1m 20m opencode run --agent plan --print-logs --log-level ERROR -m {m
 | cwd は **git リポジトリ** | 非 git ディレクトリ（`/tmp` 等）だと起動時の `service=vcs` 初期化で無言ハングする |
 
 - **完了はバックグラウンドタスクの完了通知で待つ。** `pgrep` / `tail --pid` で自前監視しない（`pgrep -f` は監視コマンド自身にマッチし、タイムアウトまで待ち続ける）
-- 空出力を quota と決めつけず、ログ（`~/.local/share/opencode/log/`、1 セッション 1 ファイル）で確認する。正常なら `service=session` → `POST /session` → `service=snapshot` → `resolveTools` → `service=llm … stream` と進む。**`service=vcs … initialized` で止まっていれば stdin 詰まり**（`< /dev/null` 忘れ）で、非 git cwd と同じ見た目になる。`session_message.seq` の SQLite エラーは OpenCode 側の DB 破損で、モデルを替えても直らない（ラッパーは `--print-logs --log-level ERROR` を付けて stderr に理由を出させ、その行を `skip: … (error)` の下に添える）
-- 疎通確認: `opencode run --agent plan -m <model> "Reply with exactly: PONG"`（数十秒で返る）
+- 空出力を quota と決めつけず、ログ（`~/.local/share/opencode/log/`）で確認する。v1 は 1 セッション 1 ファイル、v2 は `opencode.log` 1 本に追記するので、**実行前後の差分だけを見る**（ラッパーはファイルサイズを控えてから `tail -c` で差分を検索する）。v1 の正常系は `service=session` → `POST /session` → `service=snapshot` → `resolveTools` → `service=llm … stream` と進む。**`service=vcs … initialized` で止まっていれば stdin 詰まり**（`< /dev/null` 忘れ）で、非 git cwd と同じ見た目になる。`session_message.seq` の SQLite エラーは **v1 固有**（v2 は同じ DB で動く）で、モデルを替えても直らない（ラッパーは `--print-logs --log-level error` を付けて stderr に理由を出させ、その行を `skip: … (error)` の下に添える）
+- 疎通確認: `opencode2 run --agent plan -m <model> "Reply with exactly: PONG"`（v2。v1 は `opencode run …`）。利用可能モデルは `opencode2 models` で確認できる
+- エンジンは `opencode2` → `opencode` → `pi` の順で存在するものを使う（ラッパーが決める）。手で叩くときは入っている方を使う
 - `context: fork` の command 内と `/startproject` は直接実行。それ以外はサブエージェント経由でメインコンテキストを汚さない
 - OpenCode はコードを読まずに答えることがある。結論は採用してよいが**根拠は必ず自分で検証する**
 
