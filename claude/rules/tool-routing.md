@@ -20,7 +20,7 @@
 | PDF (URL) / 複数ページ | **firecrawl MCP** | `firecrawl_parse` / `firecrawl_scrape` |
 | 音声・動画 | **未対応** | 委託先なし。ユーザーに扱い方を確認する |
 | Library research | **firecrawl MCP + OpenCode** | `firecrawl_search` で一次情報 + OpenCode で実装知見 |
-| Design decisions | **OpenCode** | Subagent（`timeout -k 1m 20m opencode run --agent plan -m github-copilot/gpt-6-astra`） |
+| Design decisions | **OpenCode（モデルはフォールバック連鎖）** | Subagent（`~/.claude/scripts/ai-fallback.sh {prompt_file}`、下記「OpenCode リサーチの実行」） |
 | git（書き込み系） | **`/deploy` skill** | Ad-hoc Git モード。読み取り系は Claude が直接 |
 | `/orchestrate` で作った PR への追加変更 | **`/orchestrate` 追加修正モード** | `/orchestrate "{追加の依頼} --task-file={TASK_FILE}"`。直接編集して Ad-hoc push しない（下記「Git Operations」） |
 | docker/ruff/uv (in `context: fork` skills) | **Direct** | スキル内で直接実行 |
@@ -44,7 +44,33 @@
 **これが唯一動く呼び出し形。他のファイルはこの節を参照する。**
 
 ```bash
-timeout -k 1m 20m opencode run --agent plan -m github-copilot/gpt-6-astra "{research question}" < /dev/null
+~/.claude/scripts/ai-fallback.sh {prompt_file}
+```
+
+`ai-fallback.sh` は次の連鎖を上から順に試し、**最初に答えを返したモデルを採用する**。各モデルは 1 回だけ呼ぶ（同じモデルの再試行はしない）。
+
+| 順 | モデル | 提供元 | 位置づけ |
+|---|---|---|---|
+| 1 | `github-copilot/gpt-6-astra` | OpenCode（GitHub Copilot） | 既定 |
+| 2 | `opencode-go/deepseek-v4-pro` | OpenCode Go（`https://opencode.ai/zen/go/v1`） | 1 が 429 / 残高切れのとき |
+| 3 | `ollama-cloud/deepseek-v4.1-flash` | Ollama Cloud（`https://ollama.com/v1`） | 1・2 が 429 / 残高切れのとき |
+
+- 候補の上書き: `AI_CHAIN="opencode-go/deepseek-v4-pro ollama-cloud/deepseek-v4.1-flash" ~/.claude/scripts/ai-fallback.sh {prompt_file}`
+- 切替条件（スクリプトが判定）: HTTP 429 / `insufficient_quota` / rate limit → 次の候補。401 / 403（認証エラー）→ 次の候補。`exit 124` / `137`（タイムアウト）→ 次の候補。**空出力**のときは 429 をログ（`~/.local/share/opencode/log/`）、`ERROR` を stderr（`--print-logs --log-level ERROR`）で見て、どちらも無ければ「空出力」として次の候補
+- **quota 以外の理由で落ちたときはエンジンを切り替える。** OpenCode 側の不具合（DB 破損・インストール不全）は次のモデルでも同じ壁に当たるので、その場合だけ `pi -p --no-session --model` に切り替えて連鎖を続ける（stderr に `switching to pi` を出す）。quota のときは切り替えない
+- **記録は必須。** 成果物（`DESIGN` / `## team-review` / PR 本文など）に `利用AI: {AI_MODEL}` を書き、落とした候補があれば `（{model} は {理由} で skip）` を添える。スクリプトは stderr に `AI_ENGINE` / `AI_MODEL` / `AI_SKIPPED` を出す
+- 全候補が失敗したときだけ OpenCode なしで続け、成果物に「OpenCode 不可: {理由}」と書く
+- OpenCode が無い環境では同じスクリプトが `pi -p --no-session --model` に切り替える（`opencode-go/*` は pi 側の `oc-sdk-go/*` に読み替える）。pi は `ollama-cloud/*` をそのまま受ける
+- 3 番目の候補を OpenCode から使うには provider 登録が要る（`../opencode/README.md`「フォールバック先の登録」）。未登録なら 3 番目は pi 側に切り替わる
+- 長文プロンプトはファイルに落として渡す（スクリプトはファイルパスか `-`（stdin）を受ける）
+- ツール呼び出しで止まらせたくなければ、プロンプト冒頭に `DO NOT USE ANY TOOLS`
+
+#### ラッパーが内部で使うコマンド
+
+手で叩いて切り分けるときの形。要素を外すと壊れる。
+
+```bash
+timeout -k 1m 20m opencode run --agent plan --print-logs --log-level ERROR -m {model} "{research question}" < /dev/null
 ```
 
 | 要素 | 外すと壊れる理由 |
@@ -52,17 +78,13 @@ timeout -k 1m 20m opencode run --agent plan -m github-copilot/gpt-6-astra "{rese
 | `--agent plan` **必須** | 既定の `build` は非対話実行だとパーミッション確認で**無言ハング**する。stderr にも何も出ない |
 | `< /dev/null` **必須** | stdin が**開いたパイプ**だと永久にハングする。`run_in_background: true` がまさにその状態（フォアグラウンドには自動で付くがバックグラウンドには付かない）。**バックグラウンド実行と必ずセット** |
 | `2>/dev/null` を**付けない** | エラーを stderr に出しつつ **exit code 0** で終わる。潰すと「成功したのに出力が空」に見える |
-| モデルは `github-copilot/gpt-6-astra` | `openai/gpt-5.6-sol` は残高切れ（`insufficient_quota`）で**必ず失敗した**（課金が復活したら `openai/` を第一候補に戻す） |
+| モデルは連鎖の 1 番目から | `openai/gpt-5.6-sol` は残高切れ（`insufficient_quota`）で**必ず失敗した**（課金が復活したら `AI_CHAIN` の先頭に戻す）。モデルを手で選ばず `ai-fallback.sh` に任せる |
 | **バックグラウンド実行必須** | 込み入った質問は 10 分超。Bash ツールの既定 10 分で kill されると出力ゼロになり、ハングと見分けがつかない |
-| `timeout -k 1m 20m` **必須** | 失敗後にプロセスが終わらないことがある（429 の後に MCP の認証待ちで止まり、完了通知が来ないまま待ち続けた）。`-k 1m` は SIGTERM で終わらないとき 1 分後に SIGKILL する。exit code 124（SIGTERM）/ 137（SIGKILL）はどちらも「OpenCode 不可: タイムアウト」として扱う |
+| `timeout -k 1m 20m` **必須** | 失敗後にプロセスが終わらないことがある（429 の後に MCP の認証待ちで止まり、完了通知が来ないまま待ち続けた）。`-k 1m` は SIGTERM で終わらないとき 1 分後に SIGKILL する。exit code 124（SIGTERM）/ 137（SIGKILL）はラッパーが次の候補へ回す |
 | cwd は **git リポジトリ** | 非 git ディレクトリ（`/tmp` 等）だと起動時の `service=vcs` 初期化で無言ハングする |
 
 - **完了はバックグラウンドタスクの完了通知で待つ。** `pgrep` / `tail --pid` で自前監視しない（`pgrep -f` は監視コマンド自身にマッチし、タイムアウトまで待ち続ける）
-- **モデルは上記で固定。** 失敗しても差し替えない
-- **呼べないときは諦めて先に進む。** quota / 429 / 認証エラー / タイムアウトなどで失敗したら、再試行もモデル変更もせず OpenCode なしで続け、成果物（Design・レビュー結果など）に「OpenCode 不可: {理由}」と書く
-- 長文プロンプトはファイルに落として `"$(cat prompt.txt)"` で渡す
-- ツール呼び出しで止まらせたくなければ、プロンプト冒頭に `DO NOT USE ANY TOOLS`
-- 空出力を quota と決めつけず、ログ（`~/.local/share/opencode/log/`、1 セッション 1 ファイル）で確認する。正常なら `service=session` → `POST /session` → `service=snapshot` → `resolveTools` → `service=llm … stream` と進む。**`service=vcs … initialized` で止まっていれば stdin 詰まり**（`< /dev/null` 忘れ）で、非 git cwd と同じ見た目になる
+- 空出力を quota と決めつけず、ログ（`~/.local/share/opencode/log/`、1 セッション 1 ファイル）で確認する。正常なら `service=session` → `POST /session` → `service=snapshot` → `resolveTools` → `service=llm … stream` と進む。**`service=vcs … initialized` で止まっていれば stdin 詰まり**（`< /dev/null` 忘れ）で、非 git cwd と同じ見た目になる。`session_message.seq` の SQLite エラーは OpenCode 側の DB 破損で、モデルを替えても直らない（ラッパーは `--print-logs --log-level ERROR` を付けて stderr に理由を出させ、その行を `skip: … (error)` の下に添える）
 - 疎通確認: `opencode run --agent plan -m <model> "Reply with exactly: PONG"`（数十秒で返る）
 - `context: fork` の command 内と `/startproject` は直接実行。それ以外はサブエージェント経由でメインコンテキストを汚さない
 - OpenCode はコードを読まずに答えることがある。結論は採用してよいが**根拠は必ず自分で検証する**
@@ -95,9 +117,10 @@ Return CONCISE summary.
 
 # 系統 2: 実装知見
 Run OpenCode research on: {topic}
-timeout -k 1m 20m opencode run --agent plan -m github-copilot/gpt-6-astra "{research question}" < /dev/null
-Keep `--agent plan` and `< /dev/null`, do NOT append 2>/dev/null — see
-"OpenCode リサーチの実行" in $HOME/.claude/rules/tool-routing.md. Expect over 10 minutes.
+~/.claude/scripts/ai-fallback.sh {prompt_file}
+The script walks the model chain and falls back on quota/timeout (see
+"OpenCode リサーチの実行" in $HOME/.claude/rules/tool-routing.md). Expect over 10 minutes.
+Record the serving model from its AI_MODEL line as `利用AI:` in the output.
 Save full output to: .claude/docs/research/{topic}-opencode.md
 Return CONCISE summary, and flag anything you are NOT confident about
 so it can be checked against the firecrawl sources.

@@ -456,9 +456,10 @@ def route_prompt(prompt: str) -> dict | None:
                     f"[Agent Routing] Detected '{trigger}' - run external "
                     "research on two parallel tracks via subagents: firecrawl MCP "
                     "(firecrawl_search / firecrawl_scrape) for sourced facts, and "
-                    "`timeout -k 1m 20m opencode run --agent plan -m github-copilot/gpt-5.6-sol` "
-                    "for implementation know-how (keep --agent plan, no 2>/dev/null, "
-                    "run in the background). Prefer firecrawl when they disagree."
+                    "`~/.claude/scripts/ai-fallback.sh {prompt_file}` "
+                    "for implementation know-how (the script walks the model chain, "
+                    "falls back on 429/timeout, and prints AI_MODEL on stderr). "
+                    "Prefer firecrawl when they disagree."
                 ),
             }
         }

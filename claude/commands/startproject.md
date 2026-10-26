@@ -88,7 +88,7 @@ Agent ツールが無いため、リサーチはサブエージェント経由�
 `/orchestrate` の通常フローでは S で startproject は呼ばれない（orchestrate が自分で計画する）。直接呼ばれた場合はリサーチはしない。Phase 1 の理解から方針を 1-2 行で `DESIGN` に書いて Phase 3 へ進む。
 
 ### tier=M
-OpenCode に設計相談する（Bash から直接実行）。呼び出し方・待ち方・失敗時の扱いは `$HOME/.claude/rules/tool-routing.md` の「OpenCode リサーチの実行」に従う。呼べなければ OpenCode なしで設計し、`DESIGN` に「OpenCode 不可: {理由}」と書く。
+OpenCode に設計相談する（Bash から直接実行）。呼び出し形は `~/.claude/scripts/ai-fallback.sh {prompt_file}`。モデルのフォールバック連鎖・切替条件・記録方法は `$HOME/.claude/rules/tool-routing.md` の「OpenCode リサーチの実行」に従う。全候補が失敗したときだけ OpenCode なしで設計し、`DESIGN` に「OpenCode 不可: {理由}」と書く。成功したら `DESIGN` に `利用AI: {AI_MODEL}` を残す。
 
 ### tier=L
 二系統を**同時に開始**する（firecrawl の呼び出しと opencode のバックグラウンド起動を同一メッセージで出す）。
@@ -96,7 +96,7 @@ OpenCode に設計相談する（Bash から直接実行）。呼び出し方・
 | 系統 | 実行方法 | 役割 |
 |---|---|---|
 | 一次情報 | firecrawl MCP（`firecrawl_search` → `firecrawl_scrape`） | 公式ドキュメント・リリースノートを出典 URL 付きで調査 |
-| 実装知見 | `timeout -k 1m 20m opencode run --agent plan -m github-copilot/gpt-6-astra "{question}" < /dev/null`（background Bash） | 設計上の勘所・落とし穴を調査 |
+| 実装知見 | `~/.claude/scripts/ai-fallback.sh {prompt_file}`（background Bash） | 設計上の勘所・落とし穴を調査（モデルはフォールバック連鎖） |
 
 結果はファイルに保存せず統合して `DESIGN` にまとめる。**食い違いは firecrawl の一次情報を優先**し、相違点と採用した方を `DESIGN` に残す。
 

@@ -52,7 +52,7 @@ tier に応じたレビュアーを同時に起動する。**レビュー中は�
 | レビュアー | 方法 |
 |-----------|------|
 | Primary | 変更ファイルを自分で直接読み、Quality / Logic の観点でレビュー |
-| Second Opinion | `task` tool で subagent を起動し、観点は Primary と同じ（別コンテキストでの独立したセカンドオピニオン）。severity 付きの指摘リストを返させる。変更内容が長いのでプロンプトはファイルに落として渡す。起動がエラー・空返却で終わったら再試行・差し替えせずこのレビュアーは飛ばし、結果の「Second Opinion Reviewer」に「Second Opinion 不可: {理由}」と書く（`AGENTS.md` の「OpenCode 仕様メモ」） |
+| Second Opinion | `task` tool で subagent を起動し、観点は Primary と同じ（別コンテキストでの独立したセカンドオピニオン）。severity 付きの指摘リストを返させる。変更内容が長いのでプロンプトはファイルに落として渡す。起動がエラー・空返却で終わったら再試行・差し替えせずこのレビュアーは飛ばし、結果の「Second Opinion Reviewer」に「Second Opinion 不可: {理由}」と書く（`AGENTS.md` の「OpenCode 仕様メモ」。モデルのフォールバック連鎖は Claude 版の `~/.claude/scripts/ai-fallback.sh` 側の仕組みで、OpenCode 版は `task` の別コンテキストで代替する） |
 | Security | `$HOME/.claude/rules/security.md` のルールを変更コードに照合し、違反・懸念を severity 付きで列挙 |
 | Simplify | 変更ファイルを読み、過剰な複雑さ・重複・再利用できる既存コードの観点で指摘する（コードを書き換えるスキルは使わない） |
 
