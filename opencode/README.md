@@ -59,11 +59,47 @@ Claude Code 版と完全に一致しない点:
 | TASK_FILE / Linear の書き手 | 各 command は OUTPUT を返し、orchestrator が書く | 各フェーズ agent が自分の節と Linear コメントを書く。`status` / `tier` / `#### 追加依頼 {n}` は orchestrator |
 | ブラウザ確認 | ツール指定なし | ツール指定なし |
 | `/simplify` など design skills | あり | 未移植（必要なら個別移植） |
-| OpenCode セカンドオピニオン（team-review）・設計相談（startproject） | `opencode run` で別モデル（`timeout -k 1m 20m`、不可時は「OpenCode 不可」） | `task` subagent（別コンテキスト）で代替。不可時は「Second Opinion 不可」/「設計相談不可」。`opencode run` の gotcha・完了通知・timeout は該当なし |
+| OpenCode セカンドオピニオン（team-review）・設計相談（startproject） | `~/.claude/scripts/ai-fallback.sh` で別モデル（連鎖は `~/.claude/rules/tool-routing.md`「OpenCode リサーチの実行」。全候補失敗時は「OpenCode 不可」） | `task` subagent（別コンテキスト）で代替。不可時は「Second Opinion 不可」/「設計相談不可」。`opencode run` の gotcha・完了通知・timeout・モデル連鎖は該当なし |
 | 追加修正モード（既存 PR への追加変更） | `/orchestrate` STEP 3F、`/deploy` の Ad-hoc ガード | 同じ構成で移植済み（`commands/orchestrate.md` / `agents/deploy.md` / `AGENTS.md` GIT RULES） |
 | PR / MR と issue の紐づけ（`--issue`・`## 関連`・タイトルの ID・ブランチ名） | `/orchestrate` が Meta に `issue:` を書き、`/deploy` が本文に書く。Linear への `links` 添付は orchestrate STEP 6b | 同じ規則（`commands/orchestrate.md` の「`--issue`」・`agents/deploy.md`「紐づけの規則」）。`links` 添付は deploy agent の 4-1b |
 | 共通ルール（tier 基準・Git ルール） | `~/.claude/rules/*.md` | `AGENTS.md` に集約 |
 | 質問の中継（Linear） | API キー不要。Linear MCP の `save_comment` で目印付きで投稿し、background Bash の `sleep` タイマーの完了通知で起きて `list_comments` でスレッド返信を確かめる。Linear 返信とターミナル入力の先着（`TaskStop` でタイマーを止める） | `~/.claude/scripts/linear-ask.sh`（`sync-claude.sh` で配布。Linear API キーが要る）で `--post-only` 投稿→URL 提示のあと、**フォアグラウンド**で `--timeout 540` ずつ再アームして待つ。ターミナル先着なし。実機未検証 |
+
+## モデルのフォールバック（Claude 版）
+
+Claude 版のリサーチ・設計相談は `~/.claude/scripts/ai-fallback.sh`（`sync-claude.sh` が配布）で次の連鎖を順に試す。詳細は `../claude/rules/tool-routing.md`「OpenCode リサーチの実行」。
+
+| 順 | モデル | OpenCode からそのまま使えるか |
+|---|---|---|
+| 1 | `github-copilot/gpt-6-astra` | 使える（`~/.local/share/opencode/auth.json` の `github-copilot`） |
+| 2 | `opencode-go/deepseek-v4-pro` | 使える（同 `opencode-go`） |
+| 3 | `ollama-cloud/deepseek-v4.1-flash` | **provider 登録が必要**（下記）。未登録ならスクリプトが `pi -p --model` に切り替える |
+
+### フォールバック先の登録
+
+`~/.config/opencode/opencode.jsonc`（このファイルは dotfiles の持ち物なので、ここのリポジトリには置かない）:
+
+```jsonc
+{
+  "provider": {
+    "ollama-cloud": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Ollama Cloud",
+      "options": {
+        "baseURL": "https://ollama.com/v1",
+        "apiKey": "{env:OLLAMA_API_KEY}"
+      },
+      "models": {
+        "deepseek-v4.1-flash": { "name": "deepseek-v4.1-flash" }
+      }
+    }
+  }
+}
+```
+
+- キーは `~/.bashrc.local` で `export OLLAMA_API_KEY=...`（OpenCode の設定ファイルに直書きしない）
+- 疎通: `opencode run --agent plan -m ollama-cloud/deepseek-v4.1-flash "Reply with exactly: PONG" < /dev/null`
+- 未登録のままスクリプトを回すと、3 番目は `pi -p --no-session --model ollama-cloud/deepseek-v4.1-flash` で実行される（pi 側は登録済み）
 
 ## Limitations
 

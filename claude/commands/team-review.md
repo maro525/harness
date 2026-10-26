@@ -69,10 +69,10 @@ S は orchestrate から Agent ツール経由（sonnet）で起動されるた�
 
 ### OpenCode Reviewer
 
-変更内容が長いのでプロンプトはファイルに落として渡す。呼び出し方・待ち方・失敗時の扱いは `$HOME/.claude/rules/tool-routing.md` の「OpenCode リサーチの実行」に従う。呼べなければこのレビュアーは飛ばし、結果に「OpenCode 不可: {理由}」と書く。
+変更内容が長いのでプロンプトはファイルに落として渡す。呼び出し形は `~/.claude/scripts/ai-fallback.sh {prompt_file}`。モデルのフォールバック連鎖・切替条件・記録方法は `$HOME/.claude/rules/tool-routing.md` の「OpenCode リサーチの実行」に従う。全候補が失敗したときだけこのレビュアーを飛ばし、結果に「OpenCode 不可: {理由}」と書く（成功したら `AI_MODEL` を「利用AI」として残す）。
 
 ```bash
-timeout -k 1m 20m opencode run --agent plan -m github-copilot/gpt-6-astra "$(cat {prompt_file})" < /dev/null
+~/.claude/scripts/ai-fallback.sh {prompt_file}
 ```
 
 プロンプトの中身:
@@ -125,6 +125,7 @@ PASS | FAIL
 - [severity] 指摘内容
 
 ##### OpenCode Reviewer
+- 利用AI: {AI_MODEL}（落とした候補があれば `{model} は {理由} で skip`）
 - [severity] 指摘内容
 
 ##### Security Reviewer

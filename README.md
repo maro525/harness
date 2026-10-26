@@ -12,7 +12,9 @@ harness/
 │   ├── commands/            # orchestrate / startproject / team-implement / team-review / deploy
 │   ├── rules/               # adaptive-execution.md (tier 分類) / tool-routing.md (委譲先)
 │   ├── hooks/agent-router.py  # UserPromptSubmit hook。意図を検出して /orchestrate へ誘導
-│   └── scripts/linear-ask.sh  # OpenCode 版 orchestrate の質問の中継用（Linear API キーが要る）
+│   └── scripts/
+│       ├── linear-ask.sh   # OpenCode 版 orchestrate の質問の中継用（Linear API キーが要る）
+│       └── ai-fallback.sh  # リサーチ・設計相談のモデル連鎖（429 で次の候補へ）
 ├── opencode/                # OpenCode 版 (~/.config/opencode)
 │   ├── README.md            # OpenCode 版と Claude 版の違い
 │   ├── commands/
@@ -46,6 +48,28 @@ hook の登録（`settings.json` の `hooks.UserPromptSubmit`）と `Skill(orche
 `agents/README.md` は HOME に配布しない。orchestrate のフェーズ指定モードは `$HARNESS`（未設定なら `~/src/harness`）から直接読む。別の場所に clone したら `HARNESS` を設定する。
 
 kanban は `uv tool install --editable ~/src/harness/kanban`（詳細は `kanban/README.md`）。
+
+## 外部 AI のフォールバック
+
+リサーチ・設計相談・セカンドオピニオンのモデルは quota（429）で止まらず、次の候補に落ちる。呼び出しは `~/.claude/scripts/ai-fallback.sh`（`sync-claude.sh` が実行ビット付きで配布）に一本化し、連鎖は `claude/rules/tool-routing.md`「OpenCode リサーチの実行」が唯一の定義。
+
+| 順 | モデル | 提供元 |
+|---|---|---|
+| 1 | `github-copilot/gpt-6-astra` | OpenCode（GitHub Copilot） |
+| 2 | `opencode-go/deepseek-v4-pro` | OpenCode Go（`https://opencode.ai/zen/go/v1`） |
+| 3 | `ollama-cloud/deepseek-v4.1-flash` | Ollama Cloud（`https://ollama.com/v1`） |
+
+```bash
+~/.claude/scripts/ai-fallback.sh {prompt_file}                 # 1 → 2 → 3 の順に試す
+AI_CHAIN="opencode-go/deepseek-v4-pro" ~/.claude/scripts/ai-fallback.sh {prompt_file}
+```
+
+- 切替条件: 429 / `insufficient_quota` / rate limit / 401・403（認証）/ タイムアウト（exit 124・137）/ 空出力（429 はログ、`ERROR` は stderr）。同一モデルの再試行はしない
+- quota 以外の理由で OpenCode が落ちたら、スクリプトは `pi -p --no-session --model` に切り替えて連鎖を続ける（DB 破損などエンジン側の不具合で全滅しないため）
+- 成功時は stderr に `AI_MODEL`（と `AI_SKIPPED`）を出し、成果物の `利用AI:` 行に記録する
+- OpenCode が無い環境では同じスクリプトが `pi -p --no-session --model` に切り替える（`opencode-go/*` は `oc-sdk-go/*` に読み替え）
+- OpenCode から 3 番目を使うための provider 登録は `opencode/README.md`「フォールバック先の登録」（`opencode.jsonc` は dotfiles の持ち物）
+- フェーズ指定モード（`--ai=opencode`）は CLI 直呼びなので連鎖は効かない。429 なら `--ai=pi:{model}` に切り替える
 
 ## dotfiles との契約
 
