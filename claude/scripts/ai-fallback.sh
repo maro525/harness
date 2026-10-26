@@ -1,6 +1,6 @@
 #!/bin/bash
-# ai-fallback.sh — run one prompt through a chain of models, skipping the ones
-# that are out of quota.
+# ai-fallback.sh — run one prompt through a chain of models (and engines),
+# skipping the ones that are out of quota or broken.
 #
 # Usage:
 #   ai-fallback.sh <prompt-file>     # prompt read from a file
@@ -12,12 +12,21 @@
 # the only executable form of that rule — do not write `opencode run` by hand
 # in skills and commands, they must call this script.
 #
+# Two fallback axes:
+#   models  : github-copilot/gpt-6-astra -> opencode-go/deepseek-v4-pro
+#             -> ollama-cloud/deepseek-v4.1-flash   (AI_CHAIN overrides)
+#   engines : opencode2 (v2) -> opencode (v1) -> pi  (whichever is installed)
+# An engine is kept for the whole chain until it fails for a reason that is not
+# quota (broken DB, bad install, bad credentials) — then the next engine retries
+# the same model. A quota failure never switches engines: the upstream is the
+# same, so the next model is what matters.
+#
 # Contract:
 #   stdout : the answer of the first model that succeeded
-#   stderr : one `skip: <model> (<reason>)` line per skipped candidate, then
-#            `AI_ENGINE=<opencode|pi>` / `AI_MODEL=<model>` /
+#   stderr : one `skip: <model> on <engine> (<reason>)` line per attempt, then
+#            `AI_ENGINE=<engine>` / `AI_MODEL=<model>` /
 #            `AI_SKIPPED=<m1,m2>` (the last one only when something was skipped)
-#   exit   : 0 = a model answered, 1 = every model failed, 2 = usage error
+#   exit   : 0 = a model answered, 1 = everything failed, 2 = usage error
 
 set -uo pipefail
 
@@ -37,7 +46,11 @@ Environment:
   AI_CHAIN     space-separated candidate models, first try first
                (default: github-copilot/gpt-6-astra opencode-go/deepseek-v4-pro
                 ollama-cloud/deepseek-v4.1-flash)
-  AI_TIMEOUT   timeout per candidate (default: 20m)
+  AI_TIMEOUT   timeout per attempt (default: 20m)
+
+Engines are picked in this order when installed: opencode2 (v2) -> opencode
+(v1) -> pi. The chain keeps one engine until it fails for a non-quota reason,
+then the next engine retries the same model.
 
 Exit: 0 = answered, 1 = all candidates failed, 2 = usage error.
 EOF
@@ -67,13 +80,18 @@ if [[ -z "${prompt//[[:space:]]/}" ]]; then
   exit 2
 fi
 
-# OpenCode is the primary engine. Where it is not installed at all, the same
-# chain runs through pi (`opencode-go/*` is the same plan as pi's `oc-sdk-go/*`).
-ENGINE=opencode
-if ! command -v opencode >/dev/null 2>&1; then
-  ENGINE=pi
+ENGINES=()
+for engine in opencode2 opencode pi; do
+  if command -v "$engine" >/dev/null 2>&1; then
+    ENGINES+=("$engine")
+  fi
+done
+if [[ ${#ENGINES[@]} -eq 0 ]]; then
+  echo "ai-fallback: no engine found (opencode2 / opencode / pi)" >&2
+  exit 1
 fi
 
+# pi knows the OpenCode Go plan under a different provider name.
 pi_model() {
   case "$1" in
     opencode-go/*) printf 'oc-sdk-go/%s' "${1#opencode-go/}" ;;
@@ -81,78 +99,110 @@ pi_model() {
   esac
 }
 
-# Newest OpenCode session log — OpenCode can exit 0 with empty output on a 429,
-# so the log is the only place the quota failure shows up in that case.
-latest_log() {
+# OpenCode can exit 0 with empty output on a quota failure, so the logs are the
+# only place that failure shows up. v1 writes one log per session, v2 appends to
+# a single opencode.log — so callers compare the size before/after the run and
+# only look at what was appended.
+newest_log() {
   ls -t "${HOME}/.local/share/opencode/log"/*.log 2>/dev/null | head -n 1
+}
+
+log_size() {
+  local f
+  f=$(newest_log)
+  if [[ -n "$f" && -f "$f" ]]; then
+    wc -c <"$f" | tr -d ' '
+  else
+    printf '0'
+  fi
+}
+
+run_candidate() { # engine model out err
+  case "$1" in
+    opencode2)
+      # --standalone: private server per run (the background service keeps
+      # state between runs) and the only mode where server logs reach stderr.
+      timeout -k 1m "$TIMEOUT" opencode2 run --standalone --agent plan \
+        --print-logs --log-level error -m "$2" "$prompt" </dev/null >"$3" 2>"$4"
+      ;;
+    opencode)
+      timeout -k 1m "$TIMEOUT" opencode run --agent plan \
+        --print-logs --log-level ERROR -m "$2" "$prompt" </dev/null >"$3" 2>"$4"
+      ;;
+    pi)
+      timeout -k 1m "$TIMEOUT" pi -p --no-session --model "$(pi_model "$2")" \
+        "$prompt" </dev/null >"$3" 2>"$4"
+      ;;
+  esac
 }
 
 tmpdir=$(mktemp -d) || { echo "ai-fallback: mktemp failed" >&2; exit 1; }
 trap 'rm -rf "$tmpdir"' EXIT
 
+ei=0
 SKIPPED=()
 
 for model in $CHAIN; do
-  out="$tmpdir/out"
-  err="$tmpdir/err"
-  : >"$out"
-  : >"$err"
+  while :; do
+    engine=${ENGINES[$ei]}
+    out="$tmpdir/out"
+    err="$tmpdir/err"
+    : >"$out"
+    : >"$err"
+    offset=$(log_size)
 
-  if [[ "$ENGINE" == opencode ]]; then
-    # --print-logs --log-level ERROR: OpenCode answers a 429 / DB failure with
-    # exit 0 and empty stdout, so the reason only exists on stderr. The answer
-    # itself is on stdout and is not affected.
-    timeout -k 1m "$TIMEOUT" opencode run --agent plan --print-logs --log-level ERROR \
-      -m "$model" "$prompt" </dev/null >"$out" 2>"$err"
-  else
-    timeout -k 1m "$TIMEOUT" pi -p --no-session --model "$(pi_model "$model")" "$prompt" \
-      </dev/null >"$out" 2>"$err"
-  fi
-  rc=$?
+    run_candidate "$engine" "$model" "$out" "$err"
+    rc=$?
 
-  reason=""
-  if [[ $rc -eq 124 || $rc -eq 137 ]]; then
-    reason="timeout"
-  elif grep -qiE '429|insufficient_quota|rate.?limit|quota' "$err"; then
-    reason="quota"
-  elif grep -qiE '401|403|unauthorized|invalid credential' "$err"; then
-    reason="auth"
-  elif [[ $rc -ne 0 ]]; then
-    reason="exit ${rc}"
-  elif [[ ! -s "$out" ]]; then
-    log=$(latest_log)
-    if [[ -n "$log" ]] && grep -qiE '429|insufficient_quota|rate.?limit' "$log"; then
-      reason="quota (log)"
-    elif grep -qi 'ERROR' "$err"; then
-      reason="error"
-    else
-      reason="empty output"
+    reason=""
+    if [[ $rc -eq 124 || $rc -eq 137 ]]; then
+      reason="timeout"
+    elif grep -qiE '429|insufficient_quota|rate.?limit|quota' "$err"; then
+      reason="quota"
+    elif grep -qiE '401|403|unauthorized|invalid credential' "$err"; then
+      reason="auth"
+    elif [[ $rc -ne 0 ]]; then
+      reason="exit ${rc}"
+    elif [[ ! -s "$out" ]]; then
+      log=$(newest_log)
+      if [[ -n "$log" ]] && tail -c "+$((offset + 1))" "$log" 2>/dev/null |
+        grep -qiE '429|insufficient_quota|rate.?limit'; then
+        reason="quota (log)"
+      elif grep -qi 'ERROR' "$err"; then
+        reason="error"
+      else
+        reason="empty output"
+      fi
     fi
-  fi
 
-  if [[ -n "$reason" ]]; then
-    printf 'skip: %s (%s)\n' "$model" "$reason" >&2
+    if [[ -z "$reason" ]]; then
+      cat "$out"
+      printf 'AI_ENGINE=%s\n' "$engine" >&2
+      printf 'AI_MODEL=%s\n' "$model" >&2
+      if [[ ${#SKIPPED[@]} -gt 0 ]]; then
+        printf 'AI_SKIPPED=%s\n' "$(printf '%s,' "${SKIPPED[@]}" | sed 's/,$//')" >&2
+      fi
+      exit 0
+    fi
+
+    printf 'skip: %s on %s (%s)\n' "$model" "$engine" "$reason" >&2
     if [[ "$reason" == "error" ]]; then
       grep -m1 -i 'ERROR' "$err" | cut -c1-160 | sed 's/^/  ↳ /' >&2
     fi
-    SKIPPED+=("$model")
-    # A quota failure says nothing about the engine, but an OpenCode-side error
-    # (broken DB, bad install) does: the other candidates would hit the same
-    # wall, so switch the engine instead of burning through the chain.
-    if [[ "$ENGINE" == opencode && "$reason" != quota* ]] && command -v pi >/dev/null 2>&1; then
-      echo "ai-fallback: opencode unusable ($reason) - switching to pi" >&2
-      ENGINE=pi
-    fi
-    continue
-  fi
 
-  cat "$out"
-  printf 'AI_ENGINE=%s\n' "$ENGINE" >&2
-  printf 'AI_MODEL=%s\n' "$model" >&2
-  if [[ ${#SKIPPED[@]} -gt 0 ]]; then
-    printf 'AI_SKIPPED=%s\n' "$(printf '%s,' "${SKIPPED[@]}" | sed 's/,$//')" >&2
-  fi
-  exit 0
+    if [[ "$reason" != quota* && $((ei + 1)) -lt ${#ENGINES[@]} ]]; then
+      ei=$((ei + 1))
+      echo "ai-fallback: ${engine} unusable (${reason}) - switching to ${ENGINES[$ei]}" >&2
+      continue
+    fi
+
+    # Record the model only once every engine has given up on it.
+    case " ${SKIPPED[*]-} " in
+      *" $model "*) ;;
+      *) SKIPPED+=("$model") ;;
+    esac
+    break
+  done
 done
 
 echo "ai-fallback: every candidate failed (${CHAIN})" >&2

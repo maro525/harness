@@ -65,11 +65,12 @@ AI_CHAIN="opencode-go/deepseek-v4-pro" ~/.claude/scripts/ai-fallback.sh {prompt_
 ```
 
 - 切替条件: 429 / `insufficient_quota` / rate limit / 401・403（認証）/ タイムアウト（exit 124・137）/ 空出力（429 はログ、`ERROR` は stderr）。同一モデルの再試行はしない
-- quota 以外の理由で OpenCode が落ちたら、スクリプトは `pi -p --no-session --model` に切り替えて連鎖を続ける（DB 破損などエンジン側の不具合で全滅しないため）
+- quota 以外の理由でエンジンが落ちたら、次のエンジンで同じモデルから再開する（`opencode2`（v2）→ `opencode`（v1）→ `pi` の順。DB 破損などエンジン側の不具合で全滅しないため）
+- v1 と v2 は同じ config / data / DB を共有するが、CLI フラグが違う（v2 は `--auto`・`--standalone`・`--log-level error`・`-m provider/model#variant`）。この環境の v1 は `session_message.seq` で全滅するので **v2 が本線**
 - 成功時は stderr に `AI_MODEL`（と `AI_SKIPPED`）を出し、成果物の `利用AI:` 行に記録する
 - OpenCode が無い環境では同じスクリプトが `pi -p --no-session --model` に切り替える（`opencode-go/*` は `oc-sdk-go/*` に読み替え）
 - OpenCode から 3 番目を使うための provider 登録は `opencode/README.md`「フォールバック先の登録」（`opencode.jsonc` は dotfiles の持ち物）
-- フェーズ指定モード（`--ai=opencode`）は CLI 直呼びなので連鎖は効かない。429 なら `--ai=pi:{model}` に切り替える
+- フェーズ指定モード（`--ai=opencode`）は CLI 直呼びなので連鎖は効かない。429 なら `--ai=pi:{model}` に切り替える。v2 が入っている環境では `--ai=opencode2` を使う（v1 はこの環境で `session_message.seq` により全滅）
 
 ## dotfiles との契約
 
