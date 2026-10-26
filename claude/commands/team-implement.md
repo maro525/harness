@@ -43,7 +43,7 @@ $ARGUMENTS
 
 ## IMPLEMENTATION
 
-feature ブランチで作業し（`## Meta` に `branch:` があれば差し戻しなのでそのブランチを使う）、テストを先に書く（TDD）。
+feature ブランチで作業し（`## Meta` に `branch:` があれば差し戻しなのでそのブランチを使う）、テストを先に書く（TDD）。新しく切るブランチの名前は `feature/{LINEAR_ID を小文字}-{短い名前}`（例: `feature/nsketch-1983-deploy-issue-linking`。短い名前は英小文字とハイフン。LINEAR_ID が `NOLINEAR` なら `feature/{短い名前}`）。Linear はブランチ名の ID でも PR を issue に紐づける。既存の `branch:` は名前が規則と違っても変えない。
 
 | tier | 体制 |
 |---|---|
@@ -87,7 +87,7 @@ Plan のタスクがすべて完了し、テストがすべて通過したら OU
 （Linear に投稿する実装完了コメント本文）
 
 ### BRANCH
-feature/{feature-name}
+feature/{linear_id を小文字}-{feature-name}（NOLINEAR なら feature/{feature-name}。差し戻し時は `## Meta` の `branch:` をそのまま返す）
 
 ### BASE
 （作業ブランチを切ったときにいたブランチ。差し戻し時は `## Meta` の `base:` をそのまま返す）

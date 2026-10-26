@@ -22,10 +22,26 @@ $ARGUMENTS
 引数の形式: "{task description}"
 例: "PROJ-573をやりたいです"
 例: "カート機能にクーポン適用を追加する"
+例（issue の紐づけ）: "PROJ-573をやりたいです --issue=closes:#12,#34"
 例（追加修正モード）: "レビュー指摘の型エラーを直す --task-file=.claude/docs/decisions/task-PROJ-573-coupon.md"
 例（フェーズ指定モード）: "--task-file=.claude/docs/decisions/task-PROJ-573-coupon.md --phase=team-review --ai=pi"
 例（フェーズ指定モード・候補の採用）: "--task-file=.claude/docs/decisions/task-PROJ-573-coupon.md --phase=startproject --adopt=案 2"
 ```
+
+### `--issue`（GitHub / GitLab issue の紐づけ）
+
+```
+--issue={ref}[,{ref}...]
+{ref} = [closes:|refs:]{#N | owner/repo#N | URL}
+```
+
+- 接頭辞なしは `refs`（参照だけ。PR / MR 本文は `Related to {ref}`）。閉じるのは `closes:` を明示したときだけ（本文は `Closes {ref}`）。`#N` を本文やタスク説明から自動で拾うことはしない（誤ってクローズするため）
+- URL は GitHub の `https://github.com/{owner}/{repo}/issues/{N}`、GitLab の `https://{host}/{group}/{project}/-/issues/{N}` を受け付け、そのまま使う（`#N` に変換しない）
+- **正規化:** 各要素を `closes {ref}` / `refs {ref}` にして `, ` でつなぐ（例: `--issue=closes:#12,#34` → `closes #12, refs #34`）。これが `ISSUE_REFS` で、`## Meta` の `- issue:` 行に書く。同じ `{ref}` が重複したら 1 つにまとめ、`closes` と `refs` が両方あれば `closes` を残す
+- **検証:** 上の形に当てはまらない要素が 1 つでもあれば、TASK_FILE を作る前（追加修正・フェーズ指定モードでは Meta に書く前）に中止し、正しい書き方を示して案内する（推測で直さない）
+- `--issue=…` は task description から取り除いてから各フェーズに渡す。フェーズには引数で渡さず、`## Meta` の `issue:` で受け渡す（deploy が読む）
+- `--issue` が無ければ `ISSUE_REFS` は空で、GitHub / GitLab issue は紐づけない（`issue:` の行が無い旧 TASK_FILE も同じ扱い）
+- Linear issue は `--issue` と関係なく `LINEAR_ID` で紐づく（タイトル末尾の `({LINEAR_ID})`・本文の `Part of {LINEAR_ID}`・ブランチ名。deploy.md「紐づけの規則」）
 
 ## 実行原則
 
@@ -132,6 +148,7 @@ TASK_FILE = .claude/docs/decisions/task-{LINEAR_ID}-{feature}.md
 - status: planning
 - branch:
 - base:
+- issue: {ISSUE_REFS。--issue が無ければ空}
 
 ## startproject
 ### Brief
@@ -221,6 +238,7 @@ startproject は `agent: Plan` の読み取り専用コマンド。`BRIEF` / `DE
 |---|---|
 | `# Task: {LINEAR_ID} — {task description}`（先頭行） | 元の task description |
 | `## Meta` の `linear_id:` / `tier:` / `status:` / `branch:` / `base:` | `LINEAR_ID` / `tier` / 前提確認の材料 |
+| `## Meta` の `issue:` | `ISSUE_REFS`（行が無い・空なら空） |
 | `## deploy` の `PR/MR:` | 既存 PR / MR の URL |
 | `## startproject` > `### Plan` の `#### 追加依頼 {n}` | 追加依頼の通し番号 n（既存の最大 + 1 を次の n にする） |
 | `## team-implement` / `## team-review` の `### {m}回目` | 実装・レビューの回数 m（既存の最大 + 1 を次の m にする） |
@@ -277,9 +295,12 @@ n と m は独立に数える（差し戻しで m だけ増えることがある
 - 既存 PR: {PR/MR URL}
 - 扱い: team-implement / team-review の {m}回目
 - 前提: 上の Plan は既存 PR で実装済み。この追加依頼だけを実装する
+- issue: {今回の --issue を正規化したもの。--issue が無ければこの行は書かない}
 ```
 
 前提行は「そのまま追加」のときの文言。F3 で再設計した場合は F3 の手順 4 の文言に差し替える。
+
+`--issue` があれば、同時に `## Meta` の `issue:` に追記する（既存の要素の後ろに `, ` でつなぎ、重複は「`--issue`」の正規化どおりまとめる。行が無い旧 TASK_FILE なら `base:` の次に `- issue:` 行を足す）。`ISSUE_REFS` も更新する。deploy の STEP 3-B が本文に無い行だけを `### 関連（追加依頼 {n}）` として既存 PR / MR に追記する。
 
 以降の task description は `"{元の task description}（追加依頼 {n}: {追加の依頼}）"` とする。
 
@@ -301,6 +322,7 @@ n と m は独立に数える（差し戻しで m だけ増えることがある
 | `--phase={phase}` | 必須 | `startproject` / `team-implement` / `team-review` / `deploy` |
 | `--ai={ai}[:{model}]` | `--adopt` 以外で必須 | `pi` / `cline` / `opencode` / `codex`。`:{model}` は各 CLI の `--model` にそのまま渡す（変換しない）。Claude の別モデルは対象外 |
 | `--adopt=案 {k}` | 任意 | `--phase=startproject` 専用。CLI を起動せず、候補 `### 案 {k}` を `### Brief / Design / Plan` に昇格させて終わる |
+| `--issue={ref}[,{ref}]` | 任意 | 「Input」の「`--issue`」と同じ。P1 で `## Meta` の `issue:` に追記してから CLI を起動する（外部 CLI の deploy は Meta を読む） |
 
 ### TASK_FILE に書く形（このモードの規約）
 
@@ -323,6 +345,8 @@ STEP 3F F1 と同じ場所から `LINEAR_ID` / `tier` / task description / `bran
 | `team-implement` | m = `## team-implement` の `### {m}回目` の最大 + 1（初回 1） | `### Brief / Design / Plan` が埋まっている（候補だけなら先に `--adopt`） |
 | `team-review` | m = `## team-implement` の最新回の番号（無ければ 1） | `## team-implement` が埋まっている |
 | `deploy` | — | `## team-review` の最新回が PASS、`branch:` が空でない |
+
+`--issue` があれば、前提の確認が済んだあと・CLI を起動する前に、STEP 3F F4 と同じ要領で `## Meta` の `issue:` に追記する（`## Meta` は orchestrate が書く。形式が不正なら何も書かずに中止して案内する）。
 
 ラベルは `--label={ai}/{model}`（model 省略時は `{ai}`）。ラベルは見出しには入らず、見出し直下の `利用AI:` 行になる。期待する見出し（P4 の確認に使う。**照合キーは見出し行そのもの**で、`### …` は完全一致、`#### 追加 push（` だけ前方一致。見出しに AI 名が無いので、同じ見出しが既にあっても区別せず、`## {phase}` の節の中の出現数を P3（起動前）と P4（起動後）で数えて差で判定する）:
 
@@ -406,7 +430,7 @@ startproject / team-review は TASK_FILE 以外を変更しない前提（SKILL.
 
 ### P6: Linear と報告
 
-`### RESULT` の `linear:` が `未投稿` で LINEAR_ID が実在するなら、書いた節の要約を `mcp__linear-server__save_comment` で LINEAR_ID に投稿する（`posted` なら投稿しない）。**Linear のステータスは変えない**（`## Meta` の `status:` は P4 で更新済み）。**[MUST]** コメント投稿の有無にかかわらず「状態管理」の「Linear の description 更新」を行う（`--adopt` も同じ。ステータスは変えないが、description は P4 で更新した `status` で更新する）。その後 P7（`--phase=deploy` のみ。それ以外は飛ばす）→ STEP 7 へ（Mode 行は `フェーズ指定（{phase}、{ai}[:{model}]、{見出し}）`。`--adopt` なら `フェーズ指定（startproject、案 {k} を採用）`）。実行経路の記録は STEP 7 の報告（ユーザー向け）だけで、TASK_FILE には残さない。
+`### RESULT` の `linear:` が `未投稿` で LINEAR_ID が実在するなら、書いた節の要約を `mcp__linear-server__save_comment` で LINEAR_ID に投稿する（`posted` なら投稿しない）。**Linear のステータスは変えない**（`## Meta` の `status:` は P4 で更新済み）。`--phase=deploy` で `### RESULT` の `pr:` が URL かつ書いた見出しが `#### PR / MR`（新規作成）なら、STEP 6b の「Linear issue への PR の添付」を同じ手順で行い、結果の 1 行を `## deploy` の `#### 申し送り事項` に追記する（一般向け SKILL.md は添付しない）。**[MUST]** コメント投稿の有無にかかわらず「状態管理」の「Linear の description 更新」を行う（`--adopt` も同じ。ステータスは変えないが、description は P4 で更新した `status` で更新する）。その後 P7（`--phase=deploy` のみ。それ以外は飛ばす）→ STEP 7 へ（Mode 行は `フェーズ指定（{phase}、{ai}[:{model}]、{見出し}）`。`--adopt` なら `フェーズ指定（startproject、案 {k} を採用）`）。実行経路の記録は STEP 7 の報告（ユーザー向け）だけで、TASK_FILE には残さない。
 
 ### P7: deploy の finalize
 
@@ -499,6 +523,13 @@ deploy はコミット・push・PR / MR 作成（既存の PR / MR があれば�
 |---|---|
 | `DEPLOY` | `## deploy`。**追加修正モードでは上書きせず**、返却の `#### 追加 push（追加依頼 {n}）` を `## deploy` の末尾に追記する |
 
+**[MUST] Linear issue への PR の添付**（新規作成型のときだけ。追加 push 型と `NOLINEAR` では行わない）: Linear の GitHub / GitLab 連携が無い環境でも issue から PR に辿れるよう、`links` で代わりに添付する。
+
+1. `mcp__linear-server__get_issue` で LINEAR_ID を取得し、`attachments` の URL に `DEPLOY` の PR/MR URL があるか見る
+2. あれば何もしない（連携が自動で添付済み。二重に付けない）
+3. 無ければ `mcp__linear-server__save_issue`（`id: {LINEAR_ID}`, `links: [{url: {PR/MR URL}, title: {PR/MR タイトル}}]`）で追加する。`links` は append-only なので既存の添付は消えない。description・ステータスは渡さない
+4. 結果を `## deploy` の `#### 申し送り事項` の末尾に `- Linear 添付: 連携で添付済み | links で追加 | 失敗（{理由}）` の 1 行で書く。失敗しても報告だけでフローは止めない
+
 **[MUST]** 同時に「状態管理」に従い `## Meta` の `status` を `in-review` にする（6c でコミットされるので、STEP 7 ではなくここで書く）。
 
 **[MUST]** `LINEAR_COMMENT` を投稿し、Linear のステータスを "In Review" にする（失敗したら黙って飛ばさず報告する）。
@@ -526,6 +557,7 @@ TASK_FILE だけを `docs(task):` でコミットして同じ作業ブランチ�
 - Tier: {tier}
 - Task File: {TASK_FILE}
 - Mode: 通常 | 追加修正（追加依頼 {n}、{m}回目） | フェーズ指定（{phase}、{ai}[:{model}]、{見出し}）
+- Issue: {ISSUE_REFS | なし}
 
 ### 各フェーズのサマリー
 - startproject: ...（Gate 1: {GATE1}）
@@ -540,7 +572,7 @@ TASK_FILE だけを `docs(task):` でコミットして同じ作業ブランチ�
 
 「### 質問」は質問しなかったら「なし」の 1 行にする。Gate 1 を中継で聞いた場合は startproject 行の Gate 1 にも経路を添える（例: `Gate 1: approved（Linear）`）。
 
-deploy 行には PR / MR の URL に加えて 6c の `FINALIZE` の結果（`docs(task):` コミットの hash・push 先・現在のブランチ。中止ならその理由）を添える（TASK_FILE には書かない）。**現在のブランチは必ず示す**（6c を実行しなかった・中止した・P7 を飛ばしたときは作業ブランチに留まっている。`git branch --show-current` で確認する）。`status` は 6b で `in-review` にしてあるので STEP 7 では書かない。
+deploy 行には PR / MR の URL、`DEPLOY` の `紐づけ:` 行（追加 push は追記した行）、6b の `Linear 添付:` の結果（新規作成型のみ）、紐づけの申し送り（base がデフォルトブランチでない・ブランチ名に ID が無い）があればそれに加えて 6c の `FINALIZE` の結果（`docs(task):` コミットの hash・push 先・現在のブランチ。中止ならその理由）を添える（TASK_FILE には書かない）。**現在のブランチは必ず示す**（6c を実行しなかった・中止した・P7 を飛ばしたときは作業ブランチに留まっている。`git branch --show-current` で確認する）。`status` は 6b で `in-review` にしてあるので STEP 7 では書かない。
 
 tier=S では startproject 行を「（S: orchestrate が計画、Gate 1: {GATE1}）」にする。追加修正モードでは startproject 行を「（追加修正モード: スキップ）」または再設計時の結果にし、deploy 行に既存 PR / MR の URL を書く。
 
@@ -557,6 +589,7 @@ orchestrator は以下を変数として保持し、全 command に引数で渡�
 | `tier` | STEP 0（追加修正モードは STEP 3F F1 で `## Meta` の `tier:` から復元。F3 の再設計で更新） |
 | `LINEAR_ID` | STEP 1（追加修正モードは STEP 3F F1 で `## Meta` の `linear_id:` から復元） |
 | `TASK_FILE` | STEP 2（追加修正モードは引数または Linear ID から特定。フェーズ指定モードは引数の `--task-file` 必須） |
+| `ISSUE_REFS` | 「Input」の「`--issue`」で正規化（無ければ空）。STEP 2 で `## Meta` の `issue:` に書く。追加修正モードは STEP 3F F1 で `issue:` から復元し、F4 で追記。フェーズ指定モードは P1 で追記。フェーズには渡さず `## Meta` で受け渡す |
 | `ASK_MODE` | STEP 2 の直後（追加修正・フェーズ指定モード、モード判定では最初に質問が要った時点）。`linear` / `terminal`。待機中の状態は変数でなく `ASK_LOG` の「待機状態」に持つ。「質問の中継（Linear）」 |
 | `SESSION_INFO` | その実行で最初に「Linear の description 更新」をするとき 1 回だけ集め、以降は使い回す（フェーズには渡さない）。「実行セッション情報の取得」 |
 
