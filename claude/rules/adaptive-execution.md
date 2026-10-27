@@ -48,7 +48,7 @@ Phases and models per tier (how each phase is launched: `orchestrate.md` "tier �
 | **M** | best | opus | opus | haiku |
 | **L** | best | best | opus | haiku |
 
-Both tables below use the same invocation: `~/.claude/scripts/ai-fallback.sh {prompt_file}` (model chain and fallback rules: `$HOME/.claude/rules/tool-routing.md`「OpenCode リサーチの実行」). Inside `/startproject` (no Agent tool) and `context: fork` commands, run it directly; elsewhere via a subagent.
+Both tables below use the same invocation: `~/.claude/scripts/ai-fallback.sh {prompt_file}` (model chain and fallback rules: `$HOME/.claude/rules/tool-routing.md`「OpenCode リサーチの実行」). Always run it directly with background Bash (no subagent).
 
 ### External Research (firecrawl MCP + OpenCode)
 

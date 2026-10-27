@@ -3,11 +3,13 @@
 **どの操作をどのツール・エージェントに委譲するかを定める。**
 外部リサーチは firecrawl MCP + OpenCode の二系統、設計相談は OpenCode に振り分ける。使うかどうか自体は tier で決まる（`$HOME/.claude/rules/adaptive-execution.md` の「External Research」「OpenCode Design Consultation」）。本ファイルは「使う」となった場合の委譲先を定める。
 
+**単発の作業はサブエージェント（Agent ツール）に振らず、メインセッションで直接実行する。** リサーチ・OpenCode・Linear・docker/uv/ruff・スクリプト作成などすべて対象。サブエージェントを使うのは `/orchestrate` 系（startproject / team-implement / team-review / deploy）と、それらの command が自分で定めている場合だけ。
+
 ## Skill Routing hook への応答
 
 `agent-router.py`（UserPromptSubmit hook）が `[Skill Routing]` / `[Agent Routing]` を additionalContext に出す。ソフトな推奨として扱う。
 
-- **従う**: プロンプトの意図と一致し、ユーザーの明示指示と矛盾しないとき。従う旨を一言伝えて起動する（`[Skill Routing]` は Skill ツール、`[Agent Routing]` は提案されたサブエージェント / OpenCode）
+- **従う**: プロンプトの意図と一致し、ユーザーの明示指示と矛盾しないとき。従う旨を一言伝えて起動する（`[Skill Routing]` は Skill ツール、`[Agent Routing]` は提案された firecrawl / OpenCode をメインで直接実行）
 - **従わなくてよい**: ユーザーが別のことを明示している／提案スキルに対してタスクが小さすぎる（XS など）／進行中ワークフロー内の追加質問
 - 提案がずれていると思ったら、理由を伝えてユーザーに確認する
 
@@ -20,12 +22,11 @@
 | PDF (URL) / 複数ページ | **firecrawl MCP** | `firecrawl_parse` / `firecrawl_scrape` |
 | 音声・動画 | **未対応** | 委託先なし。ユーザーに扱い方を確認する |
 | Library research | **firecrawl MCP + OpenCode** | `firecrawl_search` で一次情報 + OpenCode で実装知見 |
-| Design decisions | **OpenCode（モデルはフォールバック連鎖）** | Subagent（`~/.claude/scripts/ai-fallback.sh {prompt_file}`、下記「OpenCode リサーチの実行」） |
+| Design decisions | **OpenCode（モデルはフォールバック連鎖）** | バックグラウンド Bash で直接（`~/.claude/scripts/ai-fallback.sh {prompt_file}`、下記「OpenCode リサーチの実行」） |
 | git（書き込み系） | **`/deploy` skill** | Ad-hoc Git モード。読み取り系は Claude が直接 |
 | `/orchestrate` で作った PR への追加変更 | **`/orchestrate` 追加修正モード** | `/orchestrate "{追加の依頼} --task-file={TASK_FILE}"`。直接編集して Ad-hoc push しない（下記「Git Operations」） |
-| docker/ruff/uv (in `context: fork` skills) | **Direct** | スキル内で直接実行 |
-| docker/ruff/uv (ad-hoc) | **Subagent** | サブエージェント内で実行 |
-| Linear MCP | **Direct or Subagent** | スキル内は直接、アドホックはサブエージェント |
+| docker/ruff/uv | **Direct** | Bash で直接実行（長いものは `run_in_background: true`） |
+| Linear MCP | **Direct** | Linear MCP ツールを直接呼ぶ |
 | GitHub 操作 | **`gh` CLI** | GitHub MCP は不安定なため使わない |
 
 ## External Research via firecrawl MCP + OpenCode
@@ -93,7 +94,7 @@ timeout -k 1m 20m opencode run --agent plan --print-logs --log-level ERROR -m {m
 - 空出力を quota と決めつけず、ログ（`~/.local/share/opencode/log/`）で確認する。v1 は 1 セッション 1 ファイル、v2 は `opencode.log` 1 本に追記するので、**実行前後の差分だけを見る**（ラッパーはファイルサイズを控えてから `tail -c` で差分を検索する）。v1 の正常系は `service=session` → `POST /session` → `service=snapshot` → `resolveTools` → `service=llm … stream` と進む。**`service=vcs … initialized` で止まっていれば stdin 詰まり**（`< /dev/null` 忘れ）で、非 git cwd と同じ見た目になる。`session_message.seq` の SQLite エラーは **v1 固有**（v2 は同じ DB で動く）で、モデルを替えても直らない（ラッパーは `--print-logs --log-level error` を付けて stderr に理由を出させ、その行を `skip: … (error)` の下に添える）
 - 疎通確認: `opencode2 run --agent plan -m <model> "Reply with exactly: PONG"`（v2。v1 は `opencode run …`）。利用可能モデルは `opencode2 models` で確認できる
 - エンジンは `opencode2` → `opencode` → `pi` の順で存在するものを使う（ラッパーが決める）。手で叩くときは入っている方を使う
-- `context: fork` の command 内と `/startproject` は直接実行。それ以外はサブエージェント経由でメインコンテキストを汚さない
+- どこでも Bash ツールで直接実行する（`run_in_background: true`）。サブエージェントは挟まない。長い出力はファイルに落とし、必要な部分だけ読む
 - OpenCode はコードを読まずに答えることがある。結論は採用してよいが**根拠は必ず自分で検証する**
 
 ### Scope
@@ -112,28 +113,11 @@ timeout -k 1m 20m opencode run --agent plan --print-logs --log-level ERROR -m {m
 
 ### How to Route
 
-Agent ツールで 2 つのサブエージェント（`subagent_type: general-purpose`、`run_in_background: true`）を**同時に起動**する（片方の結果を待たない）。
+サブエージェントは使わず、メインセッションで二系統を同時に進める。
 
-```
-# 系統 1: 一次情報
-Research the following using the firecrawl MCP tools: {topic}
-Start with firecrawl_search, then firecrawl_scrape the authoritative sources
-(official docs / release notes). Cite the source URL for every claim.
-Save full output to: .claude/docs/research/{topic}-sources.md
-Return CONCISE summary.
-
-# 系統 2: 実装知見
-Run OpenCode research on: {topic}
-~/.claude/scripts/ai-fallback.sh {prompt_file}
-The script walks the model chain and falls back on quota/timeout (see
-"OpenCode リサーチの実行" in $HOME/.claude/rules/tool-routing.md). Expect over 10 minutes.
-Record the serving model from its AI_MODEL line as `利用AI:` in the output.
-Save full output to: .claude/docs/research/{topic}-opencode.md
-Return CONCISE summary, and flag anything you are NOT confident about
-so it can be checked against the firecrawl sources.
-```
-
-両者の結果を Claude が統合する（食い違いは firecrawl 優先）。
+1. **系統 2（実装知見）を先に起動**: `~/.claude/scripts/ai-fallback.sh {prompt_file}` を Bash の `run_in_background: true` で起動し、出力を `.claude/docs/research/{topic}-opencode.md` に落とす（10 分超かかることがある。stderr の `AI_MODEL` を `利用AI:` として記録する）
+2. **系統 1（一次情報）をその間に実行**: `firecrawl_search` → 公式ドキュメント／リリースノートを `firecrawl_scrape`。主張ごとに出典 URL を控える
+3. ai-fallback.sh の完了通知を待ち、出力ファイルを読んで firecrawl の結果と突き合わせて統合する（食い違いは firecrawl 優先）
 
 ### Triggers
 
@@ -181,41 +165,8 @@ so it can be checked against the firecrawl sources.
 
 ## Linear MCP Operations
 
-スキル外での MCP 操作はサブエージェント（Agent ツール、`general-purpose`）経由で実行する。
+スキルの内外を問わず、Linear MCP ツールをメインセッションで直接呼ぶ。issue 作成前は重複を検索する。
 
-```
-Perform the following MCP operation.
-Task: {description}
-Use Linear MCP tools directly.
-Report results back concisely in Japanese.
-```
+## Operational Commands
 
-### Linear Triggers
-
-| User Input | Action |
-|------------|--------|
-| 「Linearにissue作って」「チケットを更新して」「タスクのステータスを変えて」 | サブエージェント経由で実行 |
-
-## Operational Commands (Subagent Routing)
-
-以下はアドホック実行時、コンテキスト分離のためサブエージェント（Agent ツール、`general-purpose`）経由で実行する。`context: fork` スキル内では直接実行する。
-
-```
-Task: {description}
-Execute the commands directly and report results concisely.
-```
-
-| 操作 | コマンド例 | Triggers |
-|------|-----------|----------|
-| **依存管理** | `uv add/remove/sync` | 「パッケージを更新して」「依存を追加して」 |
-| **Lint/Format** | `ruff check .`, `ruff format .` | 「lintして」「フォーマットして」 |
-| **Docker** | `docker build/run`, `docker compose` | 「コンテナを起動して」「docker build して」 |
-| **環境セットアップ** | `uv sync`, version checks | 「環境セットアップして」「バージョン確認して」 |
-| **ファイル整理** | bulk rename, directory restructure | 「ファイルを整理して」「リネームして」 |
-| **シェルスクリプト** | Bash script creation | 「スクリプト書いて」「自動化して」 |
-| **Changelog** | `git log` → formatted notes | 「changelog作って」「リリースノート生成して」 |
-
-### 例外（Claude が直接実行してよい操作）
-
-- ファイル内容の編集（Edit/Write ツール）
-- 新規ソースコード作成（Claude の領域）
+依存管理（`uv`）・Lint/Format（`ruff`）・Docker・環境セットアップ・ファイル整理・シェルスクリプト作成・changelog 生成は、メインセッションで直接実行する。長い出力のコマンドは `tail` / `grep` で絞るか、`run_in_background: true` で実行してログファイルから必要な部分だけ読む。
