@@ -50,7 +50,7 @@ orchestrate のフェーズ指定モードは探索に頼らず、プロンプ�
 
 `/orchestrate` のフェーズ指定モード（`../claude/commands/orchestrate.md` STEP 3P）が、既存 TASK_FILE の 1 フェーズを外部 CLI に実行させるときの呼び出し表。対象 CLI は **pi / cline / opencode / codex**（Claude の別モデルは対象外。`context: fork` の command は frontmatter の `model` が優先され `--model` で変えられない）。読ませる定義は `~/.agents/skills/{phase}/SKILL.md`（この `skills/` の配布先。配布は `../sync-agents.sh`）。
 
-**CLI の起動オプション・権限・最終メッセージの取り出し・共通則は、この節が唯一の定義。** `../claude/rules/tool-routing.md` には書かない（毎回読み込まれるファイルだが、この内容を使うのはフェーズ指定モードだけ）。手で 1 フェーズを回すときも同じ表のコマンドに `"$(cat {prompt_file})"` を渡し、`--label={ai}/{model}` を付ける（TASK_FILE の書き方が orchestrate 経由と同じになる。「共通規約」の見出し・利用AI 行）。deploy を手で回したときは CLI が作業ブランチに留まり TASK_FILE を未コミットで残すので、自分で TASK_FILE だけを `docs(task):` でコミットして同じブランチに push し、分岐元に戻る（orchestrate 経由では STEP 3P P7 が `/deploy "--finalize --task-file=…"` で行う）。**TASK_FILE を gitignore していないリポジトリでは、このコミットが PR / MR に載る**（設計の検討内容・Linear ID などの社内向けメモが公開範囲に入る）。公開したくなければ `.claude/`（または `.claude/docs/decisions/`）を `.gitignore` に入れておく（gitignore なら finalize は commit / push せず分岐元に戻るだけ）。
+**CLI の起動オプション・権限・最終メッセージの取り出し・共通則は、この節が唯一の定義。** 実行は `claude/scripts/phase-run.sh`（`sync-claude.sh` が `~/.claude/scripts/phase-run.sh` に配布）に一本化しており、下の表はスクリプトが組み立てるコマンドと同じ。`../claude/rules/tool-routing.md` には書かない（毎回読み込まれるファイルだが、この内容を使うのはフェーズ指定モードだけ）。手で 1 フェーズを回すときも同じ表のコマンドに `"$(cat {prompt_file})"` を渡し、`--label={ai}/{model}` を付ける（TASK_FILE の書き方が orchestrate 経由と同じになる。「共通規約」の見出し・利用AI 行）。deploy を手で回したときは CLI が作業ブランチに留まり TASK_FILE を未コミットで残すので、自分で TASK_FILE だけを `docs(task):` でコミットして同じブランチに push し、分岐元に戻る（orchestrate 経由では STEP 3P P7 が `/deploy "--finalize --task-file=…"` で行う）。**TASK_FILE を gitignore していないリポジトリでは、このコミットが PR / MR に載る**（設計の検討内容・Linear ID などの社内向けメモが公開範囲に入る）。公開したくなければ `.claude/`（または `.claude/docs/decisions/`）を `.gitignore` に入れておく（gitignore なら finalize は commit / push せず分岐元に戻るだけ）。
 
 ### orchestrate からの参照
 
@@ -72,9 +72,12 @@ orchestrate のフェーズ指定モードは探索に頼らず、プロンプ�
 | `cline` | `cline --json --auto-approve true -t 1800 "{prompt}"` | `-m {model}`（provider は cline の設定値。変えるなら `-P {provider}` を併記） |
 | `opencode` | `opencode run --agent build --dangerously-skip-permissions "{prompt}"` | `-m {provider/model}` |
 | `opencode2` | `opencode2 run --standalone --agent build --auto "{prompt}"` | `-m {provider/model}#{variant}` |
+| `claude` | `claude -p --model {model} --permission-mode acceptEdits "--allowedTools={tools}" "{prompt}"` | `--model {model}` |
 | `codex` | `codex exec -s workspace-write -c 'sandbox_workspace_write.writable_roots=["{repo}/.git"]' -o {last} "{prompt}"`。deploy は push のため `-c 'sandbox_workspace_write.network_access=true'` を加える | `-m {model}` |
 
 - モデル名は**変換せずそのまま**渡す（各 CLI で通る名前をユーザーが指定する）
+- **claude の `--allowedTools` は `=` 形式で渡す**（`--allowedTools=Read,Write,...`）。空白区切りだと後ろのプロンプトがツール名として吞み込まれ、`Input must be provided either through stdin or as a prompt argument` で落ちる
+- **claude は `--permission-mode acceptEdits` を付ける**（付けないと非対話では書き込みが拒否される）。`--dangerously-skip-permissions` は使わない
 - **codex に `-s danger-full-access` は使わない。** `workspace-write` は writable root 配下の `.git` を読み取り専用にするため、`git checkout -b` / `git commit` が失敗する。`.git` を `writable_roots` に足せば足り、deploy の push は `network_access=true` で通る（キー名は codex の config reference `sandbox_workspace_write.writable_roots` / `.network_access`）。codex を更新したら `codex exec --help` と config reference でキー名が生きているか確認する
 - codex の最終メッセージは `-o {last}`（`--output-last-message`）でファイルに取る。stdout は `--json` を付けなくてもイベントログが混ざるので、そこから拾わない
 - `which -a codex` で複数見つかる環境（WSL で Windows 側の `npm` の codex が先に来る等）では、PATH の先頭がどちらかを `codex --version` で確認してから使う
