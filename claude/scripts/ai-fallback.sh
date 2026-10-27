@@ -1,11 +1,13 @@
 #!/bin/bash
 # ai-fallback.sh — run one prompt through a chain of models (and engines),
-# skipping the ones that are out of quota or broken.
+# skipping the ones that are out of quota or broken. The chain starts with the
+# Codex CLI and falls back to OpenCode models.
 #
 # Usage:
 #   ai-fallback.sh <prompt-file>     # prompt read from a file
 #   ai-fallback.sh -                 # prompt read from stdin
 #   AI_CHAIN="m1 m2 m3" ai-fallback.sh <prompt-file>   # override the chain
+#   AI_CHAIN="codex:gpt-6-sol m2" ai-fallback.sh <prompt-file>
 #
 # The chain (and why it is in this order) is defined in
 # ~/.claude/rules/tool-routing.md > "OpenCode リサーチの実行". This script is
@@ -13,9 +15,14 @@
 # in skills and commands, they must call this script.
 #
 # Two fallback axes:
-#   models  : github-copilot/gpt-6-astra -> opencode-go/deepseek-v4-pro
+#   models  : codex -> github-copilot/gpt-6-astra -> opencode-go/deepseek-v4-pro
 #             -> ollama-cloud/deepseek-v4.1-flash   (AI_CHAIN overrides)
 #   engines : opencode2 (v2) -> opencode (v1) -> pi  (whichever is installed)
+# `codex` / `codex:<model>` is a single-shot candidate run by the Codex CLI
+# (`codex exec`, read-only sandbox, non-interactive). It never switches engines:
+# any failure moves on to the next model. Plain `codex` uses the model from
+# ${CODEX_HOME:-~/.codex}/config.toml and is reported as `codex/<that model>`.
+# Every other candidate is `provider/model` and runs on the engine axis below.
 # An engine is kept for the whole chain until it fails for a reason that is not
 # quota (broken DB, bad install, bad credentials) — then the next engine retries
 # the same model. A quota failure never switches engines: the upstream is the
@@ -30,7 +37,7 @@
 
 set -uo pipefail
 
-CHAIN_DEFAULT="github-copilot/gpt-6-astra opencode-go/deepseek-v4-pro ollama-cloud/deepseek-v4.1-flash"
+CHAIN_DEFAULT="codex github-copilot/gpt-6-astra opencode-go/deepseek-v4-pro ollama-cloud/deepseek-v4.1-flash"
 CHAIN=${AI_CHAIN:-$CHAIN_DEFAULT}
 TIMEOUT=${AI_TIMEOUT:-20m}
 
@@ -44,12 +51,16 @@ Usage: ai-fallback.sh <prompt-file> | -
 
 Environment:
   AI_CHAIN     space-separated candidate models, first try first
-               (default: github-copilot/gpt-6-astra opencode-go/deepseek-v4-pro
-                ollama-cloud/deepseek-v4.1-flash)
+               (default: codex github-copilot/gpt-6-astra
+                opencode-go/deepseek-v4-pro ollama-cloud/deepseek-v4.1-flash)
+               `codex` / `codex:<model>` runs on the Codex CLI; everything else
+               is an OpenCode `provider/model`
   AI_TIMEOUT   timeout per attempt (default: 20m)
 
-Engines are picked in this order when installed: opencode2 (v2) -> opencode
-(v1) -> pi. The chain keeps one engine until it fails for a non-quota reason,
+Codex candidates run `codex exec -s read-only` and fall through to the next
+model on any failure (quota, auth, timeout, empty output, non-zero exit).
+Engines for provider/model candidates are picked in this order when installed:
+opencode2 (v2) -> opencode (v1) -> pi. The chain keeps one engine until it fails for a non-quota reason,
 then the next engine retries the same model.
 
 Exit: 0 = answered, 1 = all candidates failed, 2 = usage error.
@@ -86,10 +97,44 @@ for engine in opencode2 opencode pi; do
     ENGINES+=("$engine")
   fi
 done
-if [[ ${#ENGINES[@]} -eq 0 ]]; then
-  echo "ai-fallback: no engine found (opencode2 / opencode / pi)" >&2
+HAVE_CODEX=0
+if command -v codex >/dev/null 2>&1; then
+  HAVE_CODEX=1
+fi
+if [[ ${#ENGINES[@]} -eq 0 && $HAVE_CODEX -eq 0 ]]; then
+  echo "ai-fallback: no engine found (codex / opencode2 / opencode / pi)" >&2
   exit 1
 fi
+
+# `codex` -> codex/<model from config.toml> (codex/default when unreadable),
+# `codex:<model>` -> codex/<model>. Only the top-level `model` key is read,
+# never anything else from config.toml (it may hold credentials).
+codex_model_label() {
+  local name
+  if [[ "$1" == codex:* ]]; then
+    printf 'codex/%s' "${1#codex:}"
+    return
+  fi
+  name=$(awk '
+    /^[[:space:]]*\[/ { exit }
+    /^[[:space:]]*model[[:space:]]*=/ {
+      sub(/^[^=]*=[[:space:]]*/, ""); sub(/[[:space:]]*(#.*)?$/, "")
+      print; exit
+    }' "${CODEX_HOME:-$HOME/.codex}/config.toml" 2>/dev/null | tr -d "\"'")
+  printf 'codex/%s' "${name:-default}"
+}
+
+# codex exec: read-only sandbox, no session file, final message to $3.
+# Plain `codex` passes no -m so config.toml decides the model.
+run_codex() { # candidate raw err last
+  local model_args=()
+  if [[ "$1" == codex:* ]]; then
+    model_args=(-m "${1#codex:}")
+  fi
+  timeout -k 1m "$TIMEOUT" codex exec -s read-only --ephemeral \
+    --skip-git-repo-check --color never -o "$4" ${model_args[@]+"${model_args[@]}"} \
+    -- "$prompt" </dev/null >"$2" 2>"$3"
+}
 
 # pi knows the OpenCode Go plan under a different provider name.
 pi_model() {
@@ -142,7 +187,75 @@ trap 'rm -rf "$tmpdir"' EXIT
 ei=0
 SKIPPED=()
 
+succeed() { # engine model-label
+  printf 'AI_ENGINE=%s\n' "$1" >&2
+  printf 'AI_MODEL=%s\n' "$2" >&2
+  if [[ ${#SKIPPED[@]} -gt 0 ]]; then
+    printf 'AI_SKIPPED=%s\n' "$(printf '%s,' "${SKIPPED[@]}" | sed 's/,$//')" >&2
+  fi
+  exit 0
+}
+
+record_skip() { # model-label
+  case " ${SKIPPED[*]-} " in
+    *" $1 "*) ;;
+    *) SKIPPED+=("$1") ;;
+  esac
+}
+
 for model in $CHAIN; do
+  case "$model" in
+    codex | codex:*)
+      label=$(codex_model_label "$model")
+      if [[ $HAVE_CODEX -eq 0 ]]; then
+        printf 'skip: %s on codex (not installed)\n' "$label" >&2
+        record_skip "$label"
+        continue
+      fi
+      raw="$tmpdir/codex.raw"
+      err="$tmpdir/codex.err"
+      last="$tmpdir/codex.last"
+      : >"$raw"
+      : >"$err"
+      : >"$last"
+
+      run_codex "$model" "$raw" "$err" "$last"
+      rc=$?
+
+      # Success is judged on the exit code and the final message only: the
+      # transcript can mention "quota" (the prompt itself may), so it is
+      # grepped only once the run has already failed.
+      reason=""
+      if [[ $rc -eq 124 || $rc -eq 137 ]]; then
+        reason="timeout"
+      elif [[ $rc -eq 0 && -s "$last" ]]; then
+        cat "$last"
+        # -o writes the message without a trailing newline.
+        [[ -n "$(tail -c 1 "$last")" ]] && echo
+        succeed codex "$label"
+      elif cat "$err" "$raw" | grep -qiE '429|insufficient_quota|rate.?limit|quota|usage limit'; then
+        reason="quota"
+      elif cat "$err" "$raw" | grep -qiE '401|403|unauthorized|invalid credential|not logged in'; then
+        reason="auth"
+      elif [[ $rc -ne 0 ]]; then
+        reason="exit ${rc}"
+      else
+        reason="empty output"
+      fi
+
+      printf 'skip: %s on codex (%s)\n' "$label" "$reason" >&2
+      grep -m1 -iE 'error' "$err" | cut -c1-160 | sed 's/^/  ↳ /' >&2
+      record_skip "$label"
+      continue
+      ;;
+  esac
+
+  if [[ ${#ENGINES[@]} -eq 0 ]]; then
+    printf 'skip: %s on none (no engine)\n' "$model" >&2
+    record_skip "$model"
+    continue
+  fi
+
   while :; do
     engine=${ENGINES[$ei]}
     out="$tmpdir/out"
@@ -177,12 +290,7 @@ for model in $CHAIN; do
 
     if [[ -z "$reason" ]]; then
       cat "$out"
-      printf 'AI_ENGINE=%s\n' "$engine" >&2
-      printf 'AI_MODEL=%s\n' "$model" >&2
-      if [[ ${#SKIPPED[@]} -gt 0 ]]; then
-        printf 'AI_SKIPPED=%s\n' "$(printf '%s,' "${SKIPPED[@]}" | sed 's/,$//')" >&2
-      fi
-      exit 0
+      succeed "$engine" "$model"
     fi
 
     printf 'skip: %s on %s (%s)\n' "$model" "$engine" "$reason" >&2
@@ -197,10 +305,7 @@ for model in $CHAIN; do
     fi
 
     # Record the model only once every engine has given up on it.
-    case " ${SKIPPED[*]-} " in
-      *" $model "*) ;;
-      *) SKIPPED+=("$model") ;;
-    esac
+    record_skip "$model"
     break
   done
 done

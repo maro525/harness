@@ -69,7 +69,7 @@ S は orchestrate から Agent ツール経由（sonnet）で起動されるた�
 
 ### OpenCode Reviewer
 
-変更内容が長いのでプロンプトはファイルに落として渡す。呼び出し形は `~/.claude/scripts/ai-fallback.sh {prompt_file}`。モデルのフォールバック連鎖・切替条件・記録方法は `$HOME/.claude/rules/tool-routing.md` の「OpenCode リサーチの実行」に従う。全候補が失敗したときだけこのレビュアーを飛ばし、結果に「OpenCode 不可: {理由}」と書く（成功したら `AI_MODEL` を「利用AI」として残す）。
+変更内容が長いのでプロンプトはファイルに落として渡す。呼び出し形は `~/.claude/scripts/ai-fallback.sh {prompt_file}`（連鎖の先頭は Codex CLI で、落ちたら OpenCode のモデルに回る）。モデルのフォールバック連鎖・切替条件・記録方法は `$HOME/.claude/rules/tool-routing.md` の「OpenCode リサーチの実行」に従う。全候補が失敗したときだけこのレビュアーを飛ばし、結果に「OpenCode 不可: {理由}」と書く（成功したら `AI_MODEL` を「利用AI」として残す）。
 
 ```bash
 ~/.claude/scripts/ai-fallback.sh {prompt_file}

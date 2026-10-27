@@ -458,8 +458,9 @@ def route_prompt(prompt: str) -> dict | None:
                     "(no subagents): firecrawl MCP "
                     "(firecrawl_search / firecrawl_scrape) for sourced facts, and "
                     "`~/.claude/scripts/ai-fallback.sh {prompt_file}` "
-                    "for implementation know-how (the script walks the model chain, "
-                    "falls back on 429/timeout, and prints AI_MODEL on stderr). "
+                    "for implementation know-how (the script walks the model chain "
+                    "starting with Codex CLI, then OpenCode models, falls back on "
+                    "429/timeout, and prints AI_MODEL on stderr). "
                     "Prefer firecrawl when they disagree."
                 ),
             }

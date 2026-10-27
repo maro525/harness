@@ -88,7 +88,7 @@ Agent ツールが無いため、リサーチはサブエージェント経由�
 `/orchestrate` の通常フローでは S で startproject は呼ばれない（orchestrate が自分で計画する）。直接呼ばれた場合はリサーチはしない。Phase 1 の理解から方針を 1-2 行で `DESIGN` に書いて Phase 3 へ進む。
 
 ### tier=M
-OpenCode に設計相談する（Bash から直接実行）。呼び出し形は `~/.claude/scripts/ai-fallback.sh {prompt_file}`。モデルのフォールバック連鎖・切替条件・記録方法は `$HOME/.claude/rules/tool-routing.md` の「OpenCode リサーチの実行」に従う。全候補が失敗したときだけ OpenCode なしで設計し、`DESIGN` に「OpenCode 不可: {理由}」と書く。成功したら `DESIGN` に `利用AI: {AI_MODEL}` を残す。
+OpenCode に設計相談する（Bash から直接実行）。呼び出し形は `~/.claude/scripts/ai-fallback.sh {prompt_file}`（連鎖の先頭は Codex CLI で、落ちたら OpenCode のモデルに回る）。モデルのフォールバック連鎖・切替条件・記録方法は `$HOME/.claude/rules/tool-routing.md` の「OpenCode リサーチの実行」に従う。全候補が失敗したときだけ OpenCode なしで設計し、`DESIGN` に「OpenCode 不可: {理由}」と書く。成功したら `DESIGN` に `利用AI: {AI_MODEL}` を残す。
 
 ### tier=L
 二系統を**同時に開始**する（firecrawl の呼び出しと opencode のバックグラウンド起動を同一メッセージで出す）。

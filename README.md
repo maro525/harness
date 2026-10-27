@@ -60,17 +60,20 @@ kanban は `uv tool install --editable ~/src/harness/kanban`（詳細は `kanban
 
 | 順 | モデル | 提供元 |
 |---|---|---|
-| 1 | `github-copilot/gpt-6-astra` | OpenCode（GitHub Copilot） |
-| 2 | `opencode-go/deepseek-v4-pro` | OpenCode Go（`https://opencode.ai/zen/go/v1`） |
-| 3 | `ollama-cloud/deepseek-v4.1-flash` | Ollama Cloud（`https://ollama.com/v1`） |
+| 1 | `codex`（記録は `codex/{config.toml の model}`） | Codex CLI（`codex exec -s read-only`） |
+| 2 | `github-copilot/gpt-6-astra` | OpenCode（GitHub Copilot） |
+| 3 | `opencode-go/deepseek-v4-pro` | OpenCode Go（`https://opencode.ai/zen/go/v1`） |
+| 4 | `ollama-cloud/deepseek-v4.1-flash` | Ollama Cloud（`https://ollama.com/v1`） |
 
 ```bash
-~/.claude/scripts/ai-fallback.sh {prompt_file}                 # 1 → 2 → 3 の順に試す
+~/.claude/scripts/ai-fallback.sh {prompt_file}                 # 1 → 2 → 3 → 4 の順に試す
 AI_CHAIN="opencode-go/deepseek-v4-pro" ~/.claude/scripts/ai-fallback.sh {prompt_file}
+AI_CHAIN="codex:gpt-6-sol github-copilot/gpt-6-astra" ~/.claude/scripts/ai-fallback.sh {prompt_file}
 ```
 
 - 切替条件: 429 / `insufficient_quota` / rate limit / 401・403（認証）/ タイムアウト（exit 124・137）/ 空出力（429 はログ、`ERROR` は stderr）。同一モデルの再試行はしない
-- quota 以外の理由でエンジンが落ちたら、次のエンジンで同じモデルから再開する（`opencode2`（v2）→ `opencode`（v1）→ `pi` の順。DB 破損などエンジン側の不具合で全滅しないため）
+- Codex（`codex` / `codex:{model}`）はエンジン切替なしの単発候補で、失敗したら次のモデルへ進む。未インストールなら skip して OpenCode 連鎖だけで動く
+- quota 以外の理由でエンジンが落ちたら（OpenCode 系の候補のみ）、次のエンジンで同じモデルから再開する（`opencode2`（v2）→ `opencode`（v1）→ `pi` の順。DB 破損などエンジン側の不具合で全滅しないため）
 - v1 と v2 は同じ config / data / DB を共有するが、CLI フラグが違う（v2 は `--auto`・`--standalone`・`--log-level error`・`-m provider/model#variant`）。この環境の v1 は `session_message.seq` で全滅するので **v2 が本線**
 - 成功時は stderr に `AI_MODEL`（と `AI_SKIPPED`）を出し、成果物の `利用AI:` 行に記録する
 - OpenCode が無い環境では同じスクリプトが `pi -p --no-session --model` に切り替える（`opencode-go/*` は `oc-sdk-go/*` に読み替え）

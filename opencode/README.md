@@ -69,7 +69,9 @@ Claude Code 版と完全に一致しない点:
 
 Claude 版のリサーチ・設計相談は `~/.claude/scripts/ai-fallback.sh`（`sync-claude.sh` が配布）で次の連鎖を順に試す。詳細は `../claude/rules/tool-routing.md`「OpenCode リサーチの実行」。
 
-**エンジン**: `opencode2`（v2）→ `opencode`（v1）→ `pi` の順で、入っているものを使う（1 つのエンジンで連鎖を回し、quota 以外の理由で落ちたら次のエンジンで同じモデルから再開する）。
+**Codex**: 連鎖の先頭は Codex CLI（`codex exec -s read-only`）。エンジン切替なしの単発候補で、失敗・未インストールなら下の OpenCode 連鎖に落ちる。
+
+**エンジン**（OpenCode 系の候補）: `opencode2`（v2）→ `opencode`（v1）→ `pi` の順で、入っているものを使う（1 つのエンジンで連鎖を回し、quota 以外の理由で落ちたら次のエンジンで同じモデルから再開する）。
 
 | エンジン | 実体 | この環境での状態 |
 |---|---|---|
@@ -79,9 +81,10 @@ Claude 版のリサーチ・設計相談は `~/.claude/scripts/ai-fallback.sh`�
 
 | 順 | モデル | OpenCode からそのまま使えるか |
 |---|---|---|
-| 1 | `github-copilot/gpt-6-astra` | 使える。ただし Copilot の**月間 quota 切れ**で `quota` 判定になる（実測） |
-| 2 | `opencode-go/deepseek-v4-pro` | モデルは `opencode2 models` に出るが、この環境では **401（invalid credential）** |
-| 3 | `ollama-cloud/deepseek-v4.1-flash` | **provider 登録が必要**（下記）。未登録ならスクリプトが `pi -p --model` に切り替える |
+| 1 | `codex`（`codex/{config.toml の model}`） | OpenCode を使わない（Codex CLI で実行） |
+| 2 | `github-copilot/gpt-6-astra` | 使える。ただし Copilot の**月間 quota 切れ**で `quota` 判定になる（実測） |
+| 3 | `opencode-go/deepseek-v4-pro` | モデルは `opencode2 models` に出るが、この環境では **401（invalid credential）** |
+| 4 | `ollama-cloud/deepseek-v4.1-flash` | **provider 登録が必要**（下記）。未登録ならスクリプトが `pi -p --model` に切り替える |
 
 ### v1 と v2 の CLI 差分
 
@@ -121,7 +124,7 @@ config / data / DB / log のパスは v1 と v2 で共通（`opencode2 debug pat
 
 - キーは `~/.bashrc.local` で `export OLLAMA_API_KEY=...`（OpenCode の設定ファイルに直書きしない）
 - 疎通: `opencode run --agent plan -m ollama-cloud/deepseek-v4.1-flash "Reply with exactly: PONG" < /dev/null`
-- 未登録のままスクリプトを回すと、3 番目は `pi -p --no-session --model ollama-cloud/deepseek-v4.1-flash` で実行される（pi 側は登録済み）
+- 未登録のままスクリプトを回すと、4 番目は `pi -p --no-session --model ollama-cloud/deepseek-v4.1-flash` で実行される（pi 側は登録済み）
 
 ## Limitations
 
