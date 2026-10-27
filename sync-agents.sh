@@ -30,15 +30,20 @@ AGENT_SKILLS=(startproject team-implement team-review deploy orchestrate)
 # shellcheck source=lib/sync-common.sh
 source "$SCRIPT_DIR/lib/sync-common.sh"
 
+# harness is mainly distributed from this repo, so -n copies repo → HOME by
+# default (--to-repo reverses it). The lib default stays HOME → repo for dotfiles.
+SYNC_COMMON_DEFAULT_DIRECTION=repo-to-home
 sync_common::parse_args "$(basename "$0")" \
   "Sync ~/.agents/skills/{${AGENT_SKILLS[*]// /,}} with this repository and link them for Cline." "$@"
 sync_common::show_header "$(basename "$0")"
 
 # --- 1. HOME <-> repo (per skill, so npx-managed skills are never touched) ---
 for name in "${AGENT_SKILLS[@]}"; do
-  if [[ ! -f "$SOURCE/$name/SKILL.md" ]]; then
+  # Skip the warning when this run is about to copy repo → HOME anyway.
+  if [[ ! -f "$SOURCE/$name/SKILL.md" ]] \
+      && ! [[ $INTERACTIVE -eq 0 && "$SYNC_DIRECTION" == "repo-to-home" ]]; then
     echo "Warning: $SOURCE/$name is not yet in HOME." >&2
-    echo "         Run interactively and choose (p), or: cp -r agents/skills/$name $SOURCE/" >&2
+    echo "         Run with -n (repo → HOME), or interactively and choose (p)." >&2
   fi
   sync_common::sync_directory "$SOURCE/$name" "$DEST/$name" "*" || true
 done

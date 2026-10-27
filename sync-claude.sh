@@ -31,6 +31,9 @@ HARNESS_FILES=(
 # shellcheck source=lib/sync-common.sh
 source "$SCRIPT_DIR/lib/sync-common.sh"
 
+# harness is mainly distributed from this repo, so -n copies repo → HOME by
+# default (--to-repo reverses it). The lib default stays HOME → repo for dotfiles.
+SYNC_COMMON_DEFAULT_DIRECTION=repo-to-home
 sync_common::parse_args "$(basename "$0")" "Sync the harness files under ~/.claude with this repository." "$@"
 sync_common::show_header "$(basename "$0")"
 

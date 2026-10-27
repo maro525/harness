@@ -4,11 +4,15 @@
 #
 # Provides:
 #   - Interactive diff + a/p/h/H/s/d/q prompt for syncing HOME <-> repo
-#   - Optional non-interactive (auto-copy HOME -> repo) mode via -n
+#   - Optional non-interactive (auto-copy) mode via -n. The copy direction
+#     defaults to HOME -> repo; a caller may change its default by setting
+#     SYNC_COMMON_DEFAULT_DIRECTION=repo-to-home before parse_args, and the
+#     user may override it per run with --to-home / --to-repo
 #   - File / directory / rsync-based sync helpers
 #
 # Source this file from each sync script:
 #   source "$SCRIPT_DIR/lib/sync-common.sh"
+#   SYNC_COMMON_DEFAULT_DIRECTION=repo-to-home   # optional, default home-to-repo
 #   sync_common::parse_args "$(basename "$0")" "Sync ... description ..." "$@"
 #   sync_common::show_header "$(basename "$0")"
 #
@@ -16,6 +20,12 @@
 #   INTERACTIVE     1 = interactive (default), 0 = non-interactive
 #   PROMPT_ACTION   last interactive_prompt result (a/p/h/H/s/q)
 #   DIFF_RESULT     last show_diff result (0=same, 1=different, 2=error)
+#   SYNC_DIRECTION  non-interactive copy direction set by parse_args
+#                   (home-to-repo | repo-to-home)
+#
+# Caller-set input (read by parse_args):
+#   SYNC_COMMON_DEFAULT_DIRECTION  default for SYNC_DIRECTION
+#                                  (home-to-repo | repo-to-home; unset = home-to-repo)
 
 # Guard against double-sourcing.
 if [[ "${SYNC_COMMON_SOURCED:-0}" == "1" ]]; then
@@ -27,6 +37,7 @@ SYNC_COMMON_SOURCED=1
 INTERACTIVE=1
 PROMPT_ACTION=""
 DIFF_RESULT=0
+SYNC_DIRECTION=""
 
 # Skills installed from the Cloudflare plugin bundle — vendor content, not
 # personal config, so they stay out of the repo (cloudflare/ alone is 300+
@@ -47,10 +58,26 @@ SYNC_COMMON_CLOUDFLARE_SKILLS=(
   wrangler
 )
 
+# Human-readable label for a direction value. Args: direction.
+sync_common::direction_label() {
+  case "$1" in
+    repo-to-home) echo "repo → HOME" ;;
+    *) echo "HOME → repo" ;;
+  esac
+}
+
 # Print usage and exit. Args: script_name, description.
 sync_common::usage() {
   local script_name="$1"
   local description="$2"
+  local default_direction="${SYNC_COMMON_DEFAULT_DIRECTION:-home-to-repo}"
+  local to_home_default=""
+  local to_repo_default=""
+  if [[ "$default_direction" == "repo-to-home" ]]; then
+    to_home_default=" (default)"
+  else
+    to_repo_default=" (default)"
+  fi
   cat <<EOF
 Usage: $script_name [OPTIONS]
 
@@ -59,22 +86,44 @@ Default mode: interactive (show diffs and prompt before syncing).
 
 Options:
   -n, --non-interactive  Auto-copy without prompting
+      --to-home          With -n, copy repo → HOME$to_home_default
+      --to-repo          With -n, copy HOME → repo$to_repo_default
   -h, --help             Show this help message and exit
 EOF
   exit 0
 }
 
 # Parse CLI args. Args: script_name, description, then "$@".
-# Sets INTERACTIVE based on flags. Aborts on unknown options.
+# Sets INTERACTIVE and SYNC_DIRECTION based on flags. The direction starts
+# from SYNC_COMMON_DEFAULT_DIRECTION (unset = home-to-repo); --to-home /
+# --to-repo override it (last one wins) and do not imply -n. Aborts on unknown
+# options and on an invalid SYNC_COMMON_DEFAULT_DIRECTION.
 sync_common::parse_args() {
   local script_name="$1"
   local description="$2"
   shift 2
 
+  SYNC_DIRECTION="${SYNC_COMMON_DEFAULT_DIRECTION:-home-to-repo}"
+  case "$SYNC_DIRECTION" in
+    home-to-repo|repo-to-home) ;;
+    *)
+      echo "Error: invalid SYNC_COMMON_DEFAULT_DIRECTION '$SYNC_DIRECTION' (expected home-to-repo or repo-to-home)" >&2
+      exit 1
+      ;;
+  esac
+
   while [[ $# -gt 0 ]]; do
     case "$1" in
       -n|--non-interactive)
         INTERACTIVE=0
+        shift
+        ;;
+      --to-home)
+        SYNC_DIRECTION="repo-to-home"
+        shift
+        ;;
+      --to-repo)
+        SYNC_DIRECTION="home-to-repo"
         shift
         ;;
       -h|--help)
@@ -95,7 +144,7 @@ sync_common::show_header() {
   if [[ $INTERACTIVE -eq 1 ]]; then
     echo "Mode: Interactive (diff/merge)"
   else
-    echo "Mode: Non-interactive (auto-copy)"
+    echo "Mode: Non-interactive (auto-copy $(sync_common::direction_label "$SYNC_DIRECTION"))"
   fi
   echo ""
 }
@@ -446,7 +495,8 @@ sync_common::hunk_merge() {
   return 0
 }
 
-# Sync a single file (HOME <-> repo, direction chosen interactively).
+# Sync a single file (HOME <-> repo). Interactive mode prompts for the
+# direction; non-interactive mode copies in SYNC_DIRECTION (unset = HOME → repo).
 # Args: src, dst, [rel_path].
 # Returns 0 on accept/push/skip, exits 130 on quit.
 sync_common::sync_file() {
@@ -532,9 +582,16 @@ sync_common::sync_file() {
       esac
     done
   else
-    if [[ -f "$src" ]]; then
-      mkdir -p "$(dirname "$dst")"
-      cp -v "$src" "$dst"
+    # Non-interactive: copy in SYNC_DIRECTION; a missing source is a no-op.
+    local from="$src"
+    local to="$dst"
+    if [[ "$SYNC_DIRECTION" == "repo-to-home" ]]; then
+      from="$dst"
+      to="$src"
+    fi
+    if [[ -f "$from" ]]; then
+      mkdir -p "$(dirname "$to")"
+      cp -v "$from" "$to"
     fi
   fi
 
