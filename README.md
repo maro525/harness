@@ -14,7 +14,9 @@ harness/
 │   ├── hooks/agent-router.py  # UserPromptSubmit hook。意図を検出して /orchestrate へ誘導
 │   └── scripts/
 │       ├── linear-ask.sh   # OpenCode 版 orchestrate の質問の中継用（Linear API キーが要る）
-│       └── ai-fallback.sh  # リサーチ・設計相談のモデル連鎖（429 で次の候補へ）
+│       ├── ai-fallback.sh  # リサーチ・設計相談のモデル連鎖（429 で次の候補へ）
+│       └── phase-run.sh    # フェーズを任意の CLI / モデルで実行するディスパッチャ
+├── docs/phase-contract.md   # 4 フェーズが満たす契約（引数・書き込み・RESULT/QUESTIONS・status）
 ├── opencode/                # OpenCode 版 (~/.config/opencode)
 │   ├── README.md            # OpenCode 版と Claude 版の違い
 │   ├── commands/
@@ -71,6 +73,28 @@ AI_CHAIN="opencode-go/deepseek-v4-pro" ~/.claude/scripts/ai-fallback.sh {prompt_
 - OpenCode が無い環境では同じスクリプトが `pi -p --no-session --model` に切り替える（`opencode-go/*` は `oc-sdk-go/*` に読み替え）
 - OpenCode から 3 番目を使うための provider 登録は `opencode/README.md`「フォールバック先の登録」（`opencode.jsonc` は dotfiles の持ち物）
 - フェーズ指定モード（`--ai=opencode`）は CLI 直呼びなので連鎖は効かない。429 なら `--ai=pi:{model}` に切り替える。v2 が入っている環境では `--ai=opencode2` を使う（v1 はこの環境で `session_message.seq` により全滅）
+
+## フェーズの混在（phase mixing）
+
+4 フェーズは `agents/skills/{phase}/SKILL.md` が共通の契約（`docs/phase-contract.md`）を満たし、起動は `~/.claude/scripts/phase-run.sh` が吸収する。だから**フェーズごとに別の CLI / 別のモデル**で回せる。
+
+```bash
+# 1 フェーズだけ別 CLI で
+~/.claude/scripts/phase-run.sh --phase=team-review --task-file=.claude/docs/decisions/task-X.md \
+  --runner=pi:ollama-cloud/deepseek-v4.1-flash
+
+# タスク全体の割り当てを決める（--phase-map）
+~/.claude/scripts/phase-run.sh --phase=team-implement --task-file=.claude/docs/decisions/task-X.md \
+  --phase-map="startproject=claude:opus,team-implement=pi:ollama-cloud/deepseek-v4.1-flash,team-review=opencode2:opencode-go/deepseek-v4-pro,deploy=claude:haiku"
+
+# モデル / エンジン連鎖に任せる（429 で次の候補へ）
+~/.claude/scripts/phase-run.sh --phase=startproject --task-file=… --runner=auto
+```
+
+- runner: `claude` / `opencode2` / `opencode` / `pi` / `codex` / `cline` / `auto`（`ai-fallback.sh`）。既定の失敗連鎖は claude → opencode2 → pi → auto
+- `--dry-run` で起動コマンドだけ確認できる（トークンを使わない）
+- 実際に走った runner / モデルは stderr の `PHASE=` / `RUNNER=` / `MODEL=` / `LABEL=` で返り、`利用AI:` 行には `--label` でそのまま入る
+- 契約（引数・書き込み規約・`### RESULT` / `### SECTION`・`### QUESTIONS`・`status:` の専権）は `docs/phase-contract.md`
 
 ## dotfiles との契約
 

@@ -25,6 +25,7 @@ HARNESS_FILES=(
   hooks/agent-router.py
   scripts/linear-ask.sh
   scripts/ai-fallback.sh
+  scripts/phase-run.sh
 )
 
 # shellcheck source=lib/sync-common.sh
