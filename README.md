@@ -39,7 +39,7 @@ dotfiles と同じく HOME ⇄ リポジトリの双方向同期（対話モー�
 ```bash
 ./sync-claude.sh      # ~/.claude の harness ファイルだけ
 ./sync-opencode.sh    # ~/.config/opencode の harness ファイルだけ
-./sync-agents.sh      # ~/.agents/skills の 4 フェーズ（+ Cline 用 symlink）
+./sync-agents.sh      # ~/.agents/skills の 4 フェーズ + orchestrate（+ Cline 用 symlink）
 ./sync-*.sh -n        # 非対話。HOME → repo の自動コピー
 ```
 
@@ -95,6 +95,22 @@ AI_CHAIN="opencode-go/deepseek-v4-pro" ~/.claude/scripts/ai-fallback.sh {prompt_
 - `--dry-run` で起動コマンドだけ確認できる（トークンを使わない）
 - 実際に走った runner / モデルは stderr の `PHASE=` / `RUNNER=` / `MODEL=` / `LABEL=` で返り、`利用AI:` 行には `--label` でそのまま入る
 - 契約（引数・書き込み規約・`### RESULT` / `### SECTION`・`### QUESTIONS`・`status:` の専権）は `docs/phase-contract.md`
+
+- 契約（引数・書き込み規約・`### RESULT` / `### SECTION`・`### QUESTIONS`・`status:` の専権）は `docs/phase-contract.md`
+
+### pi 単独で回す
+
+`agents/skills/orchestrate/SKILL.md` が orchestrator（`./sync-agents.sh` で `~/.agents/skills/orchestrate` に配布）。pi からは次の形で起動する。
+
+```
+Read ~/.agents/skills/orchestrate/SKILL.md and follow it.
+
+$ARGUMENTS: "{task description} --tier=M"
+```
+
+- フェーズは内部で `~/.claude/scripts/phase-run.sh` を呼ぶので、混在（`--phase-map`）も同じ口で指定できる
+- 質問は `### QUESTIONS` に直列化し、`--answers-file` で戻す（pi に質問ツールが無いため）
+- 制約: レビューは順次（Claude 版の並列レビュアーは未移植）、Linear は MCP があるときだけ
 
 ## dotfiles との契約
 

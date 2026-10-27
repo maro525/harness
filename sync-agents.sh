@@ -5,7 +5,7 @@
 #     <->  agents/skills/{name}/
 #
 # ~/.agents/skills is also managed by `npx skills` (.skill-lock.json), so this
-# script touches ONLY the four phase skills listed in AGENT_SKILLS and never
+# script touches ONLY the five phase skills listed in AGENT_SKILLS and never
 # walks the whole directory.
 #
 # Cline does not read ~/.agents/skills (it reads ~/.cline/skills), so after the
@@ -25,7 +25,7 @@ DEST="$SCRIPT_DIR/agents/skills"
 CLINE_SKILLS="$HOME/.cline/skills"
 PI_SKILLS="$HOME/.pi/agent/skills"
 
-AGENT_SKILLS=(startproject team-implement team-review deploy)
+AGENT_SKILLS=(startproject team-implement team-review deploy orchestrate)
 
 # shellcheck source=lib/sync-common.sh
 source "$SCRIPT_DIR/lib/sync-common.sh"
