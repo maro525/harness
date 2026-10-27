@@ -137,7 +137,8 @@ timeout -k 1m 30m {上表のコマンド} "$(cat {prompt_file})" < /dev/null > {
 
 ```bash
 ./sync-agents.sh          # 対話モード。初回は各スキルで (p) を選び repo → ~/.agents/skills にコピー
-./sync-agents.sh -n       # 非対話。HOME → repo の自動コピー（初回配布には使えない）
+./sync-agents.sh -n       # 非対話。repo → ~/.agents/skills の自動コピー（初回配布にも使える）
+./sync-agents.sh -n --to-repo  # 非対話。~/.agents/skills → repo の自動コピー
 ```
 
 `sync-agents.sh` は `~/.agents/skills` のうち **この 4 スキルだけ**を扱う（残りは `npx skills` 管理。`.skill-lock.json` に触らない）。同期後に:

@@ -40,8 +40,11 @@ dotfiles と同じく HOME ⇄ リポジトリの双方向同期（対話モー�
 ./sync-claude.sh      # ~/.claude の harness ファイルだけ
 ./sync-opencode.sh    # ~/.config/opencode の harness ファイルだけ
 ./sync-agents.sh      # ~/.agents/skills の 4 フェーズ + orchestrate（+ Cline 用 symlink）
-./sync-*.sh -n        # 非対話。HOME → repo の自動コピー
+./sync-*.sh -n        # 非対話。repo → HOME の自動コピー（初回配布にも使える）
+./sync-*.sh -n --to-repo  # 非対話。HOME → repo の自動コピー
 ```
+
+`-n` のコピーの向きはスクリプトごとの既定で決まる。harness の 3 スクリプトは repo → HOME（`lib/sync-common.sh` を source した直後に `SYNC_COMMON_DEFAULT_DIRECTION=repo-to-home`）、lib 自体の既定は dotfiles と同じ HOME → repo。`--to-home` / `--to-repo` でその回の向きを指定できる（`-n` と一緒に使う。対話モードには効かない）。コピー元に無いファイルは何もしない。
 
 `~/.claude` と `~/.config/opencode` は dotfiles と共有しているので、各スクリプトは**自分が持つファイルを名前で列挙**し、ディレクトリ全体は走査しない。dotfiles 側の `sync-claude.sh` / `sync-opencode.sh` は同じ名前を除外している。ファイルを足したり消したりしたら両方のリストを揃える。
 
@@ -114,6 +117,8 @@ $ARGUMENTS: "{task description} --tier=M"
 ## dotfiles との契約
 
 `~/.claude` と `~/.config/opencode` は [maro525/_dotfiles](https://github.com/maro525/_dotfiles) と共有している。**参照方向は harness → dotfiles の一方向**で、dotfiles は本リポジトリの存在を知らない（dotfiles 単体で完結し、harness は後から任意で足せるレイヤー）。したがって相互参照の検査はすべてこのリポジトリ側に置き、dotfiles の sync スクリプトからは呼ばない。dotfiles が見つからない場合、`checks/crossrefs.sh` は検査せずに成功終了する。
+
+`lib/sync-common.sh` は dotfiles の `lib/sync-common.sh` と同一内容（ヘッダコメント 1 行を除く）を保つ。片方を変えたらもう片方にも同じ変更を入れる。
 
 `checks/crossrefs.sh` が検査する内容（CI は無いので `sync-opencode.sh` の末尾から呼ぶ。失敗しても同期は成功扱い）:
 
