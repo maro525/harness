@@ -88,6 +88,7 @@ orchestrate のフェーズ指定モードは探索に頼らず、プロンプ�
 - codex 0.80.0 は ChatGPT アカウントで使えるモデルが無く全モデル失敗する（2026-09-28 実測）。`npm i -g @openai/codex@latest` で更新してから使う（下の「実機の状態」）
 - opencode は quota 切れ（429）だと無出力に見える。ログ（`~/.local/share/opencode/log/`）の 429 を先に確認する。Claude 版のリサーチ・設計相談は `~/.claude/scripts/ai-fallback.sh` のモデル連鎖に任せる（`../claude/rules/tool-routing.md`「OpenCode リサーチの実行」）。**フェーズ指定モード（`--ai=opencode`）は CLI 直呼びなので連鎖は効かず、429 なら `--ai=pi:{model}` で回す**
 - **v1 と v2 でフラグが違う**: v2（`opencode2`）は `--auto`（v1 は `--dangerously-skip-permissions`）、`--log-level` は小文字、モデルは `provider/model#variant`。この環境の v1 は `run` が `session_message.seq` で全滅するので、入っていれば **v2 を使う**（`--ai=opencode2`）
+- **pi の許可リストにワークフローのスクリプトを入れる**: pi は `~/.pi/agent/extensions/permissions/` の `ALLOW_PATTERNS` に無いコマンドを TTY 無しで拒否する。`"~/.claude/scripts/**"`（および `/home/dev/.claude/scripts/**`）と `git switch` を入れておかないと、`phase-run.sh` の起動やブランチ復帰で止まる（未登録の場合の回避策は `for _ in 1; do <script> ...; done`、というより追加する）
 
 ### 権限
 
@@ -123,11 +124,11 @@ timeout -k 1m 30m {上表のコマンド} "$(cat {prompt_file})" < /dev/null > {
 
 失敗判定は orchestrate 側（exit ≠ 0 / 124・137 / 節も `### SECTION` も無い）。再試行・モデル差し替えは自動では行わず、ユーザーに報告する。
 
-### 実機の状態（2026-09-28）
+### 実機の状態（2026-10-27）
 
 | CLI | 状態 |
 |---|---|
-| pi | `pi -p --no-session --tools read,grep,find,ls[,bash]` で動作確認済み（`~/.agents/skills` が見える。`bash` ありでは TASK_FILE に自分で書けた）。`--tools` 制限なしの起動（上の呼び出し表）は未検証。pi の bash で何が通るかは `~/.pi/agent/extensions/permissions/` の許可リストで決まる |
+| pi | `pi -p --no-session` で orchestrate（`agents/skills/orchestrate`）からのフェーズ逐次実行を通しで確認（捨てリポジトリで plan → 実装 → レビュー。review は `claude:haiku` に委譲、deploy はリモート無しで中止）。`--tools` 制限なしの起動（上の呼び出し表）は未検証。pi の bash で何が通るかは `~/.pi/agent/extensions/permissions/` の許可リストで決まる |
 | cline | `cline --json -t 150` で動作確認済み。`--auto-approve true` での起動は未検証 |
 | opencode | 429 quota_exceeded（retry-after 約 2.4 日）。復旧後に追試 |
 | codex | 0.80.0 は ChatGPT アカウントで使えるモデルが無く全モデル失敗。**`npm i -g @openai/codex@latest` で更新してから使う** |
