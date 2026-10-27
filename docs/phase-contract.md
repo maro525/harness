@@ -110,3 +110,5 @@ linear: posted|skipped|unavailable
 ```
 
 `利用AI:` 行には**実際に走った runner とモデル**を書く（`phase-run.sh` が `--label` で渡す）。
+
+**`--runner=claude` は Claude Code を汎用 CLI として起動し、`agents/skills/{phase}/SKILL.md` を読ませる**（`claude/commands/{phase}.md` は使わない）。したがって Claude 版固有の並列レビュアー・`context: fork` の frontmatter モデルは効かず、観点は汎用定義どおり順次になる。Claude 版のフル機能が要るときは Claude セッション内で `/team-review` 等を直接使う（混在の対象外）。
