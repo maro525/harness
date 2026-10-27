@@ -444,7 +444,7 @@ def route_prompt(prompt: str) -> dict | None:
                 "hookEventName": "UserPromptSubmit",
                 "additionalContext": (
                     f"[Agent Routing] Detected '{trigger}' - consider OpenCode CLI "
-                    "for deep reasoning, via a subagent for context isolation."
+                    "for deep reasoning; run it directly with background Bash (no subagent)."
                 ),
             }
         }
@@ -454,7 +454,8 @@ def route_prompt(prompt: str) -> dict | None:
                 "hookEventName": "UserPromptSubmit",
                 "additionalContext": (
                     f"[Agent Routing] Detected '{trigger}' - run external "
-                    "research on two parallel tracks via subagents: firecrawl MCP "
+                    "research on two parallel tracks directly in the main session "
+                    "(no subagents): firecrawl MCP "
                     "(firecrawl_search / firecrawl_scrape) for sourced facts, and "
                     "`~/.claude/scripts/ai-fallback.sh {prompt_file}` "
                     "for implementation know-how (the script walks the model chain, "
