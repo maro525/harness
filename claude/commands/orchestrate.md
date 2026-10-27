@@ -79,6 +79,7 @@ $ARGUMENTS
 - フェーズ指定モードは、既存 TASK_FILE の 1 フェーズだけを **別の AI（pi / cline / opencode / codex）** で 1 回実行し、結果を次の回・次の候補として TASK_FILE に追記するときに使う。Claude の command は呼ばず、`~/.agents/skills/{phase}/SKILL.md`（一般向けフェーズ定義）を外部 CLI に読ませる。CLI の呼び出し表は harness リポジトリの `agents/README.md`「外部 CLI のフェーズ実行」（`~/.claude` には同期されないので、読み方は STEP 3P P2）。TASK_FILE の見出しは通常モードと同じ（`### {m}回目` / `### 案 {k}`）で、使った AI は見出しの直下の `利用AI:` 行で示す（STEP 3P P1）
 - 呼び出し形: `/orchestrate "--task-file={TASK_FILE} --phase={phase} --ai={pi|cline|opencode|codex}[:{model}]"`、候補の採用は `/orchestrate "--task-file={TASK_FILE} --phase=startproject --adopt=案 {k}"`
 - 実際の起動は `~/.claude/scripts/phase-run.sh` に一本化されている（`claude/scripts/phase-run.sh`）。`--ai=` は従来どおり受け付け `--runner=` に読み替える。`--runner={claude|opencode2|opencode|pi|codex|cline|auto}[:{model}]` で単発、`--phase-map="startproject=claude:opus,team-review=pi:…"` でフェーズ全体の割り当てを指定できる。契約（引数・書き込み・`### RESULT` / `### SECTION`・`### QUESTIONS`・`status:` 専権）は harness の `docs/phase-contract.md`
+- **`--phase=startproject` のときは `--candidate` を付ける**（`### 案 {k}` として追記させ、`--adopt` で昇格する）。`--label` は実行者名を `利用AI:` に書くだけで、モードは変えない
 - 追加修正モードは、`/orchestrate` が PR / MR を出したタスクに追加の変更（レビュー指摘への対応、仕様の追加など）を加えるときに使う。既存 PR への追加変更は必ずこのモードを通し、orchestrator が直接編集して push しない（`$HOME/.claude/rules/tool-routing.md` の「/orchestrate で作った PR への追加変更」）
 - 呼び出し形: `/orchestrate "{追加の依頼} --task-file={TASK_FILE}"`（または `/orchestrate "{LINEAR_ID} {追加の依頼}"`）
 

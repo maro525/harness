@@ -121,6 +121,8 @@ TASK_FILE = .claude/docs/decisions/task-{LINEAR_ID}-{feature}.md
 
 返ってきた `### RESULT` を読む。`written: yes` なら TASK_FILE の `## startproject` は書けている。`written: no` なら `### SECTION` の中身を `## startproject` として書く。`### QUESTIONS` があれば「Gate 1」として扱い、回答を得て `--answers-file=` 付きで再実行する。
 
+`--candidate` を付けていないので、`### Brief` / `### Design` / `### Plan` が直接書かれるはず。`### 案 {k}` しか無い場合は採用されていないので、最新の `### 案 {k}` を `### Brief` / `### Design` / `### Plan` に昇格し、`利用AI:` 行の直後に `採用: {YYYY-MM-DD HH:MM}` を入れてから STEP 4 へ進む（候補を残したまま実装に進まない）。
+
 ## STEP 4: team-implement
 
 `## Meta` の `status:` を `implementing` に更新してから起動する。
@@ -215,7 +217,7 @@ git switch {base}
 ## STEP 3P: フェーズ指定モード
 
 1. `--task-file` が必須。`## Meta` から `tier:` / `linear_id:` を復元する
-2. `phase-run.sh --phase={phase} --task-file={TASK_FILE} {--runner=...} [--answers-file=...]` を実行する
+2. `phase-run.sh --phase={phase} --task-file={TASK_FILE} {--runner=...} [--answers-file=...]` を実行する（startproject は `--candidate` を付けて `### 案 {k}` として追記させる）
 3. `written: no` なら `### SECTION` を該当節に書き、`利用AI: {label}` を書いた見出しの直下に入れる
 4. `status:` を実行したフェーズの値に更新する（startproject → `planning` / team-implement → `implementing` / team-review → `reviewing` / deploy → `in-review`）
 5. `--adopt=案 {k}` が指定されていれば、`### 案 {k}` の `#### Brief` / `#### Design` / `#### Plan` を `### Brief` / `### Design` / `### Plan` に昇格し、`利用AI:` の直後に `採用: {YYYY-MM-DD HH:MM}` を足す

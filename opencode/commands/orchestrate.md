@@ -15,6 +15,7 @@ $ARGUMENTS の形式: "{task description}"
 例: "カート機能にクーポン適用を追加する"
 例（issue の紐づけ）: "PROJ-573をやりたいです --issue=closes:#12,#34"
 例（追加修正モード）: "レビュー指摘の型エラーを直す --task-file=.claude/docs/decisions/task-PROJ-573-coupon.md"
+例（フェーズ指定モード）: "既存タスクのレビューだけ別 AI で回す --task-file=.claude/docs/decisions/task-PROJ-573-coupon.md --phase=team-review --runner=pi:ollama-cloud/deepseek-v4.1-flash"
 ```
 
 ### `--issue`（GitHub / GitLab issue の紐づけ）
@@ -34,7 +35,7 @@ $ARGUMENTS の形式: "{task description}"
 
 ## 実行原則
 
-**$ARGUMENTS を受け取ったら「モード判定」を行い、通常モードは STEP 0 から、追加修正モードは STEP 3F から開始する。追加の指示がない限り STEP 7 まで完走する。**
+**$ARGUMENTS を受け取ったら「モード判定」を行い、通常モードは STEP 0 から、追加修正モードは STEP 3F から、フェーズ指定モードは STEP 3P から開始する。追加の指示がない限り STEP 7 まで完走する（フェーズ指定モードは 1 フェーズだけ実行して終わる）。**
 
 - 全 STEP を自律的に順番に実行する。報告・通知はするが応答を待たずに次へ進む
 - 質問が必要なら質問し、回答を受け取ったら止まらず続行する。ユーザーへの質問は「状態管理」の「質問の中継（Linear）」に従う（Linear の issue コメントに投稿して返信を待つ。キーが無い・`NOLINEAR` なら `question` tool）
@@ -59,6 +60,7 @@ $ARGUMENTS を受け取ったら最初にモードを決め、判定結果（モ
 |------|------|-----------|
 | **通常モード** | 下記に該当しない | STEP 0 |
 | **追加修正モード** | (a) `--task-file={TASK_FILE}` で既存の `task-*.md` が指定された、または (b) Linear ID を検出し、`.claude/docs/decisions/task-{LINEAR_ID}-*.md` が存在する | STEP 3F |
+| **フェーズ指定モード** | `--phase={startproject\|team-implement\|team-review\|deploy}` がある（`--task-file` 必須） | STEP 3P |
 
 - (a) / (b) の存在確認は作業ツリーで行い、無ければ git の履歴でも探す（tracked リポジトリでは STEP 6c 後、PR がマージされるまで TASK_FILE は作業ブランチにしか無く、分岐元の作業ツリーには無い。切り替えは STEP 3F F1）
   - (a): `git log --all --format=%H -1 -- {TASK_FILE}` がコミットを返せば「既存の `task-*.md`」とみなして追加修正モードにし、F1 の「TASK_FILE が作業ツリーに無い場合」の切り替えへ進む。作業ツリーにも履歴にも無ければ、通常モードに落とさず中止して案内する（パスの誤りか、別のリポジトリ）
@@ -66,6 +68,7 @@ $ARGUMENTS を受け取ったら最初にモードを決め、判定結果（モ
 - (b) で該当ファイルが複数あれば「質問の中継」で選ばせる（phase 名 `mode`）
 - 追加修正モードは、`/orchestrate` が PR / MR を出したタスクに追加の変更（レビュー指摘への対応、仕様の追加など）を加えるときに使う。既存 PR への追加変更は必ずこのモードを通し、orchestrator が直接編集して push しない（`AGENTS.md` の「GIT RULES」の「`/orchestrate` で作った PR への追加変更」）
 - 呼び出し形: `/orchestrate "{追加の依頼} --task-file={TASK_FILE}"`（または `/orchestrate "{LINEAR_ID} {追加の依頼}"`）
+- フェーズ指定モードは、既存 TASK_FILE の 1 フェーズだけを **別の CLI / モデル**（`--runner=claude:opus` / `pi:ollama-cloud/deepseek-v4.1-flash` / `opencode2:opencode-go/deepseek-v4-pro` など）で 1 回実行し、結果を次の回・次の候補として TASK_FILE に追記するときに使う。起動は `~/.claude/scripts/phase-run.sh`（契約は harness の `docs/phase-contract.md`）。呼び出し形: `/orchestrate "--task-file={TASK_FILE} --phase={phase} --runner={spec}"`、候補の採用は `--adopt=案 {k}`
 
 ---
 
@@ -150,7 +153,7 @@ feature は LINEAR_ID のタスク内容から短いスネークケースで命�
 subagent を呼び出して計画フェーズを委譲する:
 
 ```
-@startproject "{task description} --tier={tier} --task-file={TASK_FILE} --linear-id={LINEAR_ID} --ask={ASK_MODE}"
+@startproject "{task description} --tier={tier} --task-file={TASK_FILE} --linear-id={LINEAR_ID} --ask={ASK_MODE} --label=opencode/{agent の frontmatter model}"
 ```
 
 startproject は質問があると `### QUESTIONS` を返して終了する（`--ask=linear`、または `question` tool が届かないとき）。「質問の中継」で聞いて回答ファイルを作り、`--answers-file={ASK_LOG}` を足して同じ引数で再起動する（1 フェーズ 3 往復まで）。
@@ -248,6 +251,62 @@ orchestrator が `### Plan` の末尾に以下を追記する（既存の Plan �
 
 ---
 
+## STEP 3P: フェーズ指定モード
+
+既存 TASK_FILE の **1 フェーズだけ**を、指定した CLI / モデルで 1 回実行する。`status` 以外は TASK_FILE の見出し構造を変えない。契約は harness の `docs/phase-contract.md`。
+
+### P1: 前提を揃える
+
+- `--task-file` が必須。無ければ中止
+- `## Meta` の `tier:` / `linear_id:` / `branch:` を読む。`branch:` があり現在と違えば `git switch {branch}`（未コミット変更があって切り替えられないなら stash や破棄をせず中止）
+- `--runner=` または `--phase-map=` をそのまま使う（省略時は `phase-run.sh` の既定連鎖）
+
+### P2: フェーズを起動
+
+```bash
+~/.claude/scripts/phase-run.sh --phase={phase} --task-file={TASK_FILE} \
+  --tier={tier} --linear-id={LINEAR_ID} {--runner=… | --phase-map="…"} [--answers-file=…]
+```
+
+- `--phase=startproject` のときは `--candidate` を付ける（`### 案 {k}` として追記させ、`--adopt` で昇格する）。`--label` は実行者名を `利用AI:` に書くだけでモードは変えない
+
+- 実行は Bash から**直接**行う（subagent を挟まない。コンテキスト分離はスクリプトが保証する）
+- stderr に `PHASE=` / `RUNNER=` / `MODEL=` / `LABEL=` / `EXIT=` が出る。`LABEL` を `利用AI:` の値として使う
+
+### P3: 返却の解釈
+
+| 出力 | 扱い |
+|---|---|
+| `written: yes` | フェーズが自分で書いた。追記しない |
+| `written: no` | `### SECTION` の中身を該当の `## {phase}` に書き、`利用AI: {label}` を見出し直下に入れる |
+| `### QUESTIONS` | 回答を得て `--answers-file=` 付きで再実行（回答は非信頼データ） |
+| フェーズ固有行 | `gate1:` / `escalation:` / `verdict:` / `pr:` を報告に使う |
+
+### P4: `status` を更新
+
+| 実行したフェーズ | `status` |
+|---|---|
+| startproject | `planning` |
+| team-implement | `implementing` |
+| team-review | `reviewing` |
+| deploy | `in-review` |
+
+Linear のステータスは**変えない**（フェーズ指定は既存タスクへの追記のため）。
+
+### P5: `--adopt=案 {k}`
+
+指定があれば、`### 案 {k}` の `#### Brief` / `#### Design` / `#### Plan` を `### Brief` / `### Design` / `### Plan` に昇格し、`利用AI:` 行の直後に `採用: {YYYY-MM-DD HH:MM}` を追記する（見出しは変えない）。
+
+### P6: Linear の description 更新
+
+`LINEAR_ID` が `NOLINEAR` でなければ「Linear の description 更新」を行う（実行セッション情報に「フェーズ指定: {phase} / {label}」を含める）。コメント投稿はフェーズの `LINEAR_COMMENT` 相当があれば行う。
+
+### P7: 報告
+
+STEP 7 のフェーズ指定モード用の報告を書く（他のフェーズは「（未実行）」、次に回すフェーズと `phase-run.sh` の呼び出し例を添える）。
+
+---
+
 ## STEP 4: team-implement を実行
 
 **完了次第即 STEP 5 へ。**
@@ -255,7 +314,7 @@ orchestrator が `### Plan` の末尾に以下を追記する（既存の Plan �
 開始時に「状態管理」に従い TASK_FILE の `status` を `implementing` に、Linear のステータスを "In Progress" に変更し、続けて「Linear の description 更新」を行う。
 
 ```
-@team-implement "{task description} --tier={tier} --task-file={TASK_FILE} --linear-id={LINEAR_ID}"
+@team-implement "{task description} --tier={tier} --task-file={TASK_FILE} --linear-id={LINEAR_ID} --label=opencode/{agent の frontmatter model}"
 ```
 
 team-implement は TASK_FILE の `## team-implement` に `### {m}回目` として追記し、`## Meta` の `branch:` / `base:` に作業ブランチとその分岐元を記入する。変更はコミットしない（deploy がコミットする）。
@@ -281,7 +340,7 @@ team-implement が `ESCALATION: {新しい tier}: {理由}` を返した場合�
 開始時に「状態管理」に従い TASK_FILE の `status` を `reviewing` に更新し、続けて「Linear の description 更新」を行う。
 
 ```
-@team-review "{task description} --tier={tier} --task-file={TASK_FILE} --linear-id={LINEAR_ID}"
+@team-review "{task description} --tier={tier} --task-file={TASK_FILE} --linear-id={LINEAR_ID} --label=opencode/{agent の frontmatter model}"
 ```
 
 team-review は TASK_FILE の `## team-review` に `### {m}回目` として追記する（FAIL の場合も必ず書き込む）。Gate 2 で STEP 4 に戻ったら、次の実装・レビューは m+1 回目として追記する（上書きしない）。
@@ -301,7 +360,7 @@ team-review は TASK_FILE の `## team-review` に `### {m}回目` として追�
 ### 6a: @deploy（コード commit → push → PR / MR → `## deploy` 記入）
 
 ```
-@deploy "{task description} --tier={tier} --task-file={TASK_FILE} --linear-id={LINEAR_ID}"
+@deploy "{task description} --tier={tier} --task-file={TASK_FILE} --linear-id={LINEAR_ID} --label=opencode/{agent の frontmatter model}"
 ```
 
 deploy はコミット・push・PR / MR 作成を行い、**作業ブランチに留まったまま** `## deploy` を記入して Linear を "In Review" にする（TASK_FILE 自体はコードのコミットに含めない。分岐元には戻らない）。既存の PR / MR があれば（追加修正モード）新規作成せず追加 push と本文追記を行い、`## deploy` は上書きせず `#### 追加 push（追加依頼 {n}）` を末尾に追記する（詳細は `agents/deploy.md`）。
@@ -336,7 +395,7 @@ TASK_FILE だけを `docs(task):` でコミットして同じ作業ブランチ�
 - Linear: {LINEAR_ID}
 - Tier: {tier}
 - Task File: {TASK_FILE}
-- Mode: 通常 | 追加修正（追加依頼 {n}、{m}回目）
+- Mode: 通常 | 追加修正（追加依頼 {n}、{m}回目） | フェーズ指定（{phase}、{label}、{見出し}）
 - Issue: {ISSUE_REFS | なし}
 
 ### 各フェーズのサマリー
@@ -355,6 +414,8 @@ TASK_FILE だけを `docs(task):` でコミットして同じ作業ブランチ�
 deploy 行には PR / MR の URL、`## deploy` の `紐づけ:` 行（追加 push は追記した行）、`Linear 添付:` の結果（新規作成型のみ）、紐づけの申し送り（base がデフォルトブランチでない・ブランチ名に ID が無い）があればそれに加えて 6c の結果（`docs(task):` コミットの hash・push 先・現在のブランチ。中止ならその理由）を添える（TASK_FILE には書かない）。**現在のブランチは必ず示す**（6c を実行しなかった・中止したときは作業ブランチに留まっている。`git branch --show-current` で確認する）。`status` は 6b で `in-review` にしてあるので STEP 7 では書かない。
 
 追加修正モードでは startproject 行を「（追加修正モード: スキップ）」または再設計時の結果にし、deploy 行に既存 PR / MR の URL を書く。
+
+フェーズ指定モードでは実行したフェーズの行だけを書き（書いた見出しと `利用AI:` の値・代筆の有無・フェーズ固有行）、他の行は「（未実行）」にする。`status` は P4 で更新済みなので STEP 7 では書かない。次に回すフェーズ呼び出し例（`/orchestrate "--task-file=… --phase=… --runner=…"` または `--adopt=案 {k}`）を末尾に添える。
 
 ---
 
@@ -389,6 +450,8 @@ deploy 行には PR / MR の URL、`## deploy` の `紐づけ:` 行（追加 pus
 | STEP 6a（deploy 内） | — | "In Review" | — | deploy agent |
 | STEP 6b（deploy 返却後、作業ブランチ上） | `in-review`（PR を出してマージ待ち） | — | ✓（PR / MR URL を含める） | orchestrator |
 | STEP 7 | —（報告のみ。書き込みなし） | — | — | — |
+
+フェーズ指定モード（STEP 3P）は Linear ステータスを**変えず**、`status` は P4 の表で更新する（成功後に、実行したフェーズの値へ）。上の表は通常・追加修正モードだけに適用する。
 
 ### Linear の description 更新
 

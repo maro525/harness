@@ -95,8 +95,7 @@ AI_CHAIN="opencode-go/deepseek-v4-pro" ~/.claude/scripts/ai-fallback.sh {prompt_
 - `--dry-run` で起動コマンドだけ確認できる（トークンを使わない）
 - 実際に走った runner / モデルは stderr の `PHASE=` / `RUNNER=` / `MODEL=` / `LABEL=` で返り、`利用AI:` 行には `--label` でそのまま入る
 - 契約（引数・書き込み規約・`### RESULT` / `### SECTION`・`### QUESTIONS`・`status:` の専権）は `docs/phase-contract.md`
-
-- 契約（引数・書き込み規約・`### RESULT` / `### SECTION`・`### QUESTIONS`・`status:` の専権）は `docs/phase-contract.md`
+- 機械検査: `./checks/phases.sh`（3 系統の定義の揃い / `--task-file`・`--label` / フェーズが `status:` を書いていない / orchestrator の 3F・3P / `phase-run.sh` の runner / 配布対象）
 
 ### pi 単独で回す
 

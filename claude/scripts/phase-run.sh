@@ -27,6 +27,7 @@ Usage: phase-run.sh --phase={phase} --task-file={TASK_FILE} [options]
                       (default: claude:opus,opencode2,pi:ollama-cloud/deepseek-v4.1-flash,auto)
   --description=TEXT  task description passed as the first part of $ARGUMENTS
   --tier= --linear-id= --answers-file=   passed through to the phase
+  --candidate         add a candidate instead of overwriting (startproject only)
   --timeout=30m       per-attempt timeout (timeout -k 1m)
   --claude-tools=...  --allowedTools for claude
                       (default: Read,Write,Edit,Glob,Grep,Bash)
@@ -50,6 +51,7 @@ DESCRIPTION=""
 TIER=""
 LINEAR_ID=""
 ANSWERS=""
+CANDIDATE=0
 TIMEOUT="30m"
 CLAUDE_TOOLS="Read,Write,Edit,Glob,Grep,Bash"
 DRY_RUN=0
@@ -65,6 +67,7 @@ for arg in "$@"; do
     --tier=*) TIER=${arg#*=} ;;
     --linear-id=*) LINEAR_ID=${arg#*=} ;;
     --answers-file=*) ANSWERS=${arg#*=} ;;
+    --candidate) CANDIDATE=1 ;;
     --timeout=*) TIMEOUT=${arg#*=} ;;
     --claude-tools=*) CLAUDE_TOOLS=${arg#*=} ;;
     --dry-run) DRY_RUN=1 ;;
@@ -141,6 +144,7 @@ build_prompt() { # label
   [[ -n "$TIER" ]] && args+=" --tier=$TIER"
   [[ -n "$LINEAR_ID" ]] && args+=" --linear-id=$LINEAR_ID"
   [[ -n "$ANSWERS" ]] && args+=" --answers-file=$ANSWERS"
+  ((CANDIDATE)) && args+=" --candidate"
   [[ -n "$1" ]] && args+=" --label=$1"
   cat <<EOF
 Read $SKILL and follow it.

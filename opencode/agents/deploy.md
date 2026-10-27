@@ -49,7 +49,7 @@ grep -l "^- branch: {branch}$" .claude/docs/decisions/task-*.md
 ## Input
 
 ```
-$ARGUMENTS: "{task description} --tier={S|M|L} --task-file={TASK_FILE} --linear-id={LINEAR_ID}"
+$ARGUMENTS: "{task description} --tier={S|M|L} --task-file={TASK_FILE} --linear-id={LINEAR_ID} [--label={実行者名}]"
 ```
 
 ---
@@ -204,7 +204,7 @@ Linear の GitHub / GitLab 連携が無い環境でも issue から PR に辿れ
 
 ### 4-3. TASK_FILE 更新
 
-**新規作成型** — TASK_FILE の `## deploy` を記入する:
+**新規作成型** — TASK_FILE の `## deploy` を記入する（`--label` があれば `### PR / MR` のすぐ下（空行を挟まない）に `利用AI: {label}` を書く。日時は `- 作成日時:` の行にあるので付けない。追加 push 型は `#### 追加 push（…）` の直下に同じく 1 行）:
 
 ```markdown
 ## deploy
