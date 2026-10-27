@@ -16,7 +16,7 @@ permission:
 ## Input
 
 ```
-$ARGUMENTS: "{task description} --tier={S|M|L} --task-file={TASK_FILE} --linear-id={LINEAR_ID}"
+$ARGUMENTS: "{task description} --tier={S|M|L} --task-file={TASK_FILE} --linear-id={LINEAR_ID} [--label={実行者名}]"
 ```
 
 ---
@@ -95,7 +95,7 @@ tier に応じたレビュアーを同時に起動する。**レビュー中は�
 
 ## OUTPUT
 
-TASK_FILE の `## team-review` に `### {m}回目` として追記する（FAIL の場合も必ず書き込む。既存の回は上書きしない）。`{m}` は `## team-implement` の最新回と同じ番号（実装・レビューの回数。追加依頼の番号 `{n}` とは別）。
+TASK_FILE の `## team-review` に `### {m}回目` として追記する（FAIL の場合も必ず書き込む。既存の回は上書きしない）。`{m}` は `## team-implement` の最新回と同じ番号（実装・レビューの回数。追加依頼の番号 `{n}` とは別）。`--label` があれば `### {m}回目` のすぐ下（空行を挟まない）に `利用AI: {label}（{YYYY-MM-DD HH:MM}）` を書く（無ければ書かない）。
 
 ```markdown
 ## team-review

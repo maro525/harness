@@ -14,7 +14,7 @@ permission:
 ## Input
 
 ```
-$ARGUMENTS: "{task description} --tier={S|M|L} --task-file={TASK_FILE} --linear-id={LINEAR_ID}"
+$ARGUMENTS: "{task description} --tier={S|M|L} --task-file={TASK_FILE} --linear-id={LINEAR_ID} [--label={実行者名}]"
 ```
 
 ---
@@ -60,7 +60,7 @@ Plan のタスクがすべて完了し、テストがすべて通過したら OU
 
 ## OUTPUT
 
-TASK_FILE の `## team-implement` に `### {m}回目` として追記する（既存の回は上書きしない。`{m}` は既存の最大 + 1、初回は `1回目`。追加依頼の番号 `{n}` とは別）。作業ブランチ名を `## Meta` の `branch:` に、作業ブランチを切ったときにいたブランチを `base:` に記入する（差し戻し時・追加修正時は既存の `base:` をそのまま残す）。
+TASK_FILE の `## team-implement` に `### {m}回目` として追記する（既存の回は上書きしない。`{m}` は既存の最大 + 1、初回は `1回目`。追加依頼の番号 `{n}` とは別）。`--label` があれば `### {m}回目` のすぐ下（空行を挟まない）に `利用AI: {label}（{YYYY-MM-DD HH:MM}）` を書く（無ければ書かない）。作業ブランチ名を `## Meta` の `branch:` に、作業ブランチを切ったときにいたブランチを `base:` に記入する（差し戻し時・追加修正時は既存の `base:` をそのまま残す）。
 
 ```markdown
 ## team-implement

@@ -51,5 +51,16 @@ for rel in "${HARNESS_FILES[@]}"; do
   fi
 done
 
+# Cross-repo 参照チェックとフェーズ整合性チェック。どちらも失敗しても同期は成功扱い
+# （警告のみ。CI は無いのでここで回す）。
+if [[ -f "$SCRIPT_DIR/checks/crossrefs.sh" ]]; then
+  bash "$SCRIPT_DIR/checks/crossrefs.sh" ||
+    echo "Warning: cross-repo 参照チェックに失敗（上記 NG を確認）" >&2
+fi
+if [[ -f "$SCRIPT_DIR/checks/phases.sh" ]]; then
+  bash "$SCRIPT_DIR/checks/phases.sh" ||
+    echo "Warning: フェーズ整合性チェックに失敗（docs/phase-contract.md と 3 系統の定義を揃える）" >&2
+fi
+
 echo ""
 echo "Done."
