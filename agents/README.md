@@ -2,6 +2,8 @@
 
 `/orchestrate` の 4 フェーズ（startproject / team-implement / team-review / deploy）を、**Claude 以外の CLI エージェント**（pi / cline / opencode / codex）でも回せるようにした [Agent Skills](https://agentskills.io/specification) 形式の定義。Claude 版（`../claude/commands/*.md`）は OUTPUT を返して orchestrate が TASK_FILE に書くが、こちらは**各フェーズが TASK_FILE の自分の節を自分で書く**。
 
+`orchestrate/` が orchestrator 本体（pi / cline / codex でも単独でタスクを回せる）。フェーズの起動は `~/.claude/scripts/phase-run.sh` に任せ、CLI / モデルの差はそこで吸収する。
+
 主な使い道は `/orchestrate` の**フェーズ指定モード**（`../claude/commands/orchestrate.md` STEP 3P）: 既存 TASK_FILE の 1 フェーズを別 AI で 1 回実行し、別案（`### 案 {k}`）や別視点のレビュー（`### {m}回目`）として追記する。見出しは Claude 版の通常モードと同じで、使った AI は見出しの直下の `利用AI:` 行で示す。
 
 ## Layout
@@ -158,6 +160,7 @@ timeout -k 1m 30m {上表のコマンド} "$(cat {prompt_file})" < /dev/null > {
 | 項目 | Claude 版（`claude/commands/*.md`） | 一般向け（`agents/skills/*/SKILL.md`） |
 |---|---|---|
 | TASK_FILE の書き手 | orchestrate（command は OUTPUT を返す） | 各フェーズ自身（`written: no` のときだけ orchestrate が代筆） |
+| orchestrator | `claude/commands/orchestrate.md`（`/orchestrate`） | `agents/skills/orchestrate/SKILL.md`（pi / cline / codex でも回せる。フェーズは `~/.claude/scripts/phase-run.sh` 経由） |
 | Linear | orchestrate が投稿・ステータス変更 | 連携ツールがあればコメントのみ。ステータスは変えない |
 | `status:` | orchestrate が各 STEP で更新 | 書かない（フェーズ指定モードでは orchestrate が STEP 3P P4 で、実行したフェーズの値に更新する） |
 | 回数・候補 | `### {m}回目` | 同じ `### {m}回目`（startproject は `### 案 {k}`）。実行者は見出し直下の `利用AI: {label}（{日時}）` 行 |
