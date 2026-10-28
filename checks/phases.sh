@@ -107,6 +107,7 @@ declare -A sync_lists=(
   [sync-claude.sh]="commands/orchestrate.md commands/team-review.md rules/tool-routing.md scripts/phase-run.sh"
   [sync-opencode.sh]="commands/orchestrate.md agents/team-review.md"
   [sync-agents.sh]="startproject team-implement team-review deploy orchestrate"
+  [sync-pi.sh]="orchestrate.md"
 )
 for script in "${!sync_lists[@]}"; do
   path=$(readonly_path "$script")
@@ -118,6 +119,17 @@ for script in "${!sync_lists[@]}"; do
     grep -q -- "$entry" "$path" || ng "$script の配布対象に $entry が無い"
   done
 done
+
+# --- 7b: pi prompt wrapper ---------------------------------------------------
+pi_prompt="pi/prompts/orchestrate.md"
+if [[ ! -f $(readonly_path "$pi_prompt") ]]; then
+  ng "pi の orchestrate プロンプトが無い: $pi_prompt"
+else
+  for token in '~/.agents/skills/orchestrate/SKILL.md' '--task-file' '--phase' '--tier'; do
+    grep -qF -- "$token" "$(readonly_path "$pi_prompt")" ||
+      ng "$pi_prompt に '$token' の記述が無い"
+  done
+fi
 
 # --- 8: contract -------------------------------------------------------------
 contract="docs/phase-contract.md"

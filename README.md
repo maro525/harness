@@ -24,12 +24,17 @@ harness/
 ├── agents/                  # Claude 以外の CLI (pi / cline / opencode / codex) 向け Agent Skills (~/.agents/skills)
 │   ├── README.md            # 外部 CLI のフェーズ実行（orchestrate STEP 3P が直接読む）
 │   └── skills/
+├── pi/                      # pi 専用 (~/.pi/agent)
+│   ├── README.md            # 配布と前提（permissions の許可リスト）
+│   └── prompts/
+│       └── orchestrate.md   # /orchestrate — agents/skills/orchestrate/SKILL.md を読む薄いラッパー
 ├── checks/crossrefs.sh      # dotfiles との相互参照チェック（下記「dotfiles との契約」）
 ├── kanban/                  # TASK_FILE を読む読み取り専用の kanban ボード (taskboard)
 ├── lib/sync-common.sh
 ├── sync-claude.sh
 ├── sync-opencode.sh
-└── sync-agents.sh
+├── sync-agents.sh
+└── sync-pi.sh
 ```
 
 ## 配布
@@ -40,11 +45,12 @@ dotfiles と同じく HOME ⇄ リポジトリの双方向同期（対話モー�
 ./sync-claude.sh      # ~/.claude の harness ファイルだけ
 ./sync-opencode.sh    # ~/.config/opencode の harness ファイルだけ
 ./sync-agents.sh      # ~/.agents/skills の 4 フェーズ + orchestrate（+ Cline 用 symlink）
+./sync-pi.sh          # ~/.pi/agent/prompts の /orchestrate
 ./sync-*.sh -n        # 非対話。repo → HOME の自動コピー（初回配布にも使える）
 ./sync-*.sh -n --to-repo  # 非対話。HOME → repo の自動コピー
 ```
 
-`-n` のコピーの向きはスクリプトごとの既定で決まる。harness の 3 スクリプトは repo → HOME（`lib/sync-common.sh` を source した直後に `SYNC_COMMON_DEFAULT_DIRECTION=repo-to-home`）、lib 自体の既定は dotfiles と同じ HOME → repo。`--to-home` / `--to-repo` でその回の向きを指定できる（`-n` と一緒に使う。対話モードには効かない）。コピー元に無いファイルは何もしない。
+`-n` のコピーの向きはスクリプトごとの既定で決まる。harness の `sync-*.sh` は repo → HOME（`lib/sync-common.sh` を source した直後に `SYNC_COMMON_DEFAULT_DIRECTION=repo-to-home`）、lib 自体の既定は dotfiles と同じ HOME → repo。`--to-home` / `--to-repo` でその回の向きを指定できる（`-n` と一緒に使う。対話モードには効かない）。コピー元に無いファイルは何もしない。
 
 `~/.claude` と `~/.config/opencode` は dotfiles と共有しているので、各スクリプトは**自分が持つファイルを名前で列挙**し、ディレクトリ全体は走査しない。dotfiles 側の `sync-claude.sh` / `sync-opencode.sh` は同じ名前を除外している。ファイルを足したり消したりしたら両方のリストを揃える。
 
@@ -105,7 +111,7 @@ AI_CHAIN="codex:gpt-6-sol github-copilot/gpt-6-astra" ~/.claude/scripts/ai-fallb
 
 ### pi 単独で回す
 
-`agents/skills/orchestrate/SKILL.md` が orchestrator（`./sync-agents.sh` で `~/.agents/skills/orchestrate` に配布）。pi からは次の形で起動する。
+`agents/skills/orchestrate/SKILL.md` が orchestrator（`./sync-agents.sh` で `~/.agents/skills/orchestrate` に配布）。pi からは次の形で起動する（`./sync-pi.sh` を入れていれば `/orchestrate` でも同じ）。
 
 ```
 Read ~/.agents/skills/orchestrate/SKILL.md and follow it.
