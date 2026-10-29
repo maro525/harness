@@ -15,6 +15,7 @@ harness/
 │   └── scripts/
 │       ├── linear-ask.sh   # OpenCode 版 orchestrate の質問の中継用（Linear API キーが要る）
 │       ├── ai-fallback.sh  # リサーチ・設計相談のモデル連鎖（429 で次の候補へ）
+│       ├── claude-consult.sh  # 読み取り専用の Claude に設計相談（Cursor / pi / Cline 用。agents/skills/claude-consult が呼ぶ）
 │       └── phase-run.sh    # フェーズを任意の CLI / モデルで実行するディスパッチャ
 ├── docs/phase-contract.md   # 4 フェーズが満たす契約（引数・書き込み・RESULT/QUESTIONS・status）
 ├── opencode/                # OpenCode 版 (~/.config/opencode)
@@ -23,7 +24,7 @@ harness/
 │   └── agents/
 ├── agents/                  # Claude 以外の CLI (pi / cline / opencode / codex) 向け Agent Skills (~/.agents/skills)
 │   ├── README.md            # 外部 CLI のフェーズ実行（orchestrate STEP 3P が直接読む）
-│   └── skills/
+│   └── skills/              # 4 フェーズ + orchestrate + claude-consult（Cursor 等から Claude に設計相談）
 ├── pi/                      # pi 専用 (~/.pi/agent)
 │   ├── README.md            # 配布と前提（permissions の許可リスト）
 │   └── prompts/
@@ -44,7 +45,7 @@ dotfiles と同じく HOME ⇄ リポジトリの双方向同期（対話モー�
 ```bash
 ./sync-claude.sh      # ~/.claude の harness ファイルだけ
 ./sync-opencode.sh    # ~/.config/opencode の harness ファイルだけ
-./sync-agents.sh      # ~/.agents/skills の 4 フェーズ + orchestrate（+ Cline 用 symlink）
+./sync-agents.sh      # ~/.agents/skills の 4 フェーズ + orchestrate + claude-consult（+ Cline 用 symlink）
 ./sync-pi.sh          # ~/.pi/agent/prompts の /orchestrate
 ./sync-*.sh -n        # 非対話。repo → HOME の自動コピー（初回配布にも使える）
 ./sync-*.sh -n --to-repo  # 非対話。HOME → repo の自動コピー
