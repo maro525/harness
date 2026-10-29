@@ -15,6 +15,7 @@ agents/
     ├── startproject/SKILL.md    # 計画: Brief / Design / Plan（--label ありなら ### 案 {k} + 利用AI 行）
     ├── team-implement/SKILL.md  # 実装: feature ブランチ + TDD、### {m}回目 + 利用AI 行、Meta の branch/base
     ├── team-review/SKILL.md     # レビュー: 観点別（Quality/Logic → Security → Simplify）、判定 PASS/FAIL
+    ├── claude-consult/SKILL.md  # フェーズではない。Claude 以外のエージェントから読み取り専用の Claude に設計相談（~/.claude/scripts/claude-consult.sh、--resume で往復）
     └── deploy/SKILL.md          # commit → push → PR/MR（gh / glab）、#### PR / MR + 利用AI 行 + 紐づけ行。作業ブランチに留まる（TASK_FILE のコミットと分岐元への復帰は呼び出し元）
 ```
 
@@ -22,7 +23,7 @@ agents/
 
 ## 共通規約
 
-4 つの SKILL.md はすべて同じ規約で書かれている。
+フェーズの SKILL.md（claude-consult を除く）はすべて同じ規約で書かれている。
 
 | 項目 | 規約 |
 |---|---|

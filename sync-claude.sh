@@ -26,6 +26,7 @@ HARNESS_FILES=(
   scripts/linear-ask.sh
   scripts/ai-fallback.sh
   scripts/phase-run.sh
+  scripts/claude-consult.sh
 )
 
 # shellcheck source=lib/sync-common.sh
