@@ -154,7 +154,7 @@ timeout -k 1m 30m {上表のコマンド} "$(cat {prompt_file})" < /dev/null > {
    rm -r ~/.pi/agent/skills/{startproject,team-implement,team-review,deploy,orchestrate}
    ```
 
-   `orchestrate` は一般向けには作らない（Claude の `/orchestrate` が外部 CLI を呼ぶ側）ので、旧コピーは削除するだけでよい。
+   `orchestrate` も汎用版（`agents/skills/orchestrate/`）があり、`~/.agents/skills/orchestrate` に配布される。旧コピーは削除するだけでよい。
 
 3. `~/.claude/skills` には置かない（Claude の `/startproject` などと名前が二重になる）
 
@@ -207,7 +207,9 @@ TASK_FILE に書かれる形（`### 案 {k}` の例。`### {m}回目` も同じ�
 
 ```bash
 # 一般向け定義に Claude 固有語・フェーズ指定モードへの言及が無いこと・name がディレクトリ名と一致すること
-grep -nE 'context: fork|agent:|allowed-tools|model:|AskUserQuestion|Agent ツール|hook|TodoWrite|mcp__|\.claude/rules|AGENTS\.md|CLAUDE\.md|subagent|opencode run|firecrawl|Claude|OpenCode|orchestrate|フェーズ指定' agents/skills/*/SKILL.md
+# （orchestrate/SKILL.md は CLI 名を意図的に書くので対象外）
+grep -nE 'context: fork|agent:|allowed-tools|model:|AskUserQuestion|Agent ツール|hook|TodoWrite|mcp__|\.claude/rules|AGENTS\.md|CLAUDE\.md|subagent|opencode run|firecrawl|Claude|OpenCode|orchestrate|フェーズ指定' \
+  agents/skills/{startproject,team-implement,team-review,deploy}/SKILL.md
 for d in agents/skills/*/; do n=$(basename "$d"); grep -q "^name: $n$" "$d/SKILL.md" || echo "name mismatch: $n"; done
 
 # 見出しに実行者名・日時が残っていないこと（利用AI 行に移した）
