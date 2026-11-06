@@ -15,7 +15,7 @@ agents/
     ├── startproject/SKILL.md    # 計画: Brief / Design / Plan（--label ありなら ### 案 {k} + 利用AI 行）
     ├── team-implement/SKILL.md  # 実装: feature ブランチ + TDD、### {m}回目 + 利用AI 行、Meta の branch/base
     ├── team-review/SKILL.md     # レビュー: 観点別（Quality/Logic → Security → Simplify）、判定 PASS/FAIL
-    ├── claude-consult/SKILL.md  # フェーズではない。Claude 以外のエージェントから読み取り専用の Claude に設計相談（~/.claude/scripts/claude-consult.sh、--resume で往復）
+    ├── claude-consult/SKILL.md  # フェーズではない。Claude 以外のエージェントから Claude セッションに相談 / レビュー / 実装を投げる（~/.claude/scripts/claude-consult.sh。Herdr 内は pane 常駐セッション、外は claude -p）
     └── deploy/SKILL.md          # commit → push → PR/MR（gh / glab）、#### PR / MR + 利用AI 行 + 紐づけ行。作業ブランチに留まる（TASK_FILE のコミットと分岐元への復帰は呼び出し元）
 ```
 
@@ -46,6 +46,9 @@ Claude 固有要素（`context: fork`、`agent:`、`allowed-tools`、`model:`、
 | cline | プロジェクト `.cline/skills/`、`.clinerules/skills/`、`.claude/skills/`。グローバル `~/.cline/skills/` — [Skills](https://docs.cline.bot/customization/skills) |
 | opencode | `.opencode/skills`、`~/.config/opencode/skills`、`.claude/skills`、`~/.claude/skills`、`.agents/skills`、`~/.agents/skills` — [Agent Skills](https://opencode.ai/docs/skills/) |
 | codex | `$CWD/.agents/skills`、`$CWD/../.agents/skills`、`$REPO_ROOT/.agents/skills`、`$HOME/.agents/skills`、`/etc/codex/skills` — [Build skills](https://developers.openai.com/codex/skills) |
+| cursor | `.agents/skills`、`.cursor/skills`（プロジェクト）、`~/.agents/skills`、`~/.cursor/skills`（ユーザー）。互換のため `.claude/skills` / `.codex/skills` も読む — [Agent Skills](https://cursor.com/docs/skills) |
+
+Cursor は `~/.agents/skills` を直接読むので symlink は不要（CLI 2026.11 系 / Cursor 2.4+ で対応）。ただし **headless（`cursor-agent -p`）はスキルを読まないという報告**があるので、その場合はプロンプトで `Read ~/.agents/skills/{name}/SKILL.md and follow it` と絶対パスを渡す。`name` はフォルダ名と一致している必要がある。
 
 orchestrate のフェーズ指定モードは探索に頼らず、プロンプトで `Read {abs path}/SKILL.md and follow it` と絶対パスを渡す（CLI ごとの探索差を吸収するため）。各 CLI の起動オプションは下の「外部 CLI のフェーズ実行」。
 
