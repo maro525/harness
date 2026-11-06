@@ -13,8 +13,10 @@
 #     of starting a new one. A tab that no longer hosts the agent, or that lives
 #     in another directory, is replaced.
 #
-#   print  (default outside Herdr)
-#     One-shot `claude -p` with Read / Grep / Glob only. No session, no pane.
+#   print  (explicit only: -b print / CLAUDE_CONSULT_BACKEND=print)
+#     One-shot `claude -p` with Read / Grep / Glob only. No session, no tab.
+#     Never selected automatically: outside Herdr the script stops and asks
+#     for a Herdr pane instead of silently changing behaviour.
 #
 # Contract:
 #   stdout : the answer body (with --roles: one `## <role>` section per role)
@@ -73,7 +75,9 @@ Roles (pick the pane the question goes to):
 
 Backend:
   -b, --backend B    auto (default) | herdr | print
-                     auto = herdr when $HERDR_ENV=1, otherwise print
+                     auto = herdr when $HERDR_ENV=1; outside Herdr it
+                     stops with an error instead of falling back
+                     (pass '-b print' to run the one-shot claude -p)
   -r, --resume ID    print backend only: resume an earlier session
   --name NAME        herdr backend: agent name (default hc-<role>)
   --new              herdr backend: replace the role's tab with a fresh one
@@ -90,7 +94,8 @@ Other:
   -h, --help         show this help and exit
 
 Environment:
-  CLAUDE_CONSULT_BACKEND, CLAUDE_CONSULT_MODEL, CLAUDE_CONSULT_TIMEOUT,
+  CLAUDE_CONSULT_BACKEND (auto | herdr | print), CLAUDE_CONSULT_MODEL,
+  CLAUDE_CONSULT_TIMEOUT,
   CLAUDE_CONSULT_IMPLEMENT_MODEL, CLAUDE_CONSULT_READ_LINES,
   CLAUDE_CONSULT_<ROLE>_ARGS (extra claude arguments, e.g. --effort high)
 
@@ -169,12 +174,14 @@ if [[ -z "$src" && "${CLOSE_ONLY:-0}" != "1" ]]; then
   exit 2
 fi
 
-# A backend of "auto" only picks herdr when we actually run inside Herdr.
+# "auto" means Herdr, never the one-shot fallback: running outside Herdr gives
+# a different tool set, no conversation continuity and no tab, so switching to
+# it silently would hide that. `-b print` is the explicit opt-in.
 if [[ "$BACKEND" == "auto" ]]; then
   if [[ "${HERDR_ENV:-0}" == "1" ]] && command -v herdr >/dev/null 2>&1; then
     BACKEND=herdr
   else
-    BACKEND=print
+    die "not inside Herdr (HERDR_ENV=1) — start this from a Herdr pane, or pass -b print for the one-shot claude -p fallback" 1
   fi
 fi
 if [[ "$BACKEND" == "herdr" ]] && [[ "${HERDR_ENV:-0}" != "1" ]]; then
