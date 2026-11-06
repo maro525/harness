@@ -17,7 +17,9 @@ usage() {
 Usage: phase-run.sh --phase={phase} --task-file={TASK_FILE} [options]
 
   --phase=            startproject | team-implement | team-review | deploy
-  --task-file=        path to the TASK_FILE (required)
+  --task-file=        path to the TASK_FILE (required; may live outside the repo)
+  --repo=DIR          repository (or worktree) the phase works on
+                      (default: $PWD). TASK_FILE paths are never used to guess it.
   --runner=SPEC       claude[:model] | opencode2[:model] | opencode[:model]
                       | pi[:model] | codex[:model] | cline[:model] | auto
                       auto = ~/.claude/scripts/ai-fallback.sh (model + engine chain)
@@ -44,6 +46,7 @@ PHASES="startproject team-implement team-review deploy"
 
 PHASE=""
 TASK_FILE=""
+REPO_ARG=""
 RUNNER=""
 PHASE_MAP=""
 FALLBACK=""
@@ -60,6 +63,7 @@ for arg in "$@"; do
   case "$arg" in
     --phase=*) PHASE=${arg#*=} ;;
     --task-file=*) TASK_FILE=${arg#*=} ;;
+    --repo=*) REPO_ARG=${arg#*=} ;;
     --runner=*) RUNNER=${arg#*=} ;;
     --phase-map=*) PHASE_MAP=${arg#*=} ;;
     --fallback=*) FALLBACK=${arg#*=} ;;
@@ -86,6 +90,11 @@ esac
 [[ -f "$TASK_FILE" ]] || die "task file not found: $TASK_FILE"
 TASK_FILE=$(cd "$(dirname "$TASK_FILE")" && pwd)/$(basename "$TASK_FILE")
 
+# The repository is the working directory (or --repo), never the TASK_FILE's
+# location: TASK_FILEs live under ~/.local/share/harness/tasks/<repo>/.
+REPO_DIR=${REPO_ARG:-$PWD}
+[[ -d "$REPO_DIR" ]] || die "not a directory: $REPO_DIR"
+
 [[ -n "$FALLBACK" ]] ||
   FALLBACK="claude:opus,opencode2,pi:ollama-cloud/deepseek-v4.1-flash,auto"
 
@@ -108,9 +117,8 @@ else
   die "phase definition not found: set HARNESS to the harness checkout (looked for agents/skills/$PHASE/SKILL.md)"
 fi
 
-REPO=$(git -C "$(dirname "$TASK_FILE")" rev-parse --show-toplevel 2>/dev/null ||
-  git rev-parse --show-toplevel 2>/dev/null || true)
-[[ -n "$REPO" ]] || die "not inside a git repository: $TASK_FILE"
+REPO=$(git -C "$REPO_DIR" rev-parse --show-toplevel 2>/dev/null || true)
+[[ -n "$REPO" ]] || die "not inside a git repository: $REPO_DIR"
 
 map_runner() {
   local entry
@@ -150,7 +158,11 @@ build_prompt() { # label
 Read $SKILL and follow it.
 
 Working directory: $REPO
-Task file: $TASK_FILE (relative paths are resolved from $REPO)
+Task file: $TASK_FILE
+  (outside the repository — never commit it; relative paths inside it are resolved from $REPO)
+
+The task file is created and updated with ~/.claude/scripts/task-file.sh
+(dir / new / find / resolve) when you need to locate others.
 
 \$ARGUMENTS: "$args"
 EOF

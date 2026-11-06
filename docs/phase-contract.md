@@ -18,7 +18,7 @@ $ARGUMENTS: "{task description} --task-file={TASK_FILE} [--tier=S|M|L] [--linear
 
 | 引数 | 必須 | 説明 |
 |---|---|---|
-| `--task-file` | ✅ | TASK_FILE のパス。無ければ**中止して報告する**（推測で作らない） |
+| `--task-file` | ✅ | TASK_FILE のパス。**リポジトリ外**（`~/.local/share/harness/tasks/{repo}/task-*.md`）にある。無ければ**中止して報告する**（推測で作らない） |
 | `--tier` | | 省略時は `## Meta` の `tier:`、それも無ければ `S` |
 | `--linear-id` | | 省略時は `## Meta` の `linear_id:`。無い／`NOLINEAR` なら Linear には投稿しない |
 | `--label` | | `{runner}/{model}` 形式（例 `pi/ollama-cloud/deepseek-v4.1-flash`）。`利用AI:` 行に書く。省略時は書かない |
@@ -30,7 +30,7 @@ $ARGUMENTS: "{task description} --task-file={TASK_FILE} [--tier=S|M|L] [--linear
 - 書くのは自分の節（`## startproject` / `## team-implement` / `## team-review` / `## deploy`）だけ
 - **`## Meta` の `status:` は絶対に書かない**（orchestrator 専権）。例外は **TASK_FILE を新規作成するときの `status: planning` だけ**（`startproject` が `--task-file` のファイルを作るケース。orchestrator が既に作っている場合は書かない）。`tier:` / `branch:` / `base:` / `issue:` のうち、書いてよいのはそのフェーズの定義が明示している項目だけ
 - `##` 見出しは増やさない（kanban が `##` 見出しで列を判定する）。`###` 以下は自由
-- 節の外には何も追記しない。**TASK_FILE の commit / push / 分岐元への復帰は orchestrator の仕事**（`deploy` の finalize は 6c）
+- 節の外には何も追記しない。**TASK_FILE の commit / push はしない**（リポジトリ外にあり、git 管理しない）。分岐元への復帰は orchestrator の仕事（STEP 6c / 3P P7）
 - `利用AI:` 行の書式は既存どおり（`team-review` は見出し直下に日時付き、`deploy` は日時なし）
 - `--label` は**モードを変えない**。候補として追記するかどうかは `--candidate` で明示する（`--label` だけで候補になる実装は不整合）
 
@@ -98,11 +98,11 @@ linear: posted|skipped|unavailable
 ## 7. 実行主体の混在
 
 ```bash
-# 既定（tier 表から決まる）
-~/.claude/scripts/phase-run.sh --phase=team-review --task-file=.claude/docs/decisions/task-X.md
+# 既定（tier 表から決まる）。--repo を省くと $PWD のリポジトリで実行する
+~/.claude/scripts/phase-run.sh --phase=team-review --task-file=~/.local/share/harness/tasks/{repo}/task-X.md
 
 # フェーズごとに別 CLI / 別モデル
-~/.claude/scripts/phase-run.sh --phase=team-implement --task-file=.claude/docs/decisions/task-X.md \
+~/.claude/scripts/phase-run.sh --phase=team-implement --task-file=~/.local/share/harness/tasks/{repo}/task-X.md \
   --phase-map="startproject=claude:opus,team-implement=pi:ollama-cloud/deepseek-v4.1-flash,team-review=opencode2:opencode-go/deepseek-v4-pro,deploy=claude:haiku"
 
 # モデル/エンジン連鎖に任せる

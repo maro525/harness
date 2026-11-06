@@ -10,7 +10,7 @@ metadata:
 
 デプロイフェーズを担当。コミット・push・PR / MR 作成を行い、結果を TASK_FILE の `## deploy` に自分で書き込む。動作検証は team-review で済んでいるので行わない。
 
-**終了後も作業ブランチに留まる**（分岐元には戻らない）。TASK_FILE 自体はコミットせず、作業ブランチ上に未コミットのまま残す。TASK_FILE の `docs(task):` コミット → 同じブランチへの push → 分岐元への復帰は**呼び出し元が行う**（手動で実行したときは自分で行う）。TASK_FILE を gitignore していないリポジトリでは、そのコミットが PR / MR に載る（公開したくなければ `.claude/` を `.gitignore` に入れておく）。
+**終了後も作業ブランチに留まる**（分岐元には戻らない）。TASK_FILE はリポジトリ外（`~/.local/share/harness/tasks/{repo}/`）にあり、git では扱わない。分岐元への復帰は**呼び出し元が `git switch {base}` で行う**（手動で実行したときは自分で行う）。
 
 前提: 作業ブランチ作成済み・team-review PASS 済み。作業ブランチに open な PR / MR が既にあれば、新規作成せず**追加 push と本文追記**を行う。
 
@@ -131,7 +131,7 @@ Related to #34
 作業ブランチ上の未コミット変更（team-implement の実装。レビュー通過済み）をコミットする。
 
 - **TASK_FILE のスコープ外の変更は巻き込まない**（Brief の対象外のファイル・別タスクの持ち越し変更は `git add` しない。`git add -A` は使わずファイルを指定する）
-- **TASK_FILE 自体はコミットしない**（`## deploy` はこの後 STEP 4 で書く。その記録のコミットは呼び出し元が `docs(task):` で行う）
+- **TASK_FILE 自体はコミットしない**（そもそもリポジトリ外にある。`## deploy` はこの後 STEP 4 で書く）
 - メッセージは `## team-implement` の内容から作る。追加 push なら本文に `追加依頼 {n}` を書く
 
 ```bash
