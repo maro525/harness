@@ -21,6 +21,21 @@ Herdr 上のエージェント・セッションは、**閉じるまで残る**�
 `consult` だけは既定で残す（同じ相談者に文脈を保ってほしい場面があるため）。
 使い捨てでよいと分かっているときは `--close` を付けて 1 回で閉じる。
 
+## どこに開くか（topology）
+
+Herdr の構造は workspace → tab → pane。セッションをどこに作るかは `herdr-agent.sh ensure` の `--topology` で選ぶ（`claude-consult.sh` は常に `tab`）。
+
+| topology | 何ができる | 向いている場面 |
+|---|---|---|
+| `tab`（既定） | 呼び出し元の workspace に新しい tab | 同じリポジトリの作業を並行する。今の workspace を汚さない |
+| `workspace` | そのリポジトリ専用の workspace（tab と pane 付き） | **別のリポジトリ**を任せるとき。workspace ごとにサイドバーで分離される（git は触らない） |
+| `worktree` | git worktree を作り、その workspace と tab で起動（パスは `~/.herdr/worktrees/{repo}/{branch}`） | 同じリポジトリでタスクを隔離したいとき。ブランチも切られる（`--branch` / `--base`） |
+
+- `tab` は**呼び出し元の workspace id を必要とする**（`HERDR_WORKSPACE_ID`）。無い・古い場合は `workspace create` に自動フォールバックする
+- `workspace` / `worktree` で作った workspace は**このツールが所有**するので、`close` で workspace ごと閉じる
+- `worktree` のセッションは `close` で **worktree も削除**する（`herdr worktree remove`。`--force` は使わないので、未コミットの変更があれば workspace だけ閉じて警告する）。**ブランチは残る**（成果物なので意図的）
+- 手で作った workspace / tab / worktree は絶対に閉じない（所有フラグで判定）
+
 ## タスク境界のルール
 
 1. **開始時**: 前のタスクのセッションが残っていたら閉じる（または `--new` で作り直す）
