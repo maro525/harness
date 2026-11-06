@@ -14,7 +14,6 @@ git は `AGENTS.md` の「GIT RULES」（保護ブランチ・ホスティング
 | 引数 | モード |
 |------|--------|
 | `--task-file` あり | **Deploy Workflow モード**（コードの commit → push → PR / MR。終わっても作業ブランチに留まる） |
-| `--task-file` あり | **Deploy Workflow モード**（`/orchestrate` STEP 6a から呼ばれる。終了後も作業ブランチに留まる） |
 | `--task-file` なし | **Ad-hoc Git モード**（Deploy Workflow の STEP は実行しない） |
 
 ## Ad-hoc Git モード

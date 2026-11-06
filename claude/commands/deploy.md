@@ -20,8 +20,7 @@ git は `$HOME/.claude/rules/tool-routing.md` の「Git Operations」（保護�
 
 | 引数 | モード |
 |---|---|
-| `--task-file` あり | **Deploy Workflow モード**（コードの commit → push → PR / MR。終わっても作業ブランチに留まる） |
-| `--task-file` あり | **Deploy Workflow モード**（`/orchestrate` STEP 6a から呼ばれる。終了後も作業ブランチに留まる） |
+| `--task-file` あり | **Deploy Workflow モード**（`/orchestrate` STEP 6a から呼ばれる。コードの commit → push → PR / MR。終わっても作業ブランチに留まる） |
 | `--task-file` なし | **Ad-hoc Git モード**（Deploy Workflow の STEP は実行しない） |
 
 ## Ad-hoc Git モード

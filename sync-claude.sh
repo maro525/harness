@@ -27,6 +27,7 @@ HARNESS_FILES=(
   scripts/ai-fallback.sh
   scripts/phase-run.sh
   scripts/task-file.sh
+  scripts/herdr-agent.sh
   scripts/claude-consult.sh
 )
 
