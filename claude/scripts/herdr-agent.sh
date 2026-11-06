@@ -11,10 +11,12 @@
 #
 # Usage:
 #   herdr-agent.sh ensure <name> --kind KIND [OPTIONS]    tab + agent (idempotent)
+#   herdr-agent.sh restart <name> [OPTIONS]               fresh session, same tab
 #   herdr-agent.sh ask    <name> <request-file|-> [OPTIONS]
+#   herdr-agent.sh send   <name> KEY [KEY...]           logical keys (esc, ctrl+c, ...)
 #   herdr-agent.sh read   <name> [--lines N]
 #   herdr-agent.sh state  <name>
-#   herdr-agent.sh close  <name>                          close the tab
+#   herdr-agent.sh close  <name>                          close the tab it owns
 #   herdr-agent.sh list
 #
 # Options:
@@ -69,6 +71,9 @@ while [[ $# -gt 0 ]]; do
     *)
       if [[ -z "$CMD" ]]; then
         CMD=$1
+      elif [[ "$CMD" == "send" && -n "$NAME" ]]; then
+        # send takes KEY [KEY...]: every positional after the name is a key.
+        NATIVE_ARGS+=("$1")
       elif [[ -z "$NAME" ]]; then
         NAME=$1
       elif [[ -z "$REQUEST" ]]; then
@@ -179,7 +184,8 @@ cmd_ensure() {
   mkdir -p "$STATE_DIR"
   jq -n --arg agent "$NAME" --arg pane "$pane" --arg tab "$tab" --arg kind "$KIND" \
     --arg repo "$REPO" --arg created "$(date -Iseconds)" \
-    '{agent:$agent, pane:$pane, tab:$tab, kind:$kind, repo:$repo, created:$created}' >"$state"
+    '{agent:$agent, pane:$pane, tab:$tab, tab_owned:true, kind:$kind, repo:$repo,
+      created:$created}' >"$state"
 
   echo "AGENT=$NAME" >&2
   echo "PANE=$pane" >&2
@@ -279,6 +285,81 @@ cmd_ask() {
   [[ -n "$tail_text" ]] || die "no output from $NAME" 1
 }
 
+# Stop the agent in its recorded pane and start a new one there: a fresh
+# context in the same tab, without opening another tab.
+cmd_restart() {
+  [[ -n "$NAME" ]] || die "restart needs a name" 2
+  local state pane tab kind repo waited=0
+  state=$(state_file "$NAME")
+  [[ -f "$state" ]] || die "$NAME is not registered — run ensure first" 2
+  pane=$(state_field "$state" pane)
+  tab=$(state_field "$state" tab)
+  kind=$(state_field "$state" kind)
+  repo=$(state_field "$state" repo)
+  [[ -n "$pane" ]] || die "no pane recorded for $NAME" 1
+  REPO=${repo:-$PWD}
+
+  if herdr agent get "$NAME" >/dev/null 2>&1; then
+    # Quit politely first: Esc leaves the scrollback view (a TUI that is scrolled
+    # does not deliver typed input to the prompt), then /exit works for pi and claude.
+    herdr agent send-keys "$NAME" esc >/dev/null 2>&1 || true
+    herdr agent send-keys "$NAME" ctrl+end >/dev/null 2>&1 || true
+    sleep 1
+    herdr agent prompt "$NAME" "/exit" >/dev/null 2>&1 || true
+    while ((waited < 10)); do
+      herdr agent get "$NAME" >/dev/null 2>&1 || break
+      sleep 1
+      waited=$((waited + 1))
+    done
+    if herdr agent get "$NAME" >/dev/null 2>&1; then
+      # ctrl+d quits when the editor is empty (pi); ctrl+c twice is the fallback.
+      herdr agent send-keys "$NAME" ctrl+d >/dev/null 2>&1 || true
+      sleep 1
+      herdr agent send-keys "$NAME" ctrl+c >/dev/null 2>&1 || true
+      sleep 1
+      herdr agent send-keys "$NAME" ctrl+c >/dev/null 2>&1 || true
+      waited=0
+      while ((waited < 10)); do
+        herdr agent get "$NAME" >/dev/null 2>&1 || break
+        sleep 1
+        waited=$((waited + 1))
+      done
+    fi
+  fi
+  if herdr agent get "$NAME" >/dev/null 2>&1; then
+    die "$NAME is still running in $pane — quit it by hand, then rerun" 1
+  fi
+
+  # The pane must be at a shell prompt again; the agent start below validates it.
+  herdr agent start "$NAME" --kind "${kind:-pi}" --pane "$pane" -- "${NATIVE_ARGS[@]}" >&2 ||
+    die "could not start ${kind:-pi} in $pane (is the shell prompt back?)"
+  pane_stable "$NAME"
+
+  # Older state files recorded no tab; take it from the agent now.
+  if [[ -z "$tab" ]]; then
+    tab=$(herdr agent get "$NAME" 2>/dev/null |
+      jq -r '.result.agent.tab_id // empty' 2>/dev/null || true)
+    if [[ -n "$tab" ]]; then
+      jq --arg tab "$tab" '. + {tab:$tab}' "$state" >"$state.tmp" && mv "$state.tmp" "$state"
+    fi
+  fi
+
+  echo "AGENT=$NAME" >&2
+  echo "PANE=$pane" >&2
+  echo "TAB=$tab" >&2
+  echo "KIND=${kind:-pi}" >&2
+  echo "REPO=$REPO" >&2
+  echo "STATE=restarted" >&2
+}
+
+cmd_send() {
+  [[ -n "$NAME" ]] || die "send needs a name" 2
+  local -a keys=()
+  [[ -n "$REQUEST" ]] && keys+=("$REQUEST")
+  keys+=(${NATIVE_ARGS[@]+"${NATIVE_ARGS[@]}"})
+  ((${#keys[@]} > 0)) || die "send needs at least one key" 2
+  herdr agent send-keys "$NAME" "${keys[@]}"
+}
 cmd_read() {
   [[ -n "$NAME" ]] || die "read needs a name" 2
   herdr agent read "$NAME" --source recent-unwrapped --lines "$LINES"
@@ -295,8 +376,9 @@ cmd_close() {
   state=$(state_file "$NAME")
   pane=$(state_field "$state" pane)
   tab=$(state_field "$state" tab)
-  # The session owns its tab, so close the tab (and its pane with it).
-  if [[ -n "$tab" ]]; then
+  # Close the tab only when this script created it: a session that was started
+  # in someone else's tab (older state files, or a reused tab) must leave it.
+  if [[ "$(state_field "$state" tab_owned)" == "true" && -n "$tab" ]]; then
     herdr tab close "$tab" >/dev/null 2>&1 || herdr pane close "$pane" >/dev/null 2>&1 || true
   elif [[ -n "$pane" ]]; then
     herdr pane close "$pane" >/dev/null 2>&1 || true
@@ -322,6 +404,8 @@ cmd_list() {
 
 case "$CMD" in
   ensure) cmd_ensure ;;
+  restart) cmd_restart ;;
+  send) cmd_send ;;
   ask) cmd_ask ;;
   read) cmd_read ;;
   state) cmd_state ;;

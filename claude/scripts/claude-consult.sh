@@ -393,8 +393,8 @@ herdr_close_pane() {
 # Close the tab (and its pane) recorded for <name>, then forget the session.
 # Sessions own their tab, so closing the pane alone would leave an empty tab.
 herdr_close_tab() {
-  local tab=$1 pane=$2
-  if [[ -n "$tab" ]]; then
+  local tab=$1 pane=$2 owned=${3:-false}
+  if [[ "$owned" == "true" && -n "$tab" ]]; then
     herdr tab close "$tab" >/dev/null 2>&1 && return 0
   fi
   herdr_close_pane "$pane"
@@ -405,7 +405,7 @@ herdr_close_session() {
   state=$(herdr_state_file "$name")
   pane=$(herdr_state_field "$state" pane)
   tab=$(herdr_state_field "$state" tab)
-  herdr_close_tab "$tab" "$pane"
+  herdr_close_tab "$tab" "$pane" "$(herdr_state_field "$state" tab_owned)"
   rm -f "$state"
   echo "closed $name (tab ${tab:-none}, pane ${pane:-unknown})" >&2
 }
@@ -421,7 +421,7 @@ herdr_ensure_session() {
   stored_cwd=$(herdr_state_field "$state" cwd)
 
   if [[ "$FORCE_NEW" == "1" ]]; then
-    herdr_close_tab "$tab" "$pane"
+    herdr_close_tab "$tab" "$pane" "$(herdr_state_field "$state" tab_owned)"
     live=0
   elif [[ -n "$pane" ]] && herdr agent get "$name" >/dev/null 2>&1; then
     live=1
@@ -430,13 +430,13 @@ herdr_ensure_session() {
         echo "warning: reusing $name recorded in $stored_cwd (cwd is $PWD)" >&2
       else
         echo "note: $name was started in $stored_cwd — replacing its tab" >&2
-        herdr_close_tab "$tab" "$pane"
+        herdr_close_tab "$tab" "$pane" "$(herdr_state_field "$state" tab_owned)"
         live=0
       fi
     fi
   elif [[ -n "$pane" ]]; then
     # Recorded pane no longer hosts the agent: drop the tab and start over.
-    herdr_close_tab "$tab" "$pane"
+    herdr_close_tab "$tab" "$pane" "$(herdr_state_field "$state" tab_owned)"
     live=0
   fi
 
@@ -489,8 +489,8 @@ herdr_ensure_session() {
   jq -n --arg agent "$name" --arg pane "$pane" --arg tab "$tab" --arg cwd "$PWD" \
         --arg role "$role" --arg model "$ROLE_MODEL" --arg mode "$ROLE_MODE" \
         --arg created "$(date -Iseconds)" \
-    '{agent:$agent, pane:$pane, tab:$tab, cwd:$cwd, role:$role, model:$model,
-      mode:$mode, created:$created}' > "$state"
+    '{agent:$agent, pane:$pane, tab:$tab, tab_owned:true, cwd:$cwd,
+      role:$role, model:$model, mode:$mode, created:$created}' > "$state"
 
   # The TUI ignores (or keeps) input sent while it is still drawing its first
   # frame, so wait until the pane has settled before the caller submits.
