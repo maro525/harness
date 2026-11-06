@@ -375,6 +375,10 @@ cmd_state() {
 close_named() {
   local name=$1 state pane tab
   state=$(state_file "$name")
+  if [[ ! -f "$state" ]]; then
+    echo "herdr-agent: $name is not registered" >&2
+    return 1
+  fi
   pane=$(state_field "$state" pane)
   tab=$(state_field "$state" tab)
   # Close the tab only when this script created it: a session that was started
@@ -390,12 +394,15 @@ close_named() {
 
 cmd_close() {
   [[ -n "$NAME" ]] || die "close needs a name" 2
-  close_named "$NAME"
+  close_named "$NAME" || exit 1
 }
 
 # Close every recorded session, optionally only one kind: the explicit cleanup
 # for the end of a task (there is no TTL; sessions live until closed).
 cmd_reap() {
+  if [[ -n "$NAME" || -n "$REQUEST" ]]; then
+    die "reap takes no arguments — use --kind KIND to filter" 2
+  fi
   [[ -d "$STATE_DIR" ]] || { echo "no agents registered" >&2; return 0; }
   local f name kind closed=0
   for f in "$STATE_DIR"/*.json; do
@@ -417,6 +424,8 @@ cmd_reap() {
 cmd_list() {
   [[ -d "$STATE_DIR" ]] || { echo "no agents registered" >&2; return 0; }
   local f name pane tab kind repo state
+  printf '%-14s %-8s %-10s %-10s %-8s %-25s %s\n' \
+    NAME KIND STATE PANE TAB CREATED REPO
   for f in "$STATE_DIR"/*.json; do
     [[ -f "$f" ]] || continue
     name=$(state_field "$f" agent)
@@ -425,7 +434,7 @@ cmd_list() {
     kind=$(state_field "$f" kind)
     repo=$(state_field "$f" repo)
     state=$(agent_state "$name")
-    printf '%-14s %-8s %-10s %-10s %-8s %-20s %s\n' \
+    printf '%-14s %-8s %-10s %-10s %-8s %-25s %s\n' \
       "$name" "$kind" "$state" "$pane" "$tab" "$(state_field "$f" created)" "$repo"
   done
 }
