@@ -1,6 +1,6 @@
 ---
 name: claude-consult
-description: Ask a Claude session for a design consultation, a review, or an implementation hand-off — by default through a persistent Claude Code session in its own Herdr tab (created on demand, reused afterwards), falling back to one-shot `claude -p` outside Herdr. Supports role-split sessions (consult / review / implement) and parallel fan-out, so several roles can be orchestrated side by side.
+description: Ask a Claude session for a design consultation, a review, or an implementation hand-off through a persistent Claude Code session in its own Herdr tab (created on demand, reused afterwards). Outside Herdr it stops and asks for a Herdr pane instead of silently switching behaviour; one-shot `claude -p` is available only with an explicit `-b print`. Supports role-split sessions (consult / review / implement) and parallel fan-out, so several roles can be orchestrated side by side.
 metadata:
   kind: consult
   writes: "none in the repo (questions and answers live in a temp dir)"
@@ -10,7 +10,9 @@ metadata:
 
 Cursor / pi / Cline / OpenCode などから、**別の Claude セッション**に設計相談・レビュー・実装の引き継ぎをさせるスキル。
 
-Herdr の中（`HERDR_ENV=1`）では、**専用の tab に常駐する Claude Code セッションに `herdr agent prompt` で質問を打ち込む**。tab は無ければ呼び出し元の workspace に作られ、次回以降は使い回されるので、追加質問は同じ会話の続きになる（呼び出し元の pane は分割しない）。Herdr の外では従来どおり `claude -p` の単発実行に落ちる。
+Herdr の中（`HERDR_ENV=1`）では、**専用の tab に常駐する Claude Code セッションに `herdr agent prompt` で質問を打ち込む**。tab は無ければ呼び出し元の workspace に作られ、次回以降は使い回されるので、追加質問は同じ会話の続きになる（呼び出し元の pane は分割しない）。
+
+**Herdr の外では自動フォールバックしない。** `HERDR_ENV` が無いとエラーで止まる（「Herdr の pane で起動するか `-b print` を付けろ」と案内が出る）。単発の `claude -p` を使いたいときだけ `-b print` を明示する — ツール制限・会話の継続・tab の有無が変わるため、黙って切り替わらないようにしている。
 
 配布先は `~/.agents/skills/claude-consult/`。pi・opencode・codex・Cursor（2.4+）はこの場所を直接読むので追加設定はいらない。Cline だけは `~/.cline/skills/` への symlink が要る（`./sync-agents.sh` が作る）。Cursor の headless（`cursor-agent -p`）はスキルを読まないという報告があるので、その場合はプロンプトで `Read ~/.agents/skills/claude-consult/SKILL.md and follow it` と絶対パスを渡す。
 
@@ -19,7 +21,7 @@ Claude Code 自身からは使わない（自分自身を呼ぶ形になる）�
 ## 前提
 
 - `~/.claude/scripts/claude-consult.sh`（`./sync-claude.sh` で配布）、`claude` と `jq`
-- Herdr バックエンドは追加で `HERDR_ENV=1` と `herdr` が PATH に必要（無ければ自動で `-p` に落ちる）
+- Herdr バックエンドは追加で `HERDR_ENV=1` と `herdr` が PATH に必要。無い場合はエラーで止まる（`-b print` で単発実行を明示できる）
 - **相談したいリポジトリのルートで実行する。** tab は実行時の cwd で起動する
 
 ## ロール（tab の分け方）
