@@ -5,8 +5,8 @@
 #
 # Two backends:
 #
-#   herdr  (default when HERDR_ENV=1)
-#     Keeps one Claude Code session per role in a Herdr pane and submits each
+#   herdr  (default; required unless -b print)
+#     Keeps one Claude Code session per role in a Herdr tab and submits each
 #     question with `herdr agent prompt`. Each session gets its own tab (created
 #     on demand in the calling workspace, same cwd, focus stays where it is) and
 #     is reused, so a follow-up question continues the same conversation instead
