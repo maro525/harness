@@ -17,6 +17,7 @@
 #   herdr-agent.sh read   <name> [--lines N]
 #   herdr-agent.sh state  <name>
 #   herdr-agent.sh close  <name>                          close the tab it owns
+#   herdr-agent.sh reap   [--kind KIND]                   close every recorded session
 #   herdr-agent.sh list
 #
 # Options:
@@ -370,10 +371,10 @@ cmd_state() {
   printf '%s\n' "$(agent_state "$NAME")"
 }
 
-cmd_close() {
-  [[ -n "$NAME" ]] || die "close needs a name" 2
-  local state pane tab
-  state=$(state_file "$NAME")
+# Close the session recorded for <name>.
+close_named() {
+  local name=$1 state pane tab
+  state=$(state_file "$name")
   pane=$(state_field "$state" pane)
   tab=$(state_field "$state" tab)
   # Close the tab only when this script created it: a session that was started
@@ -384,7 +385,33 @@ cmd_close() {
     herdr pane close "$pane" >/dev/null 2>&1 || true
   fi
   rm -f "$state"
-  echo "closed $NAME (tab ${tab:-none}, pane ${pane:-unknown})" >&2
+  echo "closed $name (tab ${tab:-none}, pane ${pane:-unknown})" >&2
+}
+
+cmd_close() {
+  [[ -n "$NAME" ]] || die "close needs a name" 2
+  close_named "$NAME"
+}
+
+# Close every recorded session, optionally only one kind: the explicit cleanup
+# for the end of a task (there is no TTL; sessions live until closed).
+cmd_reap() {
+  [[ -d "$STATE_DIR" ]] || { echo "no agents registered" >&2; return 0; }
+  local f name kind closed=0
+  for f in "$STATE_DIR"/*.json; do
+    [[ -f "$f" ]] || continue
+    name=$(state_field "$f" agent)
+    kind=$(state_field "$f" kind)
+    [[ -n "$name" ]] || continue
+    if [[ -n "$KIND" && "$kind" != "$KIND" ]]; then
+      continue
+    fi
+    close_named "$name"
+    closed=$((closed + 1))
+  done
+  if ((closed == 0)); then
+    echo "nothing to reap" >&2
+  fi
 }
 
 cmd_list() {
@@ -398,7 +425,8 @@ cmd_list() {
     kind=$(state_field "$f" kind)
     repo=$(state_field "$f" repo)
     state=$(agent_state "$name")
-    printf '%-14s %-8s %-10s %-10s %-8s %s\n' "$name" "$kind" "$state" "$pane" "$tab" "$repo"
+    printf '%-14s %-8s %-10s %-10s %-8s %-20s %s\n' \
+      "$name" "$kind" "$state" "$pane" "$tab" "$(state_field "$f" created)" "$repo"
   done
 }
 
@@ -410,6 +438,7 @@ case "$CMD" in
   read) cmd_read ;;
   state) cmd_state ;;
   close) cmd_close ;;
+  reap) cmd_reap ;;
   list) cmd_list ;;
   *) usage >&2; exit 2 ;;
 esac
