@@ -91,6 +91,24 @@ Claude Code 自身からは使わない（自分自身を呼ぶ形になる）�
 - ユーザーに伝えるとき、または成果物に残すときは `利用AI: claude/{model}` を添える
 - 失敗したとき（exit 1）は stderr を確認する。典型的なのは「セッションが承認ダイアログで止まっている（`blocked`）」「セッションが質問を実行しなかった」。ダイアログは**ユーザーに確認してから**答える。リトライは 1 回まで
 
+### 5. セッションを閉じる（必須）
+
+セッションは**閉じるまで残る**（自動失効なし）。1 タスク = 1 セッション。
+
+- `consult` は**回答を採用 / 却下したら即** `--close`（既定では残るので明示的に閉じる）
+- `review` は PASS して deploy に入る直前、または FAIL 対応が終わったときに閉じる
+- `implement` は PR 作成（deploy 完了）後に閉じる
+- タスク・ブランチが変わるときは `--new` で作り直す
+- タスク開始時に前タスクのものが残っていたら `--status` で確認して `--close`
+
+```bash
+~/.claude/scripts/claude-consult.sh --close --role consult
+~/.claude/scripts/claude-consult.sh --close --roles implement,review
+~/.claude/scripts/claude-consult.sh --status          # 残っているものを確認
+```
+
+ルールの全体は harness の `docs/session-lifecycle.md`（pi / codex 側の `herdr-agent.sh reap` も同じ文書）。
+
 ## Herdr バックエンドの仕組み（保守する人向け）
 
 1. ロールの agent 名（`hc-*`）で `herdr agent get` を引き、いなければ**呼び出し元の workspace に新しい tab を作り**（`herdr tab create --workspace $HERDR_WORKSPACE_ID --cwd $PWD --no-focus`、tab 名は agent 名にする）、その root pane で `herdr agent start --kind claude` する
