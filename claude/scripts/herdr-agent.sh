@@ -1,8 +1,8 @@
 #!/bin/bash
-# herdr-agent.sh — run any coding agent in a Herdr pane and talk to it.
+# herdr-agent.sh — run any coding agent in its own Herdr tab and talk to it.
 #
 # The generic counterpart of claude-consult.sh: that one is Claude-specific
-# (roles, claude flags), this one only needs "some agent, in a pane, that I can
+# (roles, claude flags), this one only needs "some agent, in a tab, that I can
 # send a request to". Used to hand work to another CLI (pi / codex / opencode)
 # without leaving the current session.
 #
@@ -10,17 +10,17 @@
 # session and its context stay alive between calls.
 #
 # Usage:
-#   herdr-agent.sh ensure <name> --kind KIND [OPTIONS]    pane + agent (idempotent)
+#   herdr-agent.sh ensure <name> --kind KIND [OPTIONS]    tab + agent (idempotent)
 #   herdr-agent.sh ask    <name> <request-file|-> [OPTIONS]
 #   herdr-agent.sh read   <name> [--lines N]
 #   herdr-agent.sh state  <name>
-#   herdr-agent.sh close  <name>                          close the pane
+#   herdr-agent.sh close  <name>                          close the tab
 #   herdr-agent.sh list
 #
 # Options:
 #   --kind KIND       agent kind recognized by herdr (claude | pi | codex | ...)
-#   --repo DIR        repository to run in (default: $PWD)
-#   --tab             (default) each session gets its own tab
+#   --repo DIR        repository to run in (default: $PWD).
+#                     Each session gets its own tab in the calling workspace.
 #   --timeout T       ask: overall timeout, e.g. 20m (default: $HERDR_AGENT_TIMEOUT or 20m)
 #   --answer-file F   ask: wait for this file instead of just the settled state
 #   --lines N         read: how much scrollback (default 200)

@@ -76,7 +76,7 @@ Backend:
                      auto = herdr when $HERDR_ENV=1, otherwise print
   -r, --resume ID    print backend only: resume an earlier session
   --name NAME        herdr backend: agent name (default hc-<role>)
-  --new              herdr backend: replace the role's pane with a fresh one
+  --new              herdr backend: replace the role's tab with a fresh one
   --reuse-cwd        herdr backend: reuse a session whose cwd differs
 
 Other:
