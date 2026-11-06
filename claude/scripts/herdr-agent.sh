@@ -291,8 +291,6 @@ cmd_state() {
 
 cmd_close() {
   [[ -n "$NAME" ]] || die "close needs a name" 2
-  local state pane
-  state=$(state_file "$NAME")
   local state pane tab
   state=$(state_file "$NAME")
   pane=$(state_field "$state" pane)
