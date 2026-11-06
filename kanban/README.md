@@ -2,12 +2,14 @@
 
 A read-only kanban board over the `TASK_FILE` markdown documents that
 `/orchestrate` and the `startproject` / `team-implement` / `team-review` /
-`deploy` skills write to `.claude/docs/decisions/task-{LINEAR_ID}-{feature}.md`.
+`deploy` skills write to `~/.local/share/harness/tasks/{repo}/task-{LINEAR_ID}-{feature}.md`
+(outside the repository; the legacy in-repo `.claude/docs/decisions/` still works).
 
 Point it at a folder, get a board.
 
 ```bash
-python3 -m taskboard .claude/docs/decisions --open
+python3 -m taskboard ~/.local/share/harness/tasks/nanco-next --open
+python3 -m taskboard -r ~/.local/share/harness/tasks          # every repository
 ```
 
 No dependencies. Python 3.11+ standard library only.
@@ -49,17 +51,20 @@ takes the furthest-along one, and it tells you when they disagree.
 ## Usage
 
 ```bash
-# one folder
-python3 -m taskboard .claude/docs/decisions
+# one repository
+python3 -m taskboard ~/.local/share/harness/tasks/nanco-next
 
-# several folders
-python3 -m taskboard ~/src/proj-a/.claude/docs/decisions ~/src/proj-b/.claude/docs/decisions
+# several repositories
+python3 -m taskboard ~/.local/share/harness/tasks/nanco-next ~/.local/share/harness/tasks/artience-web
 
-# search a whole tree for .claude/docs/decisions folders
+# every repository (searches for folders holding task-*.md)
+python3 -m taskboard --recursive ~/.local/share/harness/tasks
+
+# legacy in-repo layout still works
 python3 -m taskboard --recursive ~/src
 
 # no server, just a summary
-python3 -m taskboard --print --recursive ~/src
+python3 -m taskboard --print --recursive ~/.local/share/harness/tasks
 ```
 
 | Flag | Meaning |
@@ -125,9 +130,10 @@ file.
 （Linear）" in `claude/commands/orchestrate.md`). The board reads those logs so
 a task that is blocked on a person is obvious at a glance.
 
-- **Where it looks.** For each `.claude/docs/decisions` folder, only the
+- **Where it looks.** For the legacy `.claude/docs/decisions` layout, only the
   sibling `.claude/logs` folder, non-recursively. A task folder outside that
-  layout gets no questions: there is no well-defined logs folder to trust.
+  layout (including `~/.local/share/harness/tasks/{repo}/`) gets no questions:
+  there is no well-defined logs folder to trust.
 - **What counts.** The last `#### 待機状態` block in the file is the current
   one (later rounds are appended under `## 往復 {r}`). Only `state: waiting` is
   shown; `resolved`, `expired` and `terminal` are not. If one task has several

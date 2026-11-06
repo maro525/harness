@@ -25,15 +25,20 @@ def build_parser() -> argparse.ArgumentParser:
         "folders",
         nargs="+",
         metavar="FOLDER",
-        help="Folder(s) holding task-*.md files, e.g. .claude/docs/decisions",
+        help=(
+            "Folder(s) holding task-*.md files. The current layout is "
+            "~/.local/share/harness/tasks (one folder per repository); the "
+            "legacy location is {repo}/.claude/docs/decisions"
+        ),
     )
     parser.add_argument(
         "-r",
         "--recursive",
         action="store_true",
         help=(
-            "Treat each FOLDER as a tree to search for .claude/docs/decisions "
-            "directories instead of a task folder itself."
+            "Treat each FOLDER as a tree to search for folders holding "
+            "task-*.md (both ~/.local/share/harness/tasks/<repo> and the "
+            "legacy .claude/docs/decisions)"
         ),
     )
     parser.add_argument("-p", "--port", type=int, default=DEFAULT_PORT, help="Port (default 8787)")
