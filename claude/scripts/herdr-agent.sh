@@ -22,8 +22,13 @@
 #
 # Options:
 #   --kind KIND       agent kind recognized by herdr (claude | pi | codex | ...)
-#   --repo DIR        repository to run in (default: $PWD).
-#                     Each session gets its own tab in the calling workspace.
+#   --repo DIR        repository to run in (default: $PWD)
+#   --topology T      tab (default) | workspace | worktree
+#                     tab        : a new tab in the calling workspace
+#                     workspace  : a new workspace for the repo (no git changes)
+#                     worktree   : a new git worktree + its workspace + a tab
+#   --branch BR       worktree: branch to create (default: herdr/<name>)
+#   --base REF        worktree: base ref (default: the repo's HEAD)
 #   --timeout T       ask: overall timeout, e.g. 20m (default: $HERDR_AGENT_TIMEOUT or 20m)
 #   --answer-file F   ask: wait for this file instead of just the settled state
 #   --lines N         read: how much scrollback (default 200)
@@ -55,6 +60,9 @@ REQUEST=""
 KIND=""
 REPO=""
 TIMEOUT=${HERDR_AGENT_TIMEOUT:-20m}
+TOPOLOGY=${HERDR_AGENT_TOPOLOGY:-tab}
+BRANCH=""
+BASE=""
 ANSWER_FILE=""
 LINES=200
 NATIVE_ARGS=()
@@ -64,6 +72,9 @@ while [[ $# -gt 0 ]]; do
     --kind) KIND=$2; shift 2 ;;
     --repo) REPO=$2; shift 2 ;;
     --timeout) TIMEOUT=$2; shift 2 ;;
+    --topology) TOPOLOGY=$2; shift 2 ;;
+    --branch) BRANCH=$2; shift 2 ;;
+    --base) BASE=$2; shift 2 ;;
     --answer-file) ANSWER_FILE=$2; shift 2 ;;
     --lines) LINES=$2; shift 2 ;;
     --) shift; NATIVE_ARGS=("$@"); break ;;
@@ -154,20 +165,52 @@ cmd_ensure() {
     cmd_close >/dev/null 2>&1 || true
   fi
 
-  # Each session gets its own tab (the user's rule). `tab create` returns
-  # .result.tab and .result.root_pane; the agent runs in that root pane.
-  # --workspace pins the tab to the caller's workspace: without it the tab can
-  # land in whatever workspace another client has focused.
-  local created tab
-  local -a tab_args=(--cwd "$REPO")
-  [[ -n "${HERDR_WORKSPACE_ID:-}" ]] && tab_args+=(--workspace "$HERDR_WORKSPACE_ID")
-  if ! created=$(herdr tab create "${tab_args[@]}" --no-focus 2>&1); then
-    created=$(herdr tab create "${tab_args[@]}" 2>&1) || die "tab create failed: $created"
-  fi
+  # Topology: a tab in the caller's workspace (default), a workspace of its own,
+  # or a git worktree plus its workspace. All three answers carry
+  # .result.{workspace,tab,root_pane}.
+  local created tab workspace="" ws_owned="false"
+  case "$TOPOLOGY" in
+    tab)
+      # --workspace pins the tab to the caller's workspace: without it the tab can
+      # land in whatever workspace another client has focused.
+      local -a tab_args=(--cwd "$REPO" --label "$NAME")
+      [[ -n "${HERDR_WORKSPACE_ID:-}" ]] && tab_args+=(--workspace "$HERDR_WORKSPACE_ID")
+      if ! created=$(herdr tab create "${tab_args[@]}" --no-focus 2>&1); then
+        # No workspace to attach to (or the id is stale): fall back to a workspace.
+        echo "herdr-agent: tab create failed — creating a workspace instead" >&2
+        TOPOLOGY=workspace
+        created=$(herdr workspace create --cwd "$REPO" --label "$NAME" --no-focus 2>&1) ||
+          die "herdr workspace create failed: $created"
+        ws_owned="true"
+      fi
+      ;;
+    workspace)
+      created=$(herdr workspace create --cwd "$REPO" --label "$NAME" --no-focus 2>&1) ||
+        die "herdr workspace create failed: $created"
+      ws_owned="true"
+      ;;
+    worktree)
+      local -a wt_args=(--cwd "$REPO" --label "$NAME" --no-focus)
+      [[ -n "$BRANCH" ]] && wt_args+=(--branch "$BRANCH")
+      [[ -n "$BASE" ]] && wt_args+=(--base "$BASE")
+      created=$(herdr worktree create "${wt_args[@]}" 2>&1) ||
+        die "herdr worktree create failed: $created"
+      ws_owned="true"
+      ;;
+    *) die "unknown --topology: $TOPOLOGY (tab | workspace | worktree)" 2 ;;
+  esac
+
   pane=$(jq -r '.result.root_pane.pane_id // .result.tab.root_pane.pane_id // .result.pane.pane_id // empty' <<<"$created")
   tab=$(jq -r '.result.tab.tab_id // .result.tab_id // empty' <<<"$created")
+  workspace=$(jq -r '.result.workspace.workspace_id // .result.workspace_id // empty' <<<"$created")
   [[ -n "$pane" ]] || die "could not read the pane id from: $created"
   [[ -n "$tab" ]] && herdr tab rename "$tab" "$NAME" >/dev/null 2>&1 || true
+  # A worktree workspace has its own directory; run there, not in REPO.
+  if [[ "$TOPOLOGY" == "worktree" ]]; then
+    local wt_path
+    wt_path=$(jq -r '.result.workspace.identity_cwd // .result.worktree.path // empty' <<<"$created" 2>/dev/null || true)
+    [[ -n "$wt_path" ]] && REPO=$wt_path
+  fi
 
   # config.toml may set [terminal] new_cwd = "follow", which sends the new pane
   # to the calling pane's directory and ignores --cwd. Move it ourselves.
@@ -184,8 +227,10 @@ cmd_ensure() {
 
   mkdir -p "$STATE_DIR"
   jq -n --arg agent "$NAME" --arg pane "$pane" --arg tab "$tab" --arg kind "$KIND" \
+    --arg workspace "$workspace" --arg topology "$TOPOLOGY" --argjson ws_owned "$ws_owned" \
     --arg repo "$REPO" --arg created "$(date -Iseconds)" \
-    '{agent:$agent, pane:$pane, tab:$tab, tab_owned:true, kind:$kind, repo:$repo,
+    '{agent:$agent, pane:$pane, tab:$tab, tab_owned:true, workspace:$workspace,
+      workspace_owned:$ws_owned, topology:$topology, kind:$kind, repo:$repo,
       created:$created}' >"$state"
 
   echo "AGENT=$NAME" >&2
@@ -381,8 +426,26 @@ close_named() {
   fi
   pane=$(state_field "$state" pane)
   tab=$(state_field "$state" tab)
-  # Close the tab only when this script created it: a session that was started
-  # in someone else's tab (older state files, or a reused tab) must leave it.
+  # Close the workspace we created (it takes its tab with it), else the tab we
+  # created, else just the pane: never a workspace/tab we did not create.
+  # A worktree workspace also owns a git worktree on disk: remove it too (no
+  # --force — a dirty worktree is left alone and reported).
+  local workspace ws_owned topology
+  workspace=$(state_field "$state" workspace)
+  ws_owned=$(state_field "$state" workspace_owned)
+  topology=$(state_field "$state" topology)
+  if [[ "$ws_owned" == "true" && -n "$workspace" ]]; then
+    if [[ "$topology" == "worktree" ]]; then
+      if herdr worktree remove --workspace "$workspace" >/dev/null 2>&1; then
+        rm -f "$state"
+        echo "closed worktree workspace $workspace ($name)" >&2
+        return 0
+      fi
+      echo "herdr-agent: could not remove the worktree for $workspace (uncommitted changes?) — closing the workspace only" >&2
+    fi
+    herdr workspace close "$workspace" >/dev/null 2>&1 &&
+      { rm -f "$state"; echo "closed workspace $workspace ($name)" >&2; return 0; }
+  fi
   if [[ "$(state_field "$state" tab_owned)" == "true" && -n "$tab" ]]; then
     herdr tab close "$tab" >/dev/null 2>&1 || herdr pane close "$pane" >/dev/null 2>&1 || true
   elif [[ -n "$pane" ]]; then
