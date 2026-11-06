@@ -71,7 +71,12 @@ _CacheKey = tuple[int, int]
 
 
 def discover_decision_dirs(root: str, max_depth: int = 8) -> list[str]:
-    """Find `.claude/docs/decisions` folders beneath `root`, pruning as it goes.
+    """Find folders holding `task-*.md` beneath `root`, pruning as it goes.
+
+    Both layouts are recognized:
+
+    - `{repo}/.claude/docs/decisions/` — the legacy in-repository location
+    - `{tasks}/{repo}/` — the current location under ~/.local/share/harness/tasks
 
     `worktrees` is pruned along with the usual build/vcs noise: git worktrees
     duplicate an entire decisions folder, which would otherwise show every card
@@ -81,7 +86,7 @@ def discover_decision_dirs(root: str, max_depth: int = 8) -> list[str]:
     root = os.path.abspath(root)
     root_depth = root.rstrip(os.sep).count(os.sep)
 
-    for dirpath, dirnames, _ in os.walk(root, followlinks=False):
+    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
         if dirpath.count(os.sep) - root_depth >= max_depth:
             dirnames.clear()
             continue
@@ -91,9 +96,12 @@ def discover_decision_dirs(root: str, max_depth: int = 8) -> list[str]:
             # `.claude` is the one dotted directory worth entering.
             if d not in PRUNE_DIRS and (not d.startswith(".") or d == ".claude")
         ]
-        if dirpath.endswith(DECISIONS_SUFFIX):
+        holds_tasks = any(
+            name.startswith(TASK_PREFIX) and name.endswith(TASK_SUFFIX) for name in filenames
+        )
+        if dirpath.endswith(DECISIONS_SUFFIX) or holds_tasks:
             found.append(dirpath)
-            # Nothing useful nests below a decisions folder.
+            # Nothing useful nests below a task folder.
             dirnames.clear()
     return sorted(found)
 

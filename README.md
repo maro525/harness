@@ -1,6 +1,6 @@
 # harness
 
-`/orchestrate` を中心にした AI コーディングエージェント用のワークフロー定義。tier（XS / S / M / L）でタスクを分類し、startproject → team-implement → team-review → deploy の 4 フェーズを回す。各フェーズの記録は対象リポジトリの `.claude/docs/decisions/task-*.md`（TASK_FILE）に残る。
+`/orchestrate` を中心にした AI コーディングエージェント用のワークフロー定義。tier（XS / S / M / L）でタスクを分類し、startproject → team-implement → team-review → deploy の 4 フェーズを回す。各フェーズの記録は **リポジトリの外**（`~/.local/share/harness/tasks/{repo}/task-*.md`、TASK_FILE）に残る。worktree はすべて同じ `{repo}` を共有し、リポジトリを汚さない・PR にも載らない。
 
 もとは [maro525/_dotfiles](https://github.com/maro525/_dotfiles) の一部で、履歴ごと切り出した。シェル・ターミナル・各 CLI の一般設定は引き続き dotfiles 側にある。
 
@@ -93,11 +93,11 @@ AI_CHAIN="codex:gpt-6-sol github-copilot/gpt-6-astra" ~/.claude/scripts/ai-fallb
 
 ```bash
 # 1 フェーズだけ別 CLI で
-~/.claude/scripts/phase-run.sh --phase=team-review --task-file=.claude/docs/decisions/task-X.md \
+~/.claude/scripts/phase-run.sh --phase=team-review --task-file=~/.local/share/harness/tasks/{repo}/task-X.md \
   --runner=pi:ollama-cloud/deepseek-v4.1-flash
 
 # タスク全体の割り当てを決める（--phase-map）
-~/.claude/scripts/phase-run.sh --phase=team-implement --task-file=.claude/docs/decisions/task-X.md \
+~/.claude/scripts/phase-run.sh --phase=team-implement --task-file=~/.local/share/harness/tasks/{repo}/task-X.md \
   --phase-map="startproject=claude:opus,team-implement=pi:ollama-cloud/deepseek-v4.1-flash,team-review=opencode2:opencode-go/deepseek-v4-pro,deploy=claude:haiku"
 
 # モデル / エンジン連鎖に任せる（429 で次の候補へ）

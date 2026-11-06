@@ -1,6 +1,6 @@
 ---
 name: orchestrate
-description: Orchestrator for the task-file workflow — classifies the task, creates the TASK_FILE, then runs startproject → team-implement → team-review → deploy through ~/.claude/scripts/phase-run.sh, writes ## Meta / status itself, handles Gate 1 / Gate 2 and the FAIL loop, and finishes with the deploy three-stage (code PR → record → finalize). Use when asked to run a task end to end, or to run one phase of an existing task file (--phase).
+description: Orchestrator for the task-file workflow — classifies the task, creates the TASK_FILE (kept outside the repository, under ~/.local/share/harness/tasks/<repo>/), then runs startproject → team-implement → team-review → deploy through ~/.claude/scripts/phase-run.sh, writes ## Meta / status itself, handles Gate 1 / Gate 2 and the FAIL loop, and finishes with the deploy three-stage (code PR → record → return to base). Use when asked to run a task end to end, or to run one phase of an existing task file (--phase).
 metadata:
   phase: orchestrate
   writes: "## Meta, #### 追加依頼"
@@ -62,11 +62,14 @@ $ARGUMENTS: "{task description} [--tier=S|M|L] [--task-file={TASK_FILE}] [--line
 
 ## STEP 2: TASK_FILE 作成
 
-```
-TASK_FILE = .claude/docs/decisions/task-{LINEAR_ID}-{feature}.md
+```bash
+TASK_FILE=$(~/.claude/scripts/task-file.sh new \
+  --linear-id={LINEAR_ID} --feature={feature} --branch={branch})
 ```
 
-`{feature}` は内容から短いスネークケース。`NOLINEAR` のときは `task-NOLINEAR-{feature}.md`。
+`{feature}` は内容から短いスネークケース。`NOLINEAR` のときは `--linear-id` を省く（`task-NOLINEAR-{feature}.md` になる）。
+
+**TASK_FILE はリポジトリ内に置かない。** 出力は `~/.local/share/harness/tasks/{repo}/` 配下の絶対パス（`{repo}` = 本体リポジトリ名。worktree 共通）。旧配置（`{repo}/.claude/docs/decisions/`）のファイルは `task-file.sh find` / `resolve` で読める。
 
 ```markdown
 # Task: {LINEAR_ID} — {task description}
@@ -166,21 +169,19 @@ deploy フェーズはコードだけをコミットし、**作業ブランチ�
 ### 6b: TASK_FILE の記録と status
 
 - `## deploy` を書く（`written: no` なら `### SECTION` から代筆。追加修正モードでは上書きせず末尾に追記）
-- `## Meta` の `status:` を **`in-review`** にする（6c でコミットされるので、ここで書く）
+- `## Meta` の `status:` を **`in-review`** にする（ここで書く）
 - MCP があれば `save_comment` で結果を投稿する（無ければスキップ）
 
-### 6c: finalize（TASK_FILE だけをコミットして分岐元へ）
+### 6c: 分岐元へ戻る
 
 ```bash
-git add -A -- {TASK_FILE}
-git commit -m "docs(task): {task description} の記録を追加"
-git push origin HEAD
+git status --short    # 未コミットの変更が残っていれば git switch は失敗する
 git switch {base}
 ```
 
-- TASK_FILE が gitignore なら commit / push せず `git switch {base}` だけ行う
-- 他ファイルがステージ済み・リモートと分岐・分岐元へ戻れないときは中止し、**作業ブランチに留まったまま**理由を報告する（履歴は書き換えない）
-- `deploy` フェーズの `--finalize` を使う実装（Claude / OpenCode）もあるが、pi 版はここで自分で行う
+- **TASK_FILE はリポジトリ外にあるので、git の操作は何もしない**（コミット・push・stash をしない）
+- 未コミットの変更（deploy が残したもの）があるなどで戻れないときは中止し、**作業ブランチに留まったまま**理由を報告する（勝手に破棄しない）
+- 記録は既に TASK_FILE にあるので、戻れなくても失われない
 
 ## STEP 7: 完了報告
 
@@ -209,7 +210,7 @@ git switch {base}
 ## STEP 3F: 追加修正モード
 
 1. `--task-file`（または Linear ID から特定した `task-*.md`）を読み、`## Meta` の `tier:` / `linear_id:` / `branch:` / `base:` を復元する
-2. `## Meta` の `status:` が `in-review` なら、`git switch {branch}` してから作業する（TASK_FILE が作業ツリーに無ければ `git log --all` から復元する）
+2. `## Meta` の `status:` が `in-review` なら、`git switch {branch}` してから作業する（TASK_FILE はリポジトリ外にあるので、ブランチを切り替えても消えない）
 3. `### Plan` の末尾に `#### 追加依頼 {n}` を書く（`{n}` は既存の最大 + 1）
 4. `status:` を `implementing` にして STEP 4 から実行する（STEP 3 はスキップ。設計をやり直す必要があるときだけ STEP 3）
 5. deploy は 6a → 6b → 6c（`## deploy` は上書きせず追記）

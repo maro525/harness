@@ -14,6 +14,9 @@
 #   7. the sync scripts list the files they distribute
 #   8. docs/phase-contract.md still states the contract (RESULT / QUESTIONS /
 #      --task-file / status は orchestrator 専権)
+#   9. TASK_FILEs live outside the repository: task-file.sh exists and is
+#      distributed, phase-run.sh takes --repo=, no definition re-introduces
+#      --finalize, and the orchestrators resolve paths through task-file.sh
 #
 # Usage: checks/phases.sh
 # Exit: 0 = ok / 1 = 不整合
@@ -104,7 +107,7 @@ fi
 
 # --- 7: sync scripts ---------------------------------------------------------
 declare -A sync_lists=(
-  [sync-claude.sh]="commands/orchestrate.md commands/team-review.md rules/tool-routing.md scripts/phase-run.sh"
+  [sync-claude.sh]="commands/orchestrate.md commands/team-review.md rules/tool-routing.md scripts/phase-run.sh scripts/task-file.sh"
   [sync-opencode.sh]="commands/orchestrate.md agents/team-review.md"
   [sync-agents.sh]="startproject team-implement team-review deploy orchestrate"
   [sync-pi.sh]="orchestrate.md"
@@ -141,6 +144,35 @@ else
       ng "$contract に '$token' の記述が無い"
   done
 fi
+
+# --- 9: TASK_FILE out of the repository --------------------------------------
+task_file_script="claude/scripts/task-file.sh"
+if [[ ! -f $(readonly_path "$task_file_script") ]]; then
+  ng "TASK_FILE の解決スクリプトが無い: $task_file_script"
+else
+  [[ -x $(readonly_path "$task_file_script") ]] || ng "$task_file_script に実行ビットが無い"
+fi
+
+if [[ -f $(readonly_path "$dispatcher") ]]; then
+  grep -q -- '--repo=' "$(readonly_path "$dispatcher")" ||
+    ng "$dispatcher が --repo= を受け付けていない（TASK_FILE から repo を推定してしまう）"
+fi
+
+for rel in claude/commands/deploy.md opencode/agents/deploy.md agents/skills/deploy/SKILL.md; do
+  [[ -f $(readonly_path "$rel") ]] || continue
+  if grep -q -- '--finalize' "$(readonly_path "$rel")"; then
+    ng "$rel に --finalize が残っている（TASK_FILE はリポジトリ外なのでコミットしない）"
+  fi
+done
+
+for rel in claude/commands/orchestrate.md opencode/commands/orchestrate.md agents/skills/orchestrate/SKILL.md; do
+  [[ -f $(readonly_path "$rel") ]] || continue
+  grep -q -- 'task-file.sh' "$(readonly_path "$rel")" ||
+    ng "$rel が task-file.sh を使っていない"
+  if grep -q 'docs/decisions/task-{' "$(readonly_path "$rel")"; then
+    ng "$rel に旧パス（.claude/docs/decisions/task-…）が残っている"
+  fi
+done
 
 if [[ $fail -eq 0 ]]; then
   ok "phase parity (${PHASES[*]}) / 3 系統 / orchestrator 3 本 / phase-run.sh"

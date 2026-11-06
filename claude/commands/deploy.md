@@ -1,6 +1,6 @@
 ---
 name: deploy
-description: Deploy phase — commit the reviewed changes, push the work branch, create the PR/MR, return a deploy payload, and stay on the work branch. The caller writes TASK_FILE and updates Linear. With --finalize, commits only the task file (docs(task)) to the work branch, pushes it and returns to the base branch. Called by /orchestrate with tier, task-file, linear-id. Without --task-file, runs a single ad-hoc git write operation (commit / push / branch / merge etc.).
+description: Deploy phase — commit the reviewed changes, push the work branch, create the PR/MR, return a deploy payload, and stay on the work branch. The caller writes TASK_FILE and updates Linear, then returns to the base branch itself (TASK_FILEs live outside the repository and are never committed). Called by /orchestrate with tier, task-file, linear-id. Without --task-file, runs a single ad-hoc git write operation (commit / push / branch / merge etc.).
 context: fork
 agent: general-purpose
 model: haiku
@@ -20,8 +20,7 @@ git は `$HOME/.claude/rules/tool-routing.md` の「Git Operations」（保護�
 
 | 引数 | モード |
 |---|---|
-| `--task-file` + `--finalize` | **Finalize モード**（`/orchestrate` STEP 6c・STEP 3P P7 から呼ばれる。TASK_FILE だけをコミット・push して分岐元へ戻る） |
-| `--task-file` あり | **Deploy Workflow モード**（`/orchestrate` STEP 6a から呼ばれる。終了後も作業ブランチに留まる） |
+| `--task-file` あり | **Deploy Workflow モード**（`/orchestrate` STEP 6a から呼ばれる。コードの commit → push → PR / MR。終わっても作業ブランチに留まる） |
 | `--task-file` なし | **Ad-hoc Git モード**（Deploy Workflow の STEP は実行しない） |
 
 ## Ad-hoc Git モード
@@ -36,20 +35,21 @@ git は `$HOME/.claude/rules/tool-routing.md` の「Git Operations」（保護�
 コードを変える操作（`add` / `commit` / `push` / `merge` / `rebase` / `cherry-pick` / `revert` / `reset`）の対象ブランチが `/orchestrate` の作った PR / MR のブランチなら、実行せずに**追加修正モードを案内してユーザーに確認する**（「Git Operations」の「/orchestrate で作った PR への追加変更」）。
 
 ```bash
-# 対象ブランチを branch: に持つ TASK_FILE を探す
-grep -l "^- branch: {branch}$" .claude/docs/decisions/task-*.md
+# 対象ブランチを branch: に持つ TASK_FILE を探す（リポジトリ外のバケットを探す）
+~/.claude/scripts/task-file.sh dir
+~/.claude/scripts/task-file.sh find | xargs grep -l "^- branch: {branch}$"
 ```
 
 - 該当 TASK_FILE の `## deploy` に `PR/MR:` の URL があれば対象。案内文: 「このブランチは `/orchestrate` の PR {URL} のものです。追加変更は `/orchestrate "{追加の依頼} --task-file={TASK_FILE}"`（追加修正モード）で team-implement → team-review → deploy を通してください」
 - ユーザーが承知のうえで Ad-hoc 実行を明示したときだけ実行し、結果にレビューを通っていない旨を添える
 - 対象外（ガードなし）: コードを変えない操作（`checkout` / `switch`、`tag`、`stash list`、ブランチ削除など）と、該当 TASK_FILE が無いブランチ
-- **注意:** 上の grep は作業ツリーしか見ない。TASK_FILE を git 管理するリポジトリでは Finalize モード（STEP 6c）後に分岐元へ戻ると対象の TASK_FILE が作業ツリーに無く、分岐元からの操作ではガードが効かない（作業ブランチ上なら効く）。作業ツリーで見つからなければ対象ブランチのツリーも見る: `git grep -l "^- branch: {branch}$" {branch} -- '.claude/docs/decisions/task-*.md'`
+- **注意:** TASK_FILE はリポジトリ外（`~/.local/share/harness/tasks/{repo}/`）にあるので、ブランチを切り替えても探索結果は変わらない。`~/.claude/scripts/task-file.sh find --linear-id={LINEAR_ID}` / `~/.claude/scripts/task-file.sh dir` で探す
 
 ## Deploy Workflow モード
 
 コミット・push・PR / MR 作成を担当する（動作検証は team-review で済んでいるので行わない）。前提: feature ブランチ作成済み・team-review PASS 済み。作業ブランチに open な PR / MR が既にあれば（`/orchestrate` の追加修正モード）、新規作成せず**追加 push と本文追記**を行う。
 
-**終了後も作業ブランチに留まり、分岐元には戻らない。** 呼び出し元が作業ブランチ上で TASK_FILE に `## deploy` と `status: in-review` を書いたあと、Finalize モード（`--finalize`）がそれを `docs(task):` でコミット・push してから分岐元に戻る（`/orchestrate` STEP 6a → 6b → 6c）。
+**終了後も作業ブランチに留まり、分岐元には戻らない。** 分岐元への復帰は呼び出し元（`/orchestrate` STEP 6c）が `git switch {base}` で行う。TASK_FILE はリポジトリ外にあり、この command は git で扱わない。
 
 **TASK_FILE への書き込みと Linear への投稿・ステータス変更は行わない。** 結果は OUTPUT フォーマットで呼び出し元（`/orchestrate` STEP 6b）に返し、TASK_FILE の更新・Linear コメント投稿・ステータス変更は呼び出し元が行う。TASK_FILE は Read のみ。
 
@@ -126,7 +126,7 @@ Related to #34
 
 ### STEP 1: COMMIT
 
-作業ブランチ上の未コミット変更（team-implement の実装。レビュー通過済み）をコミットする。メッセージは `## team-implement` の内容から作る（追加 push なら `#### 追加依頼 {n}` の「扱い」行に書いた開始回から最新回まで全回の内容。`追加依頼 {n}` を本文に書く）。TASK_FILE のスコープ外の変更が作業ツリーにあれば巻き込まない。**TASK_FILE 自体はコミットに含めない**（`## deploy` 追記後に Finalize モードが `docs(task):` で単独コミットする。`git add -A` は使わずファイルを指定する）。
+作業ブランチ上の未コミット変更（team-implement の実装。レビュー通過済み）をコミットする。メッセージは `## team-implement` の内容から作る（追加 push なら `#### 追加依頼 {n}` の「扱い」行に書いた開始回から最新回まで全回の内容。`追加依頼 {n}` を本文に書く）。TASK_FILE のスコープ外の変更が作業ツリーにあれば巻き込まない。**TASK_FILE はリポジトリ外にあるので、そもそもコミット対象に入らない**（`git add -A` は使わずファイルを指定する）。
 
 ### STEP 2: PUSH
 
@@ -219,68 +219,4 @@ Linear issue への PR の添付（GitHub 連携が無いときの `links` に�
 - team-review 最終回（PASS）の結果サマリー
 - PR/MR リンク
 - 紐づけ（追記した行。無ければ省く）
-```
-
-## Finalize モード
-
-`/orchestrate` STEP 6c（フェーズ指定モードは STEP 3P P7）から呼ばれる。呼び出し元が作業ブランチ上で TASK_FILE に書いた記録（`## deploy`・`status: in-review`）を **TASK_FILE 単独の `docs(task):` コミット**で同じ作業ブランチに push してから分岐元に戻る。Deploy Workflow の STEP は実行しない。Ad-hoc ガードの対象外（`--task-file` があるので Deploy Workflow 系）。
-
-```
-引数の形式: "--finalize --task-file={TASK_FILE} [--linear-id={LINEAR_ID}]"
-```
-
-TASK_FILE は Read のみ（書かない）。履歴書き換え（force push / rebase / amend）は行わない。各手順で中止したら残りは実行せず、`### FINALIZE` に `- 中止:` を書いて返す（中止時は作業ブランチに留まっている）。
-
-> **公開範囲:** TASK_FILE を gitignore していないリポジトリでは、このコミットで TASK_FILE（設計の検討内容・Linear ID などの社内向けメモ）が作業ブランチに push され、PR / MR に載る。公開したくなければ `.claude/`（または `.claude/docs/decisions/`）を `.gitignore` に入れておく（F-2 で commit / push を飛ばす）。
-
-### F-1: ブランチ確認
-
-`## Meta` の `branch:` / `base:` を読む。`branch:` が空なら中止。現在のブランチが `branch:` でなければ `git switch {branch}`（失敗なら中止）。untracked の TASK_FILE は switch で持ち越されるので、分岐元に取り残された TASK_FILE（過去の deploy で未コミットのまま残ったもの）の回復にも使える。**ただし作業ブランチ側でそのファイルがまだ一度もコミットされていない場合に限る。** ブランチ側で既に git 管理になっていれば、分岐元の未追跡の同名ファイルが `would be overwritten by checkout` で switch を止める（中止になる）。その場合は分岐元のファイルを退避してから作業ブランチ上のものと手で突き合わせる。
-
-### F-2: gitignore 判定
-
-`git check-ignore -q {TASK_FILE}` が真（exit 0）なら commit / push を飛ばして F-5 へ（`- コミット: なし（gitignore）` / `- push: なし（gitignore）`）。
-
-### F-3: 混入チェックとコミット
-
-TASK_FILE 以外がコミットに混ざるなら止める。判定はインデックスの中身で行う（作業ツリーに未ステージの無関係な変更があるだけでは止めない。STEP 1 と同じく無関係な変更が作業ツリーに常在する前提）。
-
-**パスの照合:** `git diff --cached --name-only` はリポジトリルート基準の相対パスを返し、TASK_FILE は絶対パスで渡ることが多い。文字列をそのまま比べず、`:(exclude)` で「TASK_FILE 以外に何も無い」ことを見る（`:(exclude)` には絶対パスも相対パスも渡せる）。範囲を指す pathspec は `.` ではなく `:/`（リポジトリルート。`:(top)` と同じ）にする。`.` は cwd 基準なのでサブディレクトリから実行すると範囲が狭まり、外にある混入を見落とす。
-
-```bash
-git diff --cached --name-only                                  # 空でなければ中止（他ファイルがステージ済み）
-git add -- {TASK_FILE}
-git diff --cached --name-only                                  # 空 → 差分なし（コミットせず F-4 へ）
-git diff --cached --name-only -- ":/" ":(exclude){TASK_FILE}"  # 空でなければ TASK_FILE 以外が混ざっている → 下記で中止（:/ = リポジトリ全体。cwd に依存しない）
-git restore --staged -- {TASK_FILE}                            # 中止時だけ実行（ステージを元に戻す）
-git commit -m "{message}"                                      # -a / add -A は使わない
-```
-
-メッセージ: 新規 PR なら `docs(task): {LINEAR_ID} の TASK_FILE に deploy 記録を追記`、追加 push なら `docs(task): {LINEAR_ID} の TASK_FILE に追加 push（追加依頼 {n}）を追記`（`## deploy` の末尾の見出しで判別。LINEAR_ID は `--linear-id` か `## Meta` の `linear_id:`）。差分が無い場合はコミットしない（再実行に安全）。
-
-### F-4: PUSH
-
-```bash
-git fetch origin {branch}
-git merge-base --is-ancestor origin/{branch} {branch}   # 偽（exit≠0）なら分岐 → 中止（force しない。解消はユーザーが判断）
-git rev-list --count origin/{branch}..{branch}          # 0 なら push しない（- push: なし（push 済み））
-git push origin {branch}
-```
-
-`origin/{branch}` が無ければ中止して報告する（Deploy Workflow の STEP 2 で push 済みのはずなので、通常この状況は起きない。起きていれば STEP 2 が失敗している）。
-
-### F-5: 分岐元へ戻る
-
-`git switch {base}`。`base:` が空ならリポジトリのデフォルトブランチ（`git symbolic-ref --short refs/remotes/origin/HEAD` の `origin/` を除いた名前。無ければホスティング CLI で取る: GitHub は `gh repo view --json defaultBranchRef --jq .defaultBranchRef.name`、GitLab は `glab repo view --output json | jq -r .default_branch`。使い分けは `origin` の URL）。失敗（作業ツリーの衝突など）なら作業ブランチに留まり、`- 中止: 分岐元への復帰に失敗（{理由}）` として報告する（commit / push は済んでいるので取り消さない）。
-
-### F-6: FINALIZE を返す
-
-以下のフォーマットを最終レスポンスとしてそのまま返す。**呼び出し元はこれを TASK_FILE に書かない**（書くと再び未コミット差分になる）。STEP 7 の deploy 行に添えるだけ。
-
-```markdown
-### FINALIZE
-- コミット: {hash} | なし（gitignore）| なし（差分なし）
-- push: origin/{branch} | なし（gitignore）| なし（push 済み）
-- 現在のブランチ: {base} | {branch}（戻れなかったとき）
-- 中止: {理由}（中止時のみ）
 ```
