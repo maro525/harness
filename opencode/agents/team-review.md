@@ -7,6 +7,7 @@ permission:
   edit:
     "*": deny
     "*.claude/docs/decisions/*": allow
+    "~/.local/share/harness/tasks/**": allow
 ---
 
 # team-review

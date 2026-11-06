@@ -14,8 +14,8 @@ $ARGUMENTS の形式: "{task description}"
 例: "PROJ-573をやりたいです"
 例: "カート機能にクーポン適用を追加する"
 例（issue の紐づけ）: "PROJ-573をやりたいです --issue=closes:#12,#34"
-例（追加修正モード）: "レビュー指摘の型エラーを直す --task-file=.claude/docs/decisions/task-PROJ-573-coupon.md"
-例（フェーズ指定モード）: "既存タスクのレビューだけ別 AI で回す --task-file=.claude/docs/decisions/task-PROJ-573-coupon.md --phase=team-review --runner=pi:ollama-cloud/deepseek-v4.1-flash"
+例（追加修正モード）: "レビュー指摘の型エラーを直す --task-file=~/.local/share/harness/tasks/{repo}/task-PROJ-573-coupon.md"
+例（フェーズ指定モード）: "既存タスクのレビューだけ別 AI で回す --task-file=~/.local/share/harness/tasks/{repo}/task-PROJ-573-coupon.md --phase=team-review --runner=pi:ollama-cloud/deepseek-v4.1-flash"
 ```
 
 ### `--issue`（GitHub / GitLab issue の紐づけ）
@@ -59,12 +59,11 @@ $ARGUMENTS を受け取ったら最初にモードを決め、判定結果（モ
 | モード | 判定 | 開始 STEP |
 |------|------|-----------|
 | **通常モード** | 下記に該当しない | STEP 0 |
-| **追加修正モード** | (a) `--task-file={TASK_FILE}` で既存の `task-*.md` が指定された、または (b) Linear ID を検出し、`.claude/docs/decisions/task-{LINEAR_ID}-*.md` が存在する | STEP 3F |
+| **追加修正モード** | (a) `--task-file={TASK_FILE}` で既存の `task-*.md` が指定された、または (b) Linear ID を検出し、`task-file.sh find` が TASK_FILE を返す | STEP 3F |
 | **フェーズ指定モード** | `--phase={startproject\|team-implement\|team-review\|deploy}` がある（`--task-file` 必須） | STEP 3P |
 
-- (a) / (b) の存在確認は作業ツリーで行い、無ければ git の履歴でも探す（tracked リポジトリでは STEP 6c 後、PR がマージされるまで TASK_FILE は作業ブランチにしか無く、分岐元の作業ツリーには無い。切り替えは STEP 3F F1）
-  - (a): `git log --all --format=%H -1 -- {TASK_FILE}` がコミットを返せば「既存の `task-*.md`」とみなして追加修正モードにし、F1 の「TASK_FILE が作業ツリーに無い場合」の切り替えへ進む。作業ツリーにも履歴にも無ければ、通常モードに落とさず中止して案内する（パスの誤りか、別のリポジトリ）
-  - (b): `git log --all --name-only --format= -- '.claude/docs/decisions/task-{LINEAR_ID}-*.md'` で作業ブランチにだけある TASK_FILE も探す
+- (a) / (b) の存在確認は `~/.claude/scripts/task-file.sh find` / `resolve` で行う（作業ツリーや git 履歴は見ない。TASK_FILE はリポジトリ外に常に存在する）。どちらも見つからなければ、通常モードに落とさず中止して案内する（パスの誤りか、別のリポジトリ）
+- TASK_FILE は `${HARNESS_TASKS_DIR:-~/.local/share/harness/tasks}/{repo}/` に置く（`{repo}` = 本体リポジトリ名。worktree 共通）。旧配置（`{repo}/.claude/docs/decisions/`）のファイルも `find` / `resolve` が返す（移行なし）
 - (b) で該当ファイルが複数あれば「質問の中継」で選ばせる（phase 名 `mode`）
 - 追加修正モードは、`/orchestrate` が PR / MR を出したタスクに追加の変更（レビュー指摘への対応、仕様の追加など）を加えるときに使う。既存 PR への追加変更は必ずこのモードを通し、orchestrator が直接編集して push しない（`AGENTS.md` の「GIT RULES」の「`/orchestrate` で作った PR への追加変更」）
 - 呼び出し形: `/orchestrate "{追加の依頼} --task-file={TASK_FILE}"`（または `/orchestrate "{LINEAR_ID} {追加の依頼}"`）
@@ -101,7 +100,8 @@ $ARGUMENTS を受け取ったら最初にモードを決め、判定結果（モ
 ## STEP 2: タスクファイル作成
 
 ```
-TASK_FILE = .claude/docs/decisions/task-{LINEAR_ID}-{feature}.md
+TASK_FILE=$(~/.claude/scripts/task-file.sh new \
+  --linear-id={LINEAR_ID} --feature={feature} --branch={branch})
 ```
 
 feature は LINEAR_ID のタスク内容から短いスネークケースで命名。
@@ -184,7 +184,7 @@ startproject は質問があると `### QUESTIONS` を返して終了する（`-
 
 n と m は独立に数える（差し戻しで m だけ増えることがある）。
 
-**TASK_FILE が作業ツリーに無い場合**（tracked リポジトリでは STEP 6c 後、PR がマージされるまで TASK_FILE は作業ブランチにしか無い。モード判定 (a) の履歴探しから来た場合もここ）: `git log --all --format=%H -1 -- {TASK_FILE}` でコミットを見つけ、`git branch -a --contains {hash}` で作業ブランチを特定し、`@deploy "git switch {branch}"`（Ad-hoc Git モード。`switch` はガード対象外）で切り替えてから読む。`git branch -a --contains` は `remotes/origin/{branch}` の形でも返すので、`switch` には `remotes/origin/` を除いたローカル名を渡す（ローカルに無ければ `git switch` がリモート追跡ブランチから作る）。複数のブランチが返れば（起きやすいのは PR マージ後に分岐元を pull していないとき: 作業ブランチと `remotes/origin/main` の両方が返る）`## Meta` の `branch:` と一致するものを選ぶ。この時点では TASK_FILE が作業ツリーに無いので、`## Meta` は `git show {hash}:{TASK_FILE のリポジトリルート基準の相対パス}` で読む（例: `git show {hash}:.claude/docs/decisions/task-{LINEAR_ID}-….md`。`{rev}:{path}` の path に絶対パスは渡せない）。見つからなければ中止して案内する。
+**TASK_FILE が見つからない場合**: `~/.claude/scripts/task-file.sh resolve {指定された値}` で探す（バケット → 旧配置の順）。それでも見つからなければ中止して案内する。TASK_FILE は常にディスク上にあるので、git の履歴を探したりブランチを切り替えて読む必要はない。
 
 ### F2: 前提確認
 
@@ -245,7 +245,7 @@ orchestrator が `### Plan` の末尾に以下を追記する（既存の Plan �
 
 ### F5: STEP 4 へ
 
-「状態管理」に従い `status` を `implementing` に戻し、Linear を "In Progress" にし、**[MUST]** 「状態管理」の「Linear の description 更新」を行ってから STEP 4 を実行する。STEP 4 → 5 → 6 → 7 は通常モードと同じ（実装・レビューは `{m}回目` として追記。STEP 6 は 6a で既存 PR / MR へ追加 push して `#### 追加 push（追加依頼 {n}）` を `## deploy` の末尾に追記し、6b で `in-review` に戻し、6c でその記録を `docs(task):` として同じブランチに push する。Gate 2 の差し戻しも同じ）。
+「状態管理」に従い `status` を `implementing` に戻し、Linear を "In Progress" にし、**[MUST]** 「状態管理」の「Linear の description 更新」を行ってから STEP 4 を実行する。STEP 4 → 5 → 6 → 7 は通常モードと同じ（実装・レビューは `{m}回目` として追記。STEP 6 は 6a で既存 PR / MR へ追加 push して `#### 追加 push（追加依頼 {n}）` を `## deploy` の末尾に追記し、6b で `in-review` に戻し、6c で分岐元へ戻る。Gate 2 の差し戻しも同じ）。
 
 > **kanban の副作用:** `## deploy` が埋まった TASK_FILE の `status` を `implementing` に戻すため、追加修正中は kanban が deploy 列に stale（status が古い）として表示する。仕様として許容する。STEP 6b で `in-review` に戻ると解消する。また tracked リポジトリでは 6c 後、分岐元を checkout している間は TASK_FILE が作業ツリーに無く kanban に表示されない（PR マージ後に表示される）。これも仕様として許容する。
 
@@ -373,17 +373,14 @@ orchestrator が「状態管理」に従い `## Meta` の `status` を `in-revie
 
 **[MUST]** 「状態管理」の「Linear の description 更新」を行う（6a で deploy が `## deploy` に書いた PR / MR の URL を含める）。
 
-### 6c: @deploy --finalize（TASK_FILE を commit → push → 分岐元へ）
+### 6c: 分岐元へ戻る
 
+```bash
+git status --short   # 未コミットの変更が残っていれば git switch は失敗する
+git switch {base}
 ```
-@deploy "--finalize --task-file={TASK_FILE} --linear-id={LINEAR_ID}"
-```
 
-TASK_FILE だけを `docs(task):` でコミットして同じ作業ブランチに push し、分岐元（`base:`）に戻る（TASK_FILE が gitignore のリポジトリでは commit / push せず戻るだけ）。**結果は TASK_FILE に書かない**（書くと再び未コミット差分になる）。STEP 7 の deploy 行に添える。中止（他ファイルがステージ済み・リモートと分岐・分岐元へ戻れない等）ならその理由をユーザーに報告する。中止時は**作業ブランチに留まったまま**で、残った変更はそのまま（履歴は書き換えない）。
-
-**6b と 6c の間で中断した場合**（`in-review` 済み・TASK_FILE 未コミット・作業ブランチ上）: 記録は失われない。次の追加修正モードは F2（`in-review`）を通り、その 6c で今回の記録と追加 push の記録がまとめて `docs(task):` コミットになる。先に回収したければ `@deploy "--finalize --task-file={TASK_FILE} --linear-id={LINEAR_ID}"` を単独で実行してよい（差分が無ければ何もせず分岐元に戻るだけなので再実行に安全）。
-
----
+TASK_FILE はリポジトリ外にあるので **git の操作は何もしない**（コミット・push・stash をしない）。戻れないときは中止し、**作業ブランチに留まったまま**理由をユーザーに報告する（勝手に破棄しない）。記録は既に TASK_FILE にあるので失われない。
 
 ## STEP 7: 完了報告
 
@@ -411,7 +408,7 @@ TASK_FILE だけを `docs(task):` でコミットして同じ作業ブランチ�
 
 「### 質問」は質問しなかったら「なし」の 1 行にする。
 
-deploy 行には PR / MR の URL、`## deploy` の `紐づけ:` 行（追加 push は追記した行）、`Linear 添付:` の結果（新規作成型のみ）、紐づけの申し送り（base がデフォルトブランチでない・ブランチ名に ID が無い）があればそれに加えて 6c の結果（`docs(task):` コミットの hash・push 先・現在のブランチ。中止ならその理由）を添える（TASK_FILE には書かない）。**現在のブランチは必ず示す**（6c を実行しなかった・中止したときは作業ブランチに留まっている。`git branch --show-current` で確認する）。`status` は 6b で `in-review` にしてあるので STEP 7 では書かない。
+deploy 行には PR / MR の URL、`## deploy` の `紐づけ:` 行（追加 push は追記した行）、`Linear 添付:` の結果（新規作成型のみ）、紐づけの申し送り（base がデフォルトブランチでない・ブランチ名に ID が無い）があればそれに加えて **現在のブランチ**を添える。**現在のブランチは必ず示す**（6c を実行しなかった・中止したときは作業ブランチに留まっている。`git branch --show-current` で確認する）。`status` は 6b で `in-review` にしてあるので STEP 7 では書かない。
 
 追加修正モードでは startproject 行を「（追加修正モード: スキップ）」または再設計時の結果にし、deploy 行に既存 PR / MR の URL を書く。
 
@@ -436,7 +433,7 @@ deploy 行には PR / MR の URL、`## deploy` の `紐づけ:` 行（追加 pus
 
 ### TASK_FILE の `status` と Linear ステータス
 
-各 STEP の開始時に orchestrator が `## Meta` の `status` を更新する（フェーズ agent は更新しない）。例外は `in-review` で、STEP 6b（deploy 返却後、作業ブランチ上）で書き、6c の `docs(task):` コミットに含める。`done` には orchestrator はしない。PR がマージされた後に人間が変更する。
+各 STEP の開始時に orchestrator が `## Meta` の `status` を更新する（フェーズ agent は更新しない）。例外は `in-review` で、STEP 6b（deploy 返却後、作業ブランチ上）で書く。`done` には orchestrator はしない。PR がマージされた後に人間が変更する。
 
 | タイミング | status | Linear ステータス | description 更新 | 実行者 |
 |------|--------|------|------|------|
