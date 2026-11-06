@@ -15,7 +15,7 @@ harness/
 │   └── scripts/
 │       ├── linear-ask.sh   # OpenCode 版 orchestrate の質問の中継用（Linear API キーが要る）
 │       ├── ai-fallback.sh  # リサーチ・設計相談のモデル連鎖（429 で次の候補へ）
-│       ├── claude-consult.sh  # 読み取り専用の Claude に設計相談（Cursor / pi / Cline 用。agents/skills/claude-consult が呼ぶ）
+│       ├── claude-consult.sh  # 別の Claude セッションに相談 / レビュー / 実装を投げる（Cursor / pi / Cline 用。agents/skills/claude-consult が呼ぶ。Herdr 内では常駐 pane のセッションに送る）
 │       └── phase-run.sh    # フェーズを任意の CLI / モデルで実行するディスパッチャ
 ├── docs/phase-contract.md   # 4 フェーズが満たす契約（引数・書き込み・RESULT/QUESTIONS・status）
 ├── opencode/                # OpenCode 版 (~/.config/opencode)
