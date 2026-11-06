@@ -6,8 +6,8 @@
 # send a request to". Used to hand work to another CLI (pi / codex / opencode)
 # without leaving the current session.
 #
-# The agent is started once per (name, repo) and reused: the pane, its session
-# and its context stay alive between calls.
+# The agent is started once per (name, repo) and reused: its own tab, its
+# session and its context stay alive between calls.
 #
 # Usage:
 #   herdr-agent.sh ensure <name> --kind KIND [OPTIONS]    pane + agent (idempotent)
@@ -20,7 +20,7 @@
 # Options:
 #   --kind KIND       agent kind recognized by herdr (claude | pi | codex | ...)
 #   --repo DIR        repository to run in (default: $PWD)
-#   --direction D     right | down (default: right when the pane is wide)
+#   --tab             (default) each session gets its own tab
 #   --timeout T       ask: overall timeout, e.g. 20m (default: $HERDR_AGENT_TIMEOUT or 20m)
 #   --answer-file F   ask: wait for this file instead of just the settled state
 #   --lines N         read: how much scrollback (default 200)
@@ -51,7 +51,6 @@ NAME=""
 REQUEST=""
 KIND=""
 REPO=""
-DIRECTION=""
 TIMEOUT=${HERDR_AGENT_TIMEOUT:-20m}
 ANSWER_FILE=""
 LINES=200
@@ -61,7 +60,6 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --kind) KIND=$2; shift 2 ;;
     --repo) REPO=$2; shift 2 ;;
-    --direction) DIRECTION=$2; shift 2 ;;
     --timeout) TIMEOUT=$2; shift 2 ;;
     --answer-file) ANSWER_FILE=$2; shift 2 ;;
     --lines) LINES=$2; shift 2 ;;
@@ -123,12 +121,6 @@ pane_stable() {
   return 0
 }
 
-split_direction() {
-  if [[ -n "$DIRECTION" ]]; then printf '%s' "$DIRECTION"; return; fi
-  local cols=${COLUMNS:-0}
-  if [[ "$cols" == "0" ]]; then cols=$(tput cols 2>/dev/null || echo 100); fi
-  if [[ "$cols" =~ ^[0-9]+$ ]] && ((cols >= 110)); then printf 'right'; else printf 'down'; fi
-}
 
 cmd_ensure() {
   [[ -n "$NAME" ]] || die "ensure needs a name" 2
@@ -151,16 +143,25 @@ cmd_ensure() {
         echo "STATE=reused" >&2
         return 0
       fi
-      echo "herdr-agent: $NAME was started in $recorded_cwd — replacing the pane" >&2
+      echo "herdr-agent: $NAME was started in $recorded_cwd — replacing its tab" >&2
     fi
-    herdr pane close "$pane" >/dev/null 2>&1 || true
+    cmd_close >/dev/null 2>&1 || true
   fi
 
-  local split
-  split=$(herdr pane split --current --direction "$(split_direction)" --cwd "$REPO" --no-focus) ||
-    die "pane split failed"
-  pane=$(jq -r '.result.pane.pane_id // .result.pane_id // empty' <<<"$split")
-  [[ -n "$pane" ]] || die "could not read the pane id from: $split"
+  # Each session gets its own tab (the user's rule). `tab create` returns
+  # .result.tab and .result.root_pane; the agent runs in that root pane.
+  # --workspace pins the tab to the caller's workspace: without it the tab can
+  # land in whatever workspace another client has focused.
+  local created tab
+  local -a tab_args=(--cwd "$REPO")
+  [[ -n "${HERDR_WORKSPACE_ID:-}" ]] && tab_args+=(--workspace "$HERDR_WORKSPACE_ID")
+  if ! created=$(herdr tab create "${tab_args[@]}" --no-focus 2>&1); then
+    created=$(herdr tab create "${tab_args[@]}" 2>&1) || die "tab create failed: $created"
+  fi
+  pane=$(jq -r '.result.root_pane.pane_id // .result.tab.root_pane.pane_id // .result.pane.pane_id // empty' <<<"$created")
+  tab=$(jq -r '.result.tab.tab_id // .result.tab_id // empty' <<<"$created")
+  [[ -n "$pane" ]] || die "could not read the pane id from: $created"
+  [[ -n "$tab" ]] && herdr tab rename "$tab" "$NAME" >/dev/null 2>&1 || true
 
   # config.toml may set [terminal] new_cwd = "follow", which sends the new pane
   # to the calling pane's directory and ignores --cwd. Move it ourselves.
@@ -176,12 +177,13 @@ cmd_ensure() {
   pane_stable "$NAME"
 
   mkdir -p "$STATE_DIR"
-  jq -n --arg agent "$NAME" --arg pane "$pane" --arg kind "$KIND" \
+  jq -n --arg agent "$NAME" --arg pane "$pane" --arg tab "$tab" --arg kind "$KIND" \
     --arg repo "$REPO" --arg created "$(date -Iseconds)" \
-    '{agent:$agent, pane:$pane, kind:$kind, repo:$repo, created:$created}' >"$state"
+    '{agent:$agent, pane:$pane, tab:$tab, kind:$kind, repo:$repo, created:$created}' >"$state"
 
   echo "AGENT=$NAME" >&2
   echo "PANE=$pane" >&2
+  echo "TAB=$tab" >&2
   echo "KIND=$KIND" >&2
   echo "REPO=$REPO" >&2
   echo "STATE=started" >&2
@@ -291,23 +293,32 @@ cmd_close() {
   [[ -n "$NAME" ]] || die "close needs a name" 2
   local state pane
   state=$(state_file "$NAME")
+  local state pane tab
+  state=$(state_file "$NAME")
   pane=$(state_field "$state" pane)
-  [[ -n "$pane" ]] && herdr pane close "$pane" >/dev/null 2>&1 || true
+  tab=$(state_field "$state" tab)
+  # The session owns its tab, so close the tab (and its pane with it).
+  if [[ -n "$tab" ]]; then
+    herdr tab close "$tab" >/dev/null 2>&1 || herdr pane close "$pane" >/dev/null 2>&1 || true
+  elif [[ -n "$pane" ]]; then
+    herdr pane close "$pane" >/dev/null 2>&1 || true
+  fi
   rm -f "$state"
-  echo "closed $NAME (pane ${pane:-unknown})" >&2
+  echo "closed $NAME (tab ${tab:-none}, pane ${pane:-unknown})" >&2
 }
 
 cmd_list() {
   [[ -d "$STATE_DIR" ]] || { echo "no agents registered" >&2; return 0; }
-  local f name pane kind repo state
+  local f name pane tab kind repo state
   for f in "$STATE_DIR"/*.json; do
     [[ -f "$f" ]] || continue
     name=$(state_field "$f" agent)
     pane=$(state_field "$f" pane)
+    tab=$(state_field "$f" tab)
     kind=$(state_field "$f" kind)
     repo=$(state_field "$f" repo)
     state=$(agent_state "$name")
-    printf '%-14s %-8s %-10s %-10s %s\n' "$name" "$kind" "$state" "$pane" "$repo"
+    printf '%-14s %-8s %-10s %-10s %-8s %s\n' "$name" "$kind" "$state" "$pane" "$tab" "$repo"
   done
 }
 

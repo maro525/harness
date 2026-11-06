@@ -7,11 +7,11 @@
 #
 #   herdr  (default when HERDR_ENV=1)
 #     Keeps one Claude Code session per role in a Herdr pane and submits each
-#     question with `herdr agent prompt`. The pane is created on demand (split
-#     of the calling pane, same cwd, focus stays where it is) and reused, so a
-#     follow-up question continues the same conversation instead of starting a
-#     new one. A pane that no longer hosts the agent, or that lives in another
-#     directory, is replaced.
+#     question with `herdr agent prompt`. Each session gets its own tab (created
+#     on demand in the calling workspace, same cwd, focus stays where it is) and
+#     is reused, so a follow-up question continues the same conversation instead
+#     of starting a new one. A tab that no longer hosts the agent, or that lives
+#     in another directory, is replaced.
 #
 #   print  (default outside Herdr)
 #     One-shot `claude -p` with Read / Grep / Glob only. No session, no pane.
@@ -35,7 +35,6 @@ ROLES=""
 MODEL_OVERRIDE=""
 TIMEOUT=${CLAUDE_CONSULT_TIMEOUT:-20m}
 RESUME_ID=""
-DIRECTION=""
 NAME_OVERRIDE=""
 FORCE_NEW=0
 CLOSE_AFTER=0
@@ -77,8 +76,6 @@ Backend:
                      auto = herdr when $HERDR_ENV=1, otherwise print
   -r, --resume ID    print backend only: resume an earlier session
   --name NAME        herdr backend: agent name (default hc-<role>)
-  --direction r|d    herdr backend: pane split direction
-                     (default: right when the terminal is wide, else down)
   --new              herdr backend: replace the role's pane with a fresh one
   --reuse-cwd        herdr backend: reuse a session whose cwd differs
 
@@ -114,7 +111,6 @@ while [[ $# -gt 0 ]]; do
     -t|--timeout)    need_value "$@"; TIMEOUT=$2; shift 2 ;;
     -r|--resume)     need_value "$@"; RESUME_ID=$2; shift 2 ;;
     --name)          need_value "$@"; NAME_OVERRIDE=$2; shift 2 ;;
-    --direction)     need_value "$@"; DIRECTION=$2; shift 2 ;;
     --append)        need_value "$@"; APPEND_FILES+=("$2"); shift 2 ;;
     --new)           FORCE_NEW=1; shift ;;
     --debug)         CLAUDE_CONSULT_DEBUG=1; shift ;;
@@ -386,21 +382,6 @@ herdr_state_field() {
   jq -r --arg k "$field" '.[$k] // empty' "$f" 2>/dev/null || true
 }
 
-herdr_split_direction() {
-  if [[ -n "$DIRECTION" ]]; then
-    printf '%s' "$DIRECTION"
-    return
-  fi
-  local cols=${COLUMNS:-0}
-  if [[ "$cols" == "0" ]]; then
-    cols=$(tput cols 2>/dev/null || echo 100)
-  fi
-  if [[ "${cols:-100}" =~ ^[0-9]+$ ]] && (( cols >= 110 )); then
-    printf 'right'
-  else
-    printf 'down'
-  fi
-}
 
 # Close a pane this script created (never a pane we did not record).
 herdr_close_pane() {
@@ -409,27 +390,38 @@ herdr_close_pane() {
   herdr pane close "$pane" >/dev/null 2>&1 || true
 }
 
-# Close the pane recorded for <name> and forget the session.
-herdr_close_session() {
-  local name=$1 state pane
-  state=$(herdr_state_file "$name")
-  pane=$(herdr_state_field "$state" pane)
+# Close the tab (and its pane) recorded for <name>, then forget the session.
+# Sessions own their tab, so closing the pane alone would leave an empty tab.
+herdr_close_tab() {
+  local tab=$1 pane=$2
+  if [[ -n "$tab" ]]; then
+    herdr tab close "$tab" >/dev/null 2>&1 && return 0
+  fi
   herdr_close_pane "$pane"
-  rm -f "$state"
-  echo "closed $name (pane ${pane:-unknown})" >&2
 }
 
-# Ensure <name> is a live Claude session in a pane of the calling tab.
+herdr_close_session() {
+  local name=$1 state pane tab
+  state=$(herdr_state_file "$name")
+  pane=$(herdr_state_field "$state" pane)
+  tab=$(herdr_state_field "$state" tab)
+  herdr_close_tab "$tab" "$pane"
+  rm -f "$state"
+  echo "closed $name (tab ${tab:-none}, pane ${pane:-unknown})" >&2
+}
+
+# Ensure <name> is a live Claude session in its own tab of the calling workspace.
 # Prints "<pane-id>" on stdout; progress goes to stderr.
 herdr_ensure_session() {
-  local name=$1 role=$2 state pane stored_cwd live=0 fresh=0
+  local name=$1 role=$2 state pane tab stored_cwd live=0 fresh=0
 
   state=$(herdr_state_file "$name")
   pane=$(herdr_state_field "$state" pane)
+  tab=$(herdr_state_field "$state" tab)
   stored_cwd=$(herdr_state_field "$state" cwd)
 
   if [[ "$FORCE_NEW" == "1" ]]; then
-    herdr_close_pane "$pane"
+    herdr_close_tab "$tab" "$pane"
     live=0
   elif [[ -n "$pane" ]] && herdr agent get "$name" >/dev/null 2>&1; then
     live=1
@@ -437,14 +429,14 @@ herdr_ensure_session() {
       if [[ "$REUSE_CWD" == "1" ]]; then
         echo "warning: reusing $name recorded in $stored_cwd (cwd is $PWD)" >&2
       else
-        echo "note: $name was started in $stored_cwd — replacing the pane" >&2
-        herdr_close_pane "$pane"
+        echo "note: $name was started in $stored_cwd — replacing its tab" >&2
+        herdr_close_tab "$tab" "$pane"
         live=0
       fi
     fi
   elif [[ -n "$pane" ]]; then
-    # Recorded pane no longer hosts the agent: drop it and start over.
-    herdr_close_pane "$pane"
+    # Recorded pane no longer hosts the agent: drop the tab and start over.
+    herdr_close_tab "$tab" "$pane"
     live=0
   fi
 
@@ -453,12 +445,18 @@ herdr_ensure_session() {
     return 0
   fi
 
-  local dir split
-  dir=$(herdr_split_direction)
-  split=$(herdr pane split --current --direction "$dir" --cwd "$PWD" --no-focus) ||
-    die "herdr pane split failed" 1
-  pane=$(jq -r '.result.pane.pane_id // .result.pane_id // empty' <<<"$split")
-  [[ -n "$pane" ]] || die "could not read pane id from: $split" 1
+  # One tab per session, created in the caller's workspace: without --workspace
+  # the tab can land in whatever workspace another client has focused.
+  local created tab
+  local -a tab_args=(--cwd "$PWD")
+  [[ -n "${HERDR_WORKSPACE_ID:-}" ]] && tab_args+=(--workspace "$HERDR_WORKSPACE_ID")
+  if ! created=$(herdr tab create "${tab_args[@]}" --no-focus 2>&1); then
+    created=$(herdr tab create "${tab_args[@]}" 2>&1) || die "herdr tab create failed: $created" 1
+  fi
+  pane=$(jq -r '.result.root_pane.pane_id // .result.tab.root_pane.pane_id // .result.pane.pane_id // empty' <<<"$created")
+  tab=$(jq -r '.result.tab.tab_id // .result.tab_id // empty' <<<"$created")
+  [[ -n "$pane" ]] || die "could not read pane id from: $created" 1
+  [[ -n "$tab" ]] && herdr tab rename "$tab" "$name" >/dev/null 2>&1 || true
   fresh=1
 
   # Claude flags for the role. Everything that takes several values is last.
@@ -488,10 +486,10 @@ herdr_ensure_session() {
   fi
 
   mkdir -p "$STATE_DIR"
-  jq -n --arg agent "$name" --arg pane "$pane" --arg cwd "$PWD" \
+  jq -n --arg agent "$name" --arg pane "$pane" --arg tab "$tab" --arg cwd "$PWD" \
         --arg role "$role" --arg model "$ROLE_MODEL" --arg mode "$ROLE_MODE" \
         --arg created "$(date -Iseconds)" \
-    '{agent:$agent, pane:$pane, cwd:$cwd, role:$role, model:$model,
+    '{agent:$agent, pane:$pane, tab:$tab, cwd:$cwd, role:$role, model:$model,
       mode:$mode, created:$created}' > "$state"
 
   # The TUI ignores (or keeps) input sent while it is still drawing its first
@@ -499,7 +497,7 @@ herdr_ensure_session() {
   herdr_wait_stable "$name"
 
   if [[ "$fresh" == "1" ]]; then
-    echo "started $name in pane $pane ($ROLE_MODEL, $ROLE_MODE)" >&2
+    echo "started $name in tab $tab ($ROLE_MODEL, $ROLE_MODE)" >&2
   fi
   printf '%s' "$pane"
 }
@@ -611,7 +609,7 @@ herdr_consult() {
     echo "--- last lines ---" >&2
     herdr agent read "$name" --source recent-unwrapped --lines 40 >&2 2>/dev/null || true
     echo "--- answer it in the pane, then rerun this command ---" >&2
-    if [[ "$CLOSE_AFTER" == "1" ]]; then herdr_close_pane "$pane"; fi
+    if [[ "$CLOSE_AFTER" == "1" ]]; then herdr_close_session "$name"; fi
     die "no answer from $name (blocked)" 1
   fi
   if (( rc != 0 )); then
@@ -683,7 +681,7 @@ herdr_consult() {
       echo "       submit said: $out" >&2
     fi
     echo "       inspect: $(basename "$0") --show $name" >&2
-    if [[ "$CLOSE_AFTER" == "1" ]]; then herdr_close_pane "$pane"; fi
+    if [[ "$CLOSE_AFTER" == "1" ]]; then herdr_close_session "$name"; fi
     printf '%s\n' "$raw" > "${base}.json"
     die "could not extract the answer from $name" 1
   fi
@@ -695,7 +693,7 @@ herdr_consult() {
     answer=$(cat "$answer_path")
   elif [[ "$answer" =~ ^FILE: ]]; then
     echo "error: $name said it wrote a file, but $answer_path is missing" >&2
-    if [[ "$CLOSE_AFTER" == "1" ]]; then herdr_close_pane "$pane"; fi
+    if [[ "$CLOSE_AFTER" == "1" ]]; then herdr_close_session "$name"; fi
     die "no answer file from $name" 1
   fi
 
@@ -708,9 +706,7 @@ herdr_consult() {
 
   echo "AI_MODEL=claude/$ROLE_MODEL" >&2
   if [[ "$CLOSE_AFTER" == "1" ]]; then
-    herdr_close_pane "$pane"
-    rm -f "$(herdr_state_file "$name")"
-    echo "closed pane $pane ($name)" >&2
+    herdr_close_session "$name"
   fi
 
   cat "${base}.answer.md"
