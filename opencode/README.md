@@ -151,7 +151,7 @@ opencode
 /team-review レビューして
 
 # 追加修正モード（既存 PR / MR への追加変更）
-/orchestrate レビュー指摘の型エラーを直す --task-file=.claude/docs/decisions/task-PROJ-573-coupon.md
+/orchestrate レビュー指摘の型エラーを直す --task-file=~/.local/share/harness/tasks/{repo}/task-PROJ-573-coupon.md
 /orchestrate PROJ-573 クーポンの有効期限チェックも追加する
 ```
 
