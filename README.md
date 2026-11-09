@@ -12,11 +12,12 @@ harness/
 │   ├── commands/            # orchestrate / startproject / team-implement / team-review / deploy
 │   ├── rules/               # adaptive-execution.md (tier 分類) / tool-routing.md (委譲先)
 │   ├── hooks/agent-router.py  # UserPromptSubmit hook。意図を検出して /orchestrate へ誘導
+│   ├── skills/herdr-boss/   # 司令塔（boss）skill（~/.claude/skills/herdr-boss。下記「司令塔（boss）パターン」）
 │   └── scripts/
 │       ├── linear-ask.sh   # OpenCode 版 orchestrate の質問の中継用（Linear API キーが要る）
 │       ├── ai-fallback.sh  # リサーチ・設計相談のモデル連鎖（429 で次の候補へ）
 │       ├── claude-consult.sh  # 別の Claude セッションに相談 / レビュー / 実装を投げる（Cursor / pi / Cline 用。agents/skills/claude-consult が呼ぶ。Herdr 内では常駐 pane のセッションに送る）
-│       ├── herdr-agent.sh  # Herdr の tab / workspace / worktree で任意のエージェント (pi / codex 等) を起動して依頼する
+│       ├── herdr-agent.sh  # Herdr の tab / workspace / worktree で任意のエージェント (pi / codex 等) を起動して依頼する。司令塔用の delegate / report / inbox も持つ
 │       ├── task-file.sh    # TASK_FILE の置き場所を解決（dir / new / find / resolve。リポジトリ外）
 │       └── phase-run.sh    # フェーズを任意の CLI / モデルで実行するディスパッチャ
 ├── docs/
@@ -28,7 +29,7 @@ harness/
 │   └── agents/
 ├── agents/                  # Claude 以外の CLI (pi / cline / opencode / codex) 向け Agent Skills (~/.agents/skills)
 │   ├── README.md            # 外部 CLI のフェーズ実行（orchestrate STEP 3P が直接読む）
-│   └── skills/              # 4 フェーズ + orchestrate + claude-consult（Cursor 等から Claude に設計相談）
+│   └── skills/              # 4 フェーズ + orchestrate + claude-consult（Cursor 等から Claude に設計相談）+ herdr-boss（司令塔）
 ├── pi/                      # pi 専用 (~/.pi/agent)
 │   ├── README.md            # 配布と前提（permissions の許可リスト）
 │   └── prompts/
@@ -47,9 +48,9 @@ harness/
 dotfiles と同じく HOME ⇄ リポジトリの双方向同期（対話モードで差分を見て a/p/h/s を選ぶ）。
 
 ```bash
-./sync-claude.sh      # ~/.claude の harness ファイルだけ
+./sync-claude.sh      # ~/.claude の harness ファイルだけ（commands / rules / hooks / scripts / skills/herdr-boss）
 ./sync-opencode.sh    # ~/.config/opencode の harness ファイルだけ
-./sync-agents.sh      # ~/.agents/skills の 4 フェーズ + orchestrate + claude-consult（+ Cline 用 symlink）
+./sync-agents.sh      # ~/.agents/skills の 4 フェーズ + orchestrate + claude-consult + herdr-boss（+ Cline 用 symlink）
 ./sync-pi.sh          # ~/.pi/agent/prompts の /orchestrate
 ./sync-*.sh -n        # 非対話。repo → HOME の自動コピー（初回配布にも使える）
 ./sync-*.sh -n --to-repo  # 非対話。HOME → repo の自動コピー
@@ -91,6 +92,36 @@ AI_CHAIN="codex:gpt-6-sol github-copilot/gpt-6-astra" ~/.claude/scripts/ai-fallb
 - OpenCode から 3 番目を使うための provider 登録は `opencode/README.md`「フォールバック先の登録」（`opencode.jsonc` は dotfiles の持ち物）
 - フェーズ指定モード（`--ai=opencode`）は CLI 直呼びなので連鎖は効かない。429 なら `--ai=pi:{model}` に切り替える。v2 が入っている環境では `--ai=opencode2` を使う（v1 はこの環境で `session_message.seq` により全滅）
 
+## 司令塔（boss）パターン
+
+Herdr の上で、1 つのセッションを**司令塔**にして、仕事を名前付きの子エージェント（別 tab の claude / pi / codex など）に渡す。司令塔は自分で手を動かさず、渡したら待たずに戻り、届いた報告を読んで要約する。手順と守ることは `claude/skills/herdr-boss/SKILL.md`（Claude 版）/ `agents/skills/herdr-boss/SKILL.md`（Cursor / pi / codex 版）。
+
+```
+boss ──delegate──▶ child-a（依頼ファイル + 1 行ポインタ。末尾に「報告のしかた」を自動追記）
+  ▲                   │
+  │                   └─report──▶ ~/.cache/harness/inbox/<boss>/child-a-<ts>.md（正本）
+  └──── 1 行の通知 ◀──────────────┘   herdr agent prompt <boss>（agent でなければ notification show）
+watcher（委任ごとに 1 本）: 報告なしで blocked / idle が続いた・子が消えた・寿命切れ → <child>-<ts>.{blocked,stalled,gone,expired}.md + 同じ通知
+```
+
+```bash
+herdr agent rename "$HERDR_PANE_ID" boss-myrepo
+~/.claude/scripts/herdr-agent.sh ensure child-a --kind claude -- --model sonnet --permission-mode acceptEdits
+~/.claude/scripts/herdr-agent.sh delegate child-a /tmp/req.md --boss boss-myrepo    # 数秒で戻る
+# …「報告あり（child-a）: <path>」が届いたら
+~/.claude/scripts/herdr-agent.sh inbox boss-myrepo read child-a
+~/.claude/scripts/herdr-agent.sh inbox boss-myrepo ack child-a     # いま read で表示した分だけ既読に
+~/.claude/scripts/herdr-agent.sh close child-a && ~/.claude/scripts/herdr-agent.sh inbox boss-myrepo clear
+```
+
+- **司令塔は bg で待たない。** `claude/rules/tool-routing.md` の「完了はバックグラウンドタスクの完了通知で待つ」の例外として 1 行書いてある。bg の待ちと inbox の通知を両方仕込むと同じ出来事が 2 回届き、無駄なターンが増える
+- inbox が正本で、通知はヒント。`report` は inbox に書けた時点で成功（通知の失敗は warning）。`report` / `inbox` は Herdr サーバが止まっていても動く
+- Herdr の外（Cursor IDE など）から司令塔をするときは `--boss cursor-harness` のように名前を明示する。その名前の agent はいないので `herdr notification show` で人に届く
+- 子には依頼文の protocol 節で「他のエージェントを起動しない」「質問は報告で返して止まる」を課す
+- `delegate` が失敗（子が blocked など）しても前の委任の watcher は残る。依頼ファイルは委任ごとに別名（本人だけが読める）で、作業中の子への依頼を上書きしない
+- `ack` は直前の `read` で表示したものだけを既読にする（後から届いた報告を取りこぼさない）。`HERDR_BOSS` があれば `inbox read child-a` のように boss 名を省ける
+- inbox / watcher のライフサイクルと掃除は `docs/session-lifecycle.md`
+
 ## フェーズの混在（phase mixing）
 
 4 フェーズは `agents/skills/{phase}/SKILL.md` が共通の契約（`docs/phase-contract.md`）を満たし、起動は `~/.claude/scripts/phase-run.sh` が吸収する。だから**フェーズごとに別の CLI / 別のモデル**で回せる。
@@ -131,6 +162,8 @@ $ARGUMENTS: "{task description} --tier=M"
 ## dotfiles との契約
 
 `~/.claude` と `~/.config/opencode` は [maro525/_dotfiles](https://github.com/maro525/_dotfiles) と共有している。**参照方向は harness → dotfiles の一方向**で、dotfiles は本リポジトリの存在を知らない（dotfiles 単体で完結し、harness は後から任意で足せるレイヤー）。したがって相互参照の検査はすべてこのリポジトリ側に置き、dotfiles の sync スクリプトからは呼ばない。dotfiles が見つからない場合、`checks/crossrefs.sh` は検査せずに成功終了する。
+
+dotfiles 側の `sync-claude.sh` は `~/.claude/skills` を**ディレクトリ走査**して `SKILL_EXCLUDES` の名前を除外する。harness が配る skill（現在 `herdr-boss`）は dotfiles 側の `SKILL_EXCLUDES` に名前が要る（無いと dotfiles 側にも取り込まれる）。skill を足したら両方を揃える。
 
 `lib/sync-common.sh` は dotfiles の `lib/sync-common.sh` と同一内容（ヘッダコメント 1 行を除く）を保つ。片方を変えたらもう片方にも同じ変更を入れる。
 

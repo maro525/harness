@@ -1,7 +1,7 @@
 #!/bin/bash
-# Sync the agent-general skills (phase skills + claude-consult) between ~/.agents/skills and this repo.
+# Sync the agent-general skills (phase skills + claude-consult + herdr-boss) between ~/.agents/skills and this repo.
 #
-#   ~/.agents/skills/{startproject,team-implement,team-review,deploy,orchestrate,claude-consult}
+#   ~/.agents/skills/{startproject,team-implement,team-review,deploy,orchestrate,claude-consult,herdr-boss}
 #     <->  agents/skills/{name}/
 #
 # ~/.agents/skills is also managed by `npx skills` (.skill-lock.json), so this
@@ -25,7 +25,7 @@ DEST="$SCRIPT_DIR/agents/skills"
 CLINE_SKILLS="$HOME/.cline/skills"
 PI_SKILLS="$HOME/.pi/agent/skills"
 
-AGENT_SKILLS=(startproject team-implement team-review deploy orchestrate claude-consult)
+AGENT_SKILLS=(startproject team-implement team-review deploy orchestrate claude-consult herdr-boss)
 
 # shellcheck source=lib/sync-common.sh
 source "$SCRIPT_DIR/lib/sync-common.sh"
