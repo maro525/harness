@@ -107,9 +107,9 @@ fi
 
 # --- 7: sync scripts ---------------------------------------------------------
 declare -A sync_lists=(
-  [sync-claude.sh]="commands/orchestrate.md commands/team-review.md rules/tool-routing.md scripts/phase-run.sh scripts/task-file.sh"
+  [sync-claude.sh]="commands/orchestrate.md commands/team-review.md rules/tool-routing.md scripts/phase-run.sh scripts/task-file.sh scripts/herdr-agent.sh skills/herdr-boss/SKILL.md"
   [sync-opencode.sh]="commands/orchestrate.md agents/team-review.md"
-  [sync-agents.sh]="startproject team-implement team-review deploy orchestrate"
+  [sync-agents.sh]="startproject team-implement team-review deploy orchestrate claude-consult herdr-boss"
   [sync-pi.sh]="orchestrate.md"
 )
 for script in "${!sync_lists[@]}"; do

@@ -15,6 +15,7 @@ agents/
     ├── startproject/SKILL.md    # 計画: Brief / Design / Plan（--label ありなら ### 案 {k} + 利用AI 行）
     ├── team-implement/SKILL.md  # 実装: feature ブランチ + TDD、### {m}回目 + 利用AI 行、Meta の branch/base
     ├── team-review/SKILL.md     # レビュー: 観点別（Quality/Logic → Security → Simplify）、判定 PASS/FAIL
+    ├── herdr-boss/SKILL.md      # フェーズではない。Herdr の司令塔: 名前付きの子に delegate して待たずに戻り、inbox の報告を読んで要約する（~/.claude/scripts/herdr-agent.sh delegate / report / inbox）
     ├── claude-consult/SKILL.md  # フェーズではない。Claude 以外のエージェントから Claude セッションに相談 / レビュー / 実装を投げる（~/.claude/scripts/claude-consult.sh。Herdr 内は pane 常駐セッション、外は claude -p）
     └── deploy/SKILL.md          # commit → push → PR/MR（gh / glab）、#### PR / MR + 利用AI 行 + 紐づけ行。作業ブランチに留まる（TASK_FILE のコミットと分岐元への復帰は呼び出し元）
 ```
@@ -23,7 +24,7 @@ agents/
 
 ## 共通規約
 
-フェーズの SKILL.md（claude-consult を除く）はすべて同じ規約で書かれている。
+フェーズの SKILL.md（claude-consult / herdr-boss を除く）はすべて同じ規約で書かれている。
 
 | 項目 | 規約 |
 |---|---|

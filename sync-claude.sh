@@ -6,7 +6,9 @@
 # dotfiles side excludes the same names in its sync-claude.sh — keep the two
 # lists in step when adding or removing a file here. scripts/ is not walked by
 # the dotfiles side (it only scans commands/ hooks/ rules/ skills/), so the
-# files under scripts/ need no exclusion there.
+# files under scripts/ need no exclusion there. skills/ IS walked (per skill
+# directory), so every skill listed here (skills/<name>/SKILL.md) needs <name>
+# in the dotfiles side's SKILL_EXCLUDES.
 
 set -euo pipefail
 
@@ -29,6 +31,7 @@ HARNESS_FILES=(
   scripts/task-file.sh
   scripts/herdr-agent.sh
   scripts/claude-consult.sh
+  skills/herdr-boss/SKILL.md
 )
 
 # shellcheck source=lib/sync-common.sh

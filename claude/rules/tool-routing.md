@@ -97,6 +97,7 @@ timeout -k 1m 20m opencode run --agent plan --print-logs --log-level ERROR -m {m
 | cwd は **git リポジトリ** | 非 git ディレクトリ（`/tmp` 等）だと起動時の `service=vcs` 初期化で無言ハングする |
 
 - **完了はバックグラウンドタスクの完了通知で待つ。** `pgrep` / `tail --pid` で自前監視しない（`pgrep -f` は監視コマンド自身にマッチし、タイムアウトまで待ち続ける）
+- 例外: 司令塔（`herdr-boss` skill）は子の完了を bg で待たない。報告は inbox と `herdr agent prompt` の 1 行で届く（`herdr-agent.sh delegate`）
 - 空出力を quota と決めつけず、ログ（`~/.local/share/opencode/log/`）で確認する。v1 は 1 セッション 1 ファイル、v2 は `opencode.log` 1 本に追記するので、**実行前後の差分だけを見る**（ラッパーはファイルサイズを控えてから `tail -c` で差分を検索する）。v1 の正常系は `service=session` → `POST /session` → `service=snapshot` → `resolveTools` → `service=llm … stream` と進む。**`service=vcs … initialized` で止まっていれば stdin 詰まり**（`< /dev/null` 忘れ）で、非 git cwd と同じ見た目になる。`session_message.seq` の SQLite エラーは **v1 固有**（v2 は同じ DB で動く）で、モデルを替えても直らない（ラッパーは `--print-logs --log-level error` を付けて stderr に理由を出させ、その行を `skip: … (error)` の下に添える）
 - 疎通確認: `echo 'Reply with exactly: PONG' | ~/.claude/scripts/ai-fallback.sh -`（先頭の Codex から試す。stderr の `AI_ENGINE=codex` で Codex が答えたと分かる）。OpenCode 単体は `opencode2 run --agent plan -m <model> "Reply with exactly: PONG"`（v2。v1 は `opencode run …`）。利用可能モデルは `opencode2 models` で確認できる
 - エンジンは `opencode2` → `opencode` → `pi` の順で存在するものを使う（ラッパーが決める）。手で叩くときは入っている方を使う
