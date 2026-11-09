@@ -23,6 +23,8 @@
 # Options:
 #   --kind KIND       agent kind recognized by herdr (claude | pi | codex | ...)
 #   --repo DIR        repository to run in (default: $PWD)
+#                     Outside Herdr (no HERDR_WORKSPACE_ID) a tab has no workspace
+#                     to attach to, so a new workspace is created instead.
 #   --topology T      tab (default) | workspace | worktree
 #                     tab        : a new tab in the calling workspace
 #                     workspace  : a new workspace for the repo (no git changes)
@@ -50,8 +52,10 @@ die() {
 
 usage() { awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"; }
 
-[[ "${HERDR_ENV:-0}" == "1" ]] || die "not inside Herdr (HERDR_ENV=1 is required)" 1
+# A live Herdr server is what matters, not whether this process lives in a
+# pane: everything here addresses panes by id, so a plain terminal works too.
 command -v herdr >/dev/null 2>&1 || die "herdr is not installed" 1
+herdr workspace list >/dev/null 2>&1 || die "no Herdr server answered — start herdr first" 1
 command -v jq >/dev/null 2>&1 || die "jq is not installed" 1
 
 CMD=""

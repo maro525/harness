@@ -10,9 +10,11 @@ metadata:
 
 Cursor / pi / Cline / OpenCode などから、**別の Claude セッション**に設計相談・レビュー・実装の引き継ぎをさせるスキル。
 
-Herdr の中（`HERDR_ENV=1`）では、**専用の tab に常駐する Claude Code セッションに `herdr agent prompt` で質問を打ち込む**。tab は無ければ呼び出し元の workspace に作られ、次回以降は使い回されるので、追加質問は同じ会話の続きになる（呼び出し元の pane は分割しない）。
+Herdr が動いていれば、**専用の tab に常駐する Claude Code セッションに `herdr agent prompt` で質問を打ち込む**。tab は無ければ作られ（呼び出し元の pane の中ならその workspace、Herdr の外からなら新しい workspace）、次回以降は使い回されるので、追加質問は同じ会話の続きになる（呼び出し元の pane は分割しない）。
 
-**Herdr の外では自動フォールバックしない。** `HERDR_ENV` が無いとエラーで止まる（「Herdr の pane で起動するか `-b print` を付けろ」と案内が出る）。単発の `claude -p` を使いたいときだけ `-b print` を明示する — ツール制限・会話の継続・tab の有無が変わるため、黙って切り替わらないようにしている。
+**`claude -p` へは自動フォールバックしない。** Herdr サーバに繋がらないときはエラーで止まる（「herdr を起動するか `-b print` を付けろ」と案内が出る）。単発の `claude -p` を使いたいときだけ `-b print` を明示する — ツール制限・会話の継続・tab の有無が変わるため、黙って切り替わらないようにしている。
+
+**`HERDR_ENV` は不要。** pane の中でも素のターミナルでも同じように動く（スクリプトは pane id しか使わない）。pane の外から使うと `HERDR_WORKSPACE_ID` が無いので、tab を付ける workspace が無ければ新しく作る。
 
 配布先は `~/.agents/skills/claude-consult/`。pi・opencode・codex・Cursor（2.4+）はこの場所を直接読むので追加設定はいらない。Cline だけは `~/.cline/skills/` への symlink が要る（`./sync-agents.sh` が作る）。Cursor の headless（`cursor-agent -p`）はスキルを読まないという報告があるので、その場合はプロンプトで `Read ~/.agents/skills/claude-consult/SKILL.md and follow it` と絶対パスを渡す。
 
@@ -21,7 +23,7 @@ Claude Code 自身からは使わない（自分自身を呼ぶ形になる）�
 ## 前提
 
 - `~/.claude/scripts/claude-consult.sh`（`./sync-claude.sh` で配布）、`claude` と `jq`
-- Herdr バックエンドは追加で `HERDR_ENV=1` と `herdr` が PATH に必要。無い場合はエラーで止まる（`-b print` で単発実行を明示できる）
+- Herdr バックエンドは `herdr` が PATH にあり、**Herdr サーバが動いている**ことが条件（`HERDR_ENV` は不要）。サーバが無ければエラーで止まる（`-b print` で単発実行を明示できる）
 - **相談したいリポジトリのルートで実行する。** tab は実行時の cwd で起動する
 
 ## ロール（tab の分け方）
