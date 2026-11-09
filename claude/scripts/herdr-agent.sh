@@ -54,8 +54,11 @@ usage() { awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' 
 
 # A live Herdr server is what matters, not whether this process lives in a
 # pane: everything here addresses panes by id, so a plain terminal works too.
-command -v herdr >/dev/null 2>&1 || die "herdr is not installed" 1
-herdr workspace list >/dev/null 2>&1 || die "no Herdr server answered — start herdr first" 1
+# Checked after argument parsing so that --help works without a server.
+herdr_reachable() {
+  command -v herdr >/dev/null 2>&1 || return 1
+  herdr workspace list >/dev/null 2>&1
+}
 command -v jq >/dev/null 2>&1 || die "jq is not installed" 1
 
 CMD=""
@@ -103,6 +106,8 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ -n "$CMD" ]] || { usage >&2; exit 2; }
+herdr_reachable ||
+  die "no herdr CLI in PATH, or no Herdr server answered — start herdr first" 1
 
 state_file() { printf '%s/%s.json' "$STATE_DIR" "$1"; }
 state_field() { jq -r --arg k "$2" '.[$k] // empty' "$1" 2>/dev/null || true; }
