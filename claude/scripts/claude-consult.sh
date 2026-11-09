@@ -8,10 +8,11 @@
 #   herdr  (default; required unless -b print)
 #     Keeps one Claude Code session per role in a Herdr tab and submits each
 #     question with `herdr agent prompt`. Each session gets its own tab (created
-#     on demand in the calling workspace, same cwd, focus stays where it is) and
-#     is reused, so a follow-up question continues the same conversation instead
-#     of starting a new one. A tab that no longer hosts the agent, or that lives
-#     in another directory, is replaced.
+#     on demand in the calling workspace — or a new workspace when the caller is
+#     not inside Herdr — same cwd, focus stays where it is) and is reused, so a
+#     follow-up question continues the same conversation instead of starting a
+#     new one. A tab that no longer hosts the agent, or that lives in another
+#     directory, is replaced.
 #
 #   print  (explicit only: -b print / CLAUDE_CONSULT_BACKEND=print)
 #     One-shot `claude -p` with Read / Grep / Glob only. No session, no tab.
@@ -75,8 +76,8 @@ Roles (pick the pane the question goes to):
 
 Backend:
   -b, --backend B    auto (default) | herdr | print
-                     auto = herdr when $HERDR_ENV=1; outside Herdr it
-                     stops with an error instead of falling back
+                     auto = herdr whenever a Herdr server answers, inside a
+                     pane or not; it never falls back to claude -p on its own
                      (pass '-b print' to run the one-shot claude -p)
   -r, --resume ID    print backend only: resume an earlier session
   --name NAME        herdr backend: agent name (default hc-<role>)
@@ -174,18 +175,26 @@ if [[ -z "$src" && "${CLOSE_ONLY:-0}" != "1" ]]; then
   exit 2
 fi
 
-# "auto" means Herdr, never the one-shot fallback: running outside Herdr gives
-# a different tool set, no conversation continuity and no tab, so switching to
-# it silently would hide that. `-b print` is the explicit opt-in.
+# "auto" means Herdr, never the one-shot fallback: claude -p gives a different
+# tool set, no conversation continuity and no tab, so switching to it silently
+# would hide that. `-b print` is the explicit opt-in.
+#
+# Herdr is required to be *reachable*, not to be the caller's multiplexer: the
+# scripts only use pane ids, so they work from a plain terminal too (with no
+# caller pane, a tab has no workspace to attach to and one is created).
+herdr_reachable() {
+  command -v herdr >/dev/null 2>&1 || return 1
+  herdr workspace list >/dev/null 2>&1
+}
 if [[ "$BACKEND" == "auto" ]]; then
-  if [[ "${HERDR_ENV:-0}" == "1" ]] && command -v herdr >/dev/null 2>&1; then
+  if herdr_reachable; then
     BACKEND=herdr
   else
-    die "not inside Herdr (HERDR_ENV=1) — start this from a Herdr pane, or pass -b print for the one-shot claude -p fallback" 1
+    die "no Herdr server answered — start herdr, or pass -b print for the one-shot claude -p fallback" 1
   fi
 fi
-if [[ "$BACKEND" == "herdr" ]] && [[ "${HERDR_ENV:-0}" != "1" ]]; then
-  die "backend herdr needs HERDR_ENV=1 (run inside a Herdr pane, or use -b print)" 1
+if [[ "$BACKEND" == "herdr" ]] && ! herdr_reachable; then
+  die "backend herdr needs a running Herdr server (and the herdr CLI in PATH), or use -b print" 1
 fi
 if [[ "$BACKEND" == "herdr" ]] && [[ -n "$RESUME_ID" ]]; then
   die "-r/--resume is for the print backend; the herdr backend reuses its pane" 2
