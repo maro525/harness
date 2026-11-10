@@ -118,11 +118,20 @@ timeout -k 1m 20m opencode run --agent plan --print-logs --log-level ERROR -m {m
 | `firecrawl_extract` | 複数ページから構造化データを抽出 |
 | `firecrawl_parse` | PDF など URL 上のドキュメントをパース |
 
+### 調べものの記録の置き場所
+
+**調べた結果はリポジトリの外、`~/.local/share/harness/tasks/{repo}/research/` に置く。** TASK_FILE（`{repo}/task-*.md`）と同じバケットなので、作業ツリーを切り替えても 1 か所にまとまり、git にも載らない。
+
+- `{repo}` は `~/.claude/scripts/task-file.sh dir` が出す（`basename $(git rev-parse --git-common-dir)` の `.git` を除いたもの。worktree でも同じバケット）。バケットまではスクリプトが作るが `research/` は作らないので、書く前に `mkdir -p` する
+- ファイル名は由来が分かる形にする: `{topic}-opencode.md`（実装知見）/ `{topic}-sources.md`（一次情報）
+- 記録は TASK_FILE と同居するので、後から `/team-review` や `/deploy` が同じバケットを探せば見つかる
+- **`.claude/docs/research/` は旧配置。** 2026-11-10 に git から外した（それまでの分は git の履歴で読める）。フォルダは古い道具が `>` で書き込んでも落ちないように `.gitkeep` で残してあるだけで、新規には書かない
+
 ### How to Route
 
 サブエージェントは使わず、メインセッションで二系統を同時に進める。
 
-1. **系統 2（実装知見）を先に起動**: `~/.claude/scripts/ai-fallback.sh {prompt_file}` を Bash の `run_in_background: true` で起動し、出力を `.claude/docs/research/{topic}-opencode.md` に落とす（10 分超かかることがある。stderr の `AI_MODEL` を `利用AI:` として記録する）
+1. **系統 2（実装知見）を先に起動**: `~/.claude/scripts/ai-fallback.sh {prompt_file}` を Bash の `run_in_background: true` で起動し、出力を `~/.local/share/harness/tasks/{repo}/research/{topic}-opencode.md` に落とす（`{repo}` の求め方は「調べものの記録の置き場所」。10 分超かかることがある。stderr の `AI_MODEL` を `利用AI:` として記録する）
 2. **系統 1（一次情報）をその間に実行**: `firecrawl_search` → 公式ドキュメント／リリースノートを `firecrawl_scrape`。主張ごとに出典 URL を控える
 3. ai-fallback.sh の完了通知を待ち、出力ファイルを読んで firecrawl の結果と突き合わせて統合する（食い違いは firecrawl 優先）
 
