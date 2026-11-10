@@ -1,6 +1,6 @@
 # harness
 
-`/orchestrate` を中心にした AI コーディングエージェント用のワークフロー定義。tier（XS / S / M / L）でタスクを分類し、startproject → team-implement → team-review → deploy の 4 フェーズを回す。各フェーズの記録は **リポジトリの外**（`~/.local/share/harness/tasks/{repo}/task-*.md`、TASK_FILE）に残る。worktree はすべて同じ `{repo}` を共有し、リポジトリを汚さない・PR にも載らない。
+`/orchestrate` を中心にした AI コーディングエージェント用のワークフロー定義。tier（XS / S / M / L）でタスクを分類し、startproject → team-implement → team-review → deploy の 4 フェーズを回す。各フェーズの記録は **リポジトリの外**（`~/.local/share/harness/tasks/{repo}/task-*.md`、TASK_FILE）に残る。worktree はすべて同じ `{repo}` を共有し、リポジトリを汚さない・PR にも載らない。調べものの記録（外部リサーチの出力）も同じバケットの `research/` に置く。
 
 もとは [maro525/_dotfiles](https://github.com/maro525/_dotfiles) の一部で、履歴ごと切り出した。シェル・ターミナル・各 CLI の一般設定は引き続き dotfiles 側にある。
 
