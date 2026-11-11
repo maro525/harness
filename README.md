@@ -40,7 +40,7 @@ harness/
 ├── sync-claude.sh
 ├── sync-opencode.sh
 ├── sync-agents.sh
-├── sync-cursor.sh            # ~/.agents/skills → Cursor のユーザー skill ディレクトリ（コピー）
+├── sync-cursor.sh            # ~/.agents/skills → Cursor が読むユーザー skill ディレクトリ（コピー）
 └── sync-pi.sh
 ```
 
@@ -52,7 +52,7 @@ dotfiles と同じく HOME ⇄ リポジトリの双方向同期（対話モー�
 ./sync-claude.sh      # ~/.claude の harness ファイルだけ（commands / rules / hooks / scripts / skills/herdr-boss）
 ./sync-opencode.sh    # ~/.config/opencode の harness ファイルだけ
 ./sync-agents.sh      # ~/.agents/skills の 4 フェーズ + orchestrate + claude-consult + herdr-boss（+ Cline 用 symlink）
-./sync-cursor.sh      # ~/.agents/skills を Cursor のユーザー skill ディレクトリへコピー（HOME ⇄ repo ではない）
+./sync-cursor.sh      # ~/.agents/skills を Cursor が読むユーザー skill ディレクトリへコピー（HOME ⇄ repo ではない）
 ./sync-pi.sh          # ~/.pi/agent/prompts の /orchestrate
 ./sync-*.sh -n        # 非対話。repo → HOME の自動コピー（初回配布にも使える）
 ./sync-*.sh -n --to-repo  # 非対話。HOME → repo の自動コピー
@@ -62,7 +62,7 @@ dotfiles と同じく HOME ⇄ リポジトリの双方向同期（対話モー�
 
 `~/.claude` と `~/.config/opencode` は dotfiles と共有しているので、各スクリプトは**自分が持つファイルを名前で列挙**し、ディレクトリ全体は走査しない。dotfiles 側の `sync-claude.sh` / `sync-opencode.sh` は同じ名前を除外している。ファイルを足したり消したりしたら両方のリストを揃える。
 
-`sync-cursor.sh` だけは HOME ⇄ repo ではなく、**`~/.agents/skills` → Cursor のユーザー skill ディレクトリへの一方向コピー**。Cursor は `~/.agents/skills` を読まない（ユーザー skill は `~/.cursor/skills`、プロジェクト skill は `<repo>/.cursor/skills`）うえ、Cline のように symlink では済まない — WSL から `/mnt/c` 上に張った symlink は WSL 専用の reparse point で、Windows 版 Cursor からは解決できないため実コピーが要る。既定のコピー先は `/mnt/c/Users/*/.cursor` の最初のプロファイル（無ければ `~/.cursor`）。配布した skill は `<dest>/.harness-managed` に記録し、`~/.agents/skills` から消えたものを prune する（`--no-prune` で無効化、`--dest` でコピー先を明示、`--exclude NAME` / `--exclude-cloudflare` で絞れる）。Cursor 純正の skills は `~/.cursor/skills-cursor` に `.sync-manifest.json` ごと Cursor が置いているので触らず、名前が衝突したら警告だけ出す。`~/.claude/scripts` を呼ぶ skill（orchestrate / 4 フェーズ / claude-consult / herdr*）は Windows ネイティブの Cursor では動かないので、コピー時にその一覧を表示する。
+`sync-cursor.sh` だけは HOME ⇄ repo ではなく、**`~/.agents/skills` → Cursor が読むユーザー skill ディレクトリへの一方向コピー**。Cursor は `~/.agents/skills` を読まない（ユーザー skill は `~/.cursor/skills` と `~/.claude/skills`、プロジェクト skill は `<repo>/.cursor/skills`）うえ、Cline のように symlink では済まない — WSL から `/mnt/c` 上に張った symlink は WSL 専用の reparse point で、Windows 版 Cursor からは解決できないため実コピーが要る。既定のコピー先は `/mnt/c/Users/*/.cursor` の最初のプロファイルで、**Windows プロファイルのときは `.cursor/skills` と `.claude/skills` の両方**に置く（Cursor のセッションが `~/.cursor/skills-cursor` の組み込みと `~/.claude/skills` しか列挙しなかった事例があるため）。WSL 側は `~/.cursor/skills` だけ — `~/.claude/skills` は dotfiles の持ち物（向こうの `sync-claude.sh` がディレクトリ走査する）なので触らない。配布した skill は `<dest>/.harness-managed` に記録し、`~/.agents/skills` から消えたものを prune する（`--no-prune` で無効化、`--dest` でコピー先を明示、`--exclude NAME` / `--exclude-cloudflare` で絞れる）。Cursor 純正の skills は `~/.cursor/skills-cursor` に `.sync-manifest.json` ごと Cursor が置いているので触らず、名前が衝突したら警告だけ出す。`~/.claude/scripts` を呼ぶ skill（orchestrate / 4 フェーズ / claude-consult / herdr*）は Windows ネイティブの Cursor では動かないので、コピー時にその一覧を表示する。
 
 hook の登録（`settings.json` の `hooks.UserPromptSubmit`）と `Skill(orchestrate)` などの許可は `~/.claude/settings.json` にあり、dotfiles 側で管理する。
 
