@@ -10,6 +10,8 @@ metadata:
 
 Cursor / pi / Cline / OpenCode などから、**別の Claude セッション**に設計相談・レビュー・実装の引き継ぎをさせるスキル。
 
+実装は `~/.claude/scripts/consult.sh`（`claude-consult.sh` は `--to claude` を固定した薄いラッパー）。**Codex を相談先にするときは [codex-consult](../codex-consult/SKILL.md)** を使う — ロール・Herdr の扱い・`--status` / `--close` は共通で、違いは権限（codex は read-only）と回答の受け取り方（codex はマーカーのみ）だけ。
+
 Herdr が動いていれば、**専用の tab に常駐する Claude Code セッションに `herdr agent prompt` で質問を打ち込む**。tab は無ければ作られ（呼び出し元の pane の中ならその workspace、Herdr の外からなら新しい workspace）、次回以降は使い回されるので、追加質問は同じ会話の続きになる（呼び出し元の pane は分割しない）。
 
 **`claude -p` へは自動フォールバックしない。** Herdr サーバに繋がらないときはエラーで止まる（「herdr を起動するか `-b print` を付けろ」と案内が出る）。単発の `claude -p` を使いたいときだけ `-b print` を明示する — ツール制限・会話の継続・tab の有無が変わるため、黙って切り替わらないようにしている。

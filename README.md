@@ -16,7 +16,9 @@ harness/
 │   └── scripts/
 │       ├── linear-ask.sh   # OpenCode 版 orchestrate の質問の中継用（Linear API キーが要る）
 │       ├── ai-fallback.sh  # リサーチ・設計相談のモデル連鎖（429 で次の候補へ）
+│       ├── consult.sh      # 相談の実装（--to claude|codex）。下の 2 本は薄いラッパー
 │       ├── claude-consult.sh  # 別の Claude セッションに相談 / レビュー / 実装を投げる（Cursor / pi / Cline 用。agents/skills/claude-consult が呼ぶ。Herdr 内では常駐 pane のセッションに送る）
+│       ├── codex-consult.sh   # 同じことを Codex セッションで（agents/skills/codex-consult。codex は read-only なのでマーカーで回答）
 │       ├── herdr-agent.sh  # Herdr の tab / workspace / worktree で任意のエージェント (pi / codex 等) を起動して依頼する。司令塔用の delegate / report / inbox も持つ
 │       ├── task-file.sh    # TASK_FILE の置き場所を解決（dir / new / find / resolve。リポジトリ外）
 │       └── phase-run.sh    # フェーズを任意の CLI / モデルで実行するディスパッチャ
@@ -29,7 +31,7 @@ harness/
 │   └── agents/
 ├── agents/                  # Claude 以外の CLI (pi / cline / opencode / codex) 向け Agent Skills (~/.agents/skills)
 │   ├── README.md            # 外部 CLI のフェーズ実行（orchestrate STEP 3P が直接読む）
-│   └── skills/              # 4 フェーズ + orchestrate + claude-consult（Cursor 等から Claude に設計相談）+ herdr-boss（司令塔）
+│   └── skills/              # 4 フェーズ + orchestrate + claude-consult / codex-consult（Cursor 等から設計相談）+ herdr-boss（司令塔）
 ├── pi/                      # pi 専用 (~/.pi/agent)
 │   ├── README.md            # 配布と前提（permissions の許可リスト）
 │   └── prompts/
@@ -51,7 +53,7 @@ dotfiles と同じく HOME ⇄ リポジトリの双方向同期（対話モー�
 ```bash
 ./sync-claude.sh      # ~/.claude の harness ファイルだけ（commands / rules / hooks / scripts / skills/herdr-boss）
 ./sync-opencode.sh    # ~/.config/opencode の harness ファイルだけ
-./sync-agents.sh      # ~/.agents/skills の 4 フェーズ + orchestrate + claude-consult + herdr-boss（+ Cline 用 symlink）
+./sync-agents.sh      # ~/.agents/skills の 4 フェーズ + orchestrate + claude-consult / codex-consult + herdr-boss（+ Cline 用 symlink）
 ./sync-cursor.sh      # ~/.agents/skills を Cursor のユーザー skill ディレクトリへコピー（HOME ⇄ repo ではない）
 ./sync-pi.sh          # ~/.pi/agent/prompts の /orchestrate
 ./sync-*.sh -n        # 非対話。repo → HOME の自動コピー（初回配布にも使える）

@@ -24,7 +24,9 @@ Herdr 上のエージェント・セッションは、**閉じるまで残る**�
 
 ## どこに開くか（topology）
 
-Herdr の構造は workspace → tab → pane。セッションをどこに作るかは `herdr-agent.sh ensure` の `--topology` で選ぶ（`claude-consult.sh` は常に `tab`）。
+Herdr の構造は workspace → tab → pane。セッションをどこに作るかは `herdr-agent.sh ensure` の `--topology` で選ぶ（`claude-consult.sh` / `codex-consult.sh` は常に `tab`）。
+
+相談先は 2 つで、実装は同じ `consult.sh`（`--to claude|codex`）。以下の `claude-consult.sh` は、Codex を相談先にするとき `codex-consult.sh` に読み替えればそのまま使える。Herdr の agent 名は claude が `hc-*`、codex が `hx-*` で分かれるので、両方を並べて残せる（引数なしの `--close` は両方閉じる）。
 
 | topology | 何ができる | 向いている場面 |
 |---|---|---|
