@@ -178,7 +178,7 @@ build_cmd() { # spec prompt tmpdir -> fills global CMD
     claude)
       # --allowedTools is variadic: the "=" form keeps the prompt from being
       # swallowed as another tool name.
-      CMD=(claude -p --model "${model:-opus}" --permission-mode acceptEdits
+      CMD=(claude -p --model "${model:-opus}" --permission-mode auto
         "--allowedTools=$CLAUDE_TOOLS" "$prompt")
       ;;
     opencode2)

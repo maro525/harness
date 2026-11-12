@@ -38,7 +38,7 @@ Cursor / pi / Cline / OpenCode などから、**別の Codex セッション**�
 | | claude-consult | codex-consult |
 |---|---|---|
 | バイナリ | `claude` | `codex` |
-| `consult` / `review` の権限 | 読み取り ＋ 回答ファイルの書き込み | `-s read-only`（回答ファイルを書けない） |
+| `consult` / `review` の権限 | 読み取り ＋ 回答ファイルの書き込み ＋ MCP（設定済みのサーバー） | `-s read-only`（回答ファイルを書けない。MCP は codex の設定次第） |
 | `implement` の権限 | `acceptEdits` | `-s workspace-write -a never` |
 | 回答の受け取り | 回答ファイル優先、マーカーはフォールバック | **常に `<<<ANSWER>>>` マーカーから抽出** |
 | 既定モデル | `opus` | `~/.codex/config.toml` の `model`（`-m` で上書き） |

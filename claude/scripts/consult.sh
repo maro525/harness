@@ -637,7 +637,11 @@ herdr_ensure_session() {
       args+=(-m "$ROLE_MODEL")
     fi
   else
-    args=(--model "$ROLE_MODEL" --permission-mode "$ROLE_MODE" --strict-mcp-config)
+    # No --strict-mcp-config: the MCP servers the person configured (Linear,
+    # firecrawl, browser tooling, ...) are available, so a consultation can look
+    # things up and judge with them. The read-only intent is kept by the tool
+    # list below, not by starving the session of MCP.
+    args=(--model "$ROLE_MODEL" --permission-mode "$ROLE_MODE")
     args+=(--add-dir "$(role_answer_dir "$name")")
     if [[ -n "$ROLE_TOOLS" ]]; then
       args+=(--tools "$ROLE_TOOLS")
@@ -904,9 +908,10 @@ herdr_consult() {
 claude_print_consult() {
   local base=$1 prompt=$2
   local answer_file="${base}.answer.md" raw_file="${base}.json"
-  # The print backend stays strictly read-only, whatever the role's tool list is.
-  local args=(-p --model "$ROLE_MODEL" --permission-mode plan --tools "Read,Grep,Glob"
-              --strict-mcp-config --output-format json)
+  # The print backend stays read-only (no writes, no Bash) whatever the role's
+  # tool list is; MCP stays available for looking things up.
+  local args=(-p --model "$ROLE_MODEL" --permission-mode auto --tools "Read,Grep,Glob"
+              --output-format json)
   [[ -n "$RESUME_ID" ]] && args+=(--resume "$RESUME_ID")
   local rc=0
   # The prompt goes through stdin, not argv: it can be long (ARG_MAX) and it may
