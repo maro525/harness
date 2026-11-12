@@ -37,6 +37,23 @@ $ARGUMENTS: "{task description} [--tier=S|M|L] [--task-file={TASK_FILE}] [--line
 - **失敗しても止まらない**: フェーズが失敗（exit ≠ 0 / 空出力 / タイムアウト）したら 1 度だけ別 runner で再試行し（`phase-run.sh` の fallback が自動で行う）、それでも駄目なら報告して停止する。TASK_FILE には失敗を書かない
 - 報告は日本語。モデル名・runner 名・URL・ブランチ名はそのまま書く
 
+## ラフな指示から実行まで（呼び出し側のエージェント向け）
+
+**ユーザーに `--tier` / `--phase` / TASK_FILE のパスを打たせない。聞き返さない**（Linear ID だけは、既存 issue に紐づける必要があるときに確認してよい）。
+
+| ユーザーの言い方 | モード | 自分で決めること |
+|---|---|---|
+| 「これ実装して」「PR まで」「最後までやって」 | 通常（STEP 0〜7） | tier 判定、feature 名、branch / base |
+| 「この 1 フェーズだけ」「レビューだけ回して」 | フェーズ指定（STEP 3P） | どの phase か。`--task-file` は `task-file.sh find` で探す |
+| 「さっきの PR に追加で」 | 追加修正（STEP 3F） | 既存 TASK_FILE を `find` で特定 |
+| 「issue は無いけど頼む」 | 通常（NOLINEAR） | Linear は触らない。ロックは feature 名で取る |
+| 「終わって」「もういい」 | — | `lock release`、残った tab を `close` / `reap` |
+
+- runner は自分の CLI 名（Cursor なら `--runner=cursor`）。ロックと `## Meta` の `runner:` に入る
+- **同じ issue を並列で回さない**（実行ロックが止める）。別 issue なら並列可
+- 報告は日本語。Linear を触ったか（投稿 / ステータス / description）を最後に 1 行で添える
+- 途中で相談が必要になったら `claude-consult.sh --text "..."`（前の回答を引き継ぐときだけ `--append {answer.md}`）
+
 ## モード判定
 
 | モード | 条件 | 開始 |

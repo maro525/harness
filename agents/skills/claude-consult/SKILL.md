@@ -62,8 +62,18 @@ Claude Code 自身からは使わない（自分自身を呼ぶ形になる）�
 | 「レビューして」「見てほしい」「まずいとこある？」 | `review` | `claude-consult.sh --role review --text "{そのまま＋対象の diff}"` |
 | 「実装して」「直して」「やっておいて」 | `implement` | `claude-consult.sh --role implement --text "{そのまま}"` |
 | 「codex にも聞いて」 | `consult` | `codex-consult.sh --text "{同じ質問}"` |
-| 「両方に聞いて」「比べて」 | `consult` | 2 本並列（claude と codex） |
-| 「終わって」「もういい」 | — | `--close --role {使ったロール}` |
+| 「consult と review 両方の立場で」 | `--roles consult,review` | 1 コマンドで並列。出力はロールごとの節 |
+| 「両方に聞いて」「比べて」（モデル違い） | `consult` | claude と codex を**同時に**起動 → 両方待って差分を表に |
+| 「並行で別々の仕事を進めて」「裏で走らせて」 | herdr-boss | `delegate`（非同期・子の画面は見えない。報告で判断） |
+| 「終わって」「もういい」 | — | `--close --role {使ったロール}` / `close` / `reap` |
+
+並列の 3 種類は別物（混ぜない）:
+
+| 種類 | 何が並ぶ | 待ち方 |
+|---|---|---|
+| `--roles consult,review` | 同じリポジトリの 2 ロール | 1 コマンド内で待つ |
+| claude + codex | 別モデル 2 本 | 2 コマンドを同時起動 → 両方待つ |
+| `delegate` × 子の数 | 別 tab / worktree | 待たない（inbox の報告） |
 
 - **既定値**（何も指定しなくてよい）: role=`consult`、`--context` はインラインのとき自動で付く、タイムアウト 20 分、バックエンドは Herdr
 - 足りない前提は**自分で調べて補う**（リポジトリを見る、`--context` で付く repo/branch/直近コミットを使う）
