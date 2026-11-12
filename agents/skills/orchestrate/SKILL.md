@@ -68,6 +68,7 @@ $ARGUMENTS: "{task description} [--tier=S|M|L] [--task-file={TASK_FILE}] [--line
 ```
 
 - 各タスクに worktree + tab を作り、`ask --no-wait` で依頼して**すぐ戻る**（待たない）
+- 名前は `~/src/harness/docs/naming.md` の規則（セッション `orch-<id>-<feature>`、ブランチ `feature/<id>-<feature>`）
 - 既定は `--kind claude --model sonnet`（`--kind codex|pi` も可）。`--runner` はロックと `## Meta` の `runner:` に入る
 - 進捗は `herdr-agent.sh read orch-{id}-{feature}` / `herdr-agent.sh list`。終わったら `close` / `reap`
 - 同じ issue を 2 つ渡すとエラー。既にロックがある issue は警告を出して続行（その run は acquire で止まる）

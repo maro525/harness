@@ -151,6 +151,21 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ -n "$CMD" ]] || { usage >&2; exit 2; }
+
+# Naming rule (docs/naming.md): lowercase words joined by '-'. The name becomes
+# the Herdr agent name, the tab label and (with --topology worktree) the
+# workspace label. Herdr itself refuses anything but [a-z][a-z0-9_-]{0,31}, and
+# it does so *after* the tab exists, so check the same rule here and fail before
+# anything is created. '-' is the house style; '_' is accepted with a warning.
+check_name() {
+  local name=$1
+  if [[ ! "$name" =~ ^[a-z][a-z0-9_-]{0,31}$ ]]; then
+    die "invalid name '$name': use [a-z][a-z0-9_-] up to 32 chars (docs/naming.md)" 2
+  fi
+  case "$name" in
+    *_*) echo "herdr-agent: warning: prefer '-' over '_' in '$name' (docs/naming.md)" >&2 ;;
+  esac
+}
 # report / inbox only touch files: they must keep working when the server is
 # down (the notification is checked on its own and degrades to a warning).
 case "$CMD" in
@@ -202,6 +217,7 @@ pane_stable() {
 
 cmd_ensure() {
   [[ -n "$NAME" ]] || die "ensure needs a name" 2
+  check_name "$NAME"
   [[ -n "$KIND" ]] || die "ensure needs --kind" 2
   REPO=${REPO:-$PWD}
   REPO=$(cd "$REPO" && pwd) || die "not a directory: $REPO"
@@ -282,10 +298,9 @@ cmd_ensure() {
     sleep 1
   fi
 
-  herdr agent start "$NAME" --kind "$KIND" --pane "$pane" -- "${NATIVE_ARGS[@]}" >&2 ||
-    die "could not start $KIND in $pane (approval dialog?)"
-  pane_stable "$NAME"
-
+  # Record the session before starting it: if the agent fails to start (a bad
+  # name, an approval dialog), the tab/worktree already exists and `close` has to
+  # be able to find it. The start failure below leaves it recorded.
   mkdir -p "$STATE_DIR"
   jq -n --arg agent "$NAME" --arg pane "$pane" --arg tab "$tab" --arg kind "$KIND" \
     --arg workspace "$workspace" --arg topology "$TOPOLOGY" --argjson ws_owned "$ws_owned" \
@@ -293,6 +308,10 @@ cmd_ensure() {
     '{agent:$agent, pane:$pane, tab:$tab, tab_owned:true, workspace:$workspace,
       workspace_owned:$ws_owned, topology:$topology, kind:$kind, repo:$repo,
       created:$created}' >"$state"
+
+  herdr agent start "$NAME" --kind "$KIND" --pane "$pane" -- "${NATIVE_ARGS[@]}" >&2 ||
+    die "could not start $KIND in $pane — $NAME is recorded, so \`herdr-agent.sh close $NAME\` cleans it up"
+  pane_stable "$NAME"
 
   echo "AGENT=$NAME" >&2
   echo "PANE=$pane" >&2
@@ -410,6 +429,7 @@ cmd_ask() {
 # context in the same tab, without opening another tab.
 cmd_restart() {
   [[ -n "$NAME" ]] || die "restart needs a name" 2
+  check_name "$NAME"
   local state pane tab kind repo waited=0
   state=$(state_file "$NAME")
   [[ -f "$state" ]] || die "$NAME is not registered — run ensure first" 2
@@ -781,6 +801,7 @@ EOF
 
 cmd_delegate() {
   [[ -n "$NAME" ]] || die "delegate needs a child name" 2
+  check_name "$NAME"
   [[ -n "$REQUEST" ]] || die "delegate needs a request file (or -)" 2
   [[ -f "$(state_file "$NAME")" ]] || die "$NAME is not registered — run ensure first" 2
 

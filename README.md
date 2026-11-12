@@ -25,6 +25,7 @@ harness/
 │       └── phase-run.sh    # フェーズを任意の CLI / モデルで実行するディスパッチャ
 ├── docs/
 │   ├── phase-contract.md   # 4 フェーズが満たす契約（引数・書き込み・RESULT/QUESTIONS・status）
+│   ├── naming.md           # セッション / ブランチ / workspace の命名規則
 │   └── session-lifecycle.md  # エージェント・セッションをいつ開いて、いつ閉じるか（TTL なしの明示ルール）
 ├── opencode/                # OpenCode 版 (~/.config/opencode)
 │   ├── README.md            # OpenCode 版と Claude 版の違い

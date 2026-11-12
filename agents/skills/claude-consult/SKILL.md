@@ -46,6 +46,7 @@ Claude Code 自身からは使わない（自分自身を呼ぶ形になる）�
 | `implement` | フルツール（編集可） | opus | `hc-implement` |
 
 - どのロールも `--permission-mode auto` で起動する。相談用の tab は誰も見ていないので、承認ダイアログで止まらないようにしている（変えたいときは `CONSULT_PERMISSION_MODE`。例 `plan` / `acceptEdits` / `bypassPermissions`）。`consult` / `review` の**組み込み**ツールは `Read,Grep,Glob` と回答ファイルへの `Write` だけに絞ってある
+- セッション名は `hc-<role>` / `hx-<role>`（`~/src/harness/docs/naming.md` の規則。`--name` で上書きするときも同じ形にする）
 - **MCP は使える**（`~/.claude/settings.json` に設定したサーバー。Linear / firecrawl / GitHub など）。「Linear の issue を見て判断して」のような相談ができる。ただし**Linear への書き込み（コメント・ステータス・description）は orchestrator の仕事**で、consult は書かない（フェーズ契約）
 
 - ロールごとに tab と会話が独立する。実装は `implement`、確認は `review` に投げる、という分担ができる

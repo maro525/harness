@@ -180,6 +180,13 @@ case "$TARGET" in
   *) usage >&2; exit 2 ;;
 esac
 
+# Session names become the Herdr agent name / tab label (docs/naming.md). Herdr
+# refuses anything but [a-z][a-z0-9_-]{0,31} after the tab exists, so check the
+# same rule before a tab is created.
+if [[ -n "$NAME_OVERRIDE" && ! "$NAME_OVERRIDE" =~ ^[a-z][a-z0-9_-]{0,31}$ ]]; then
+  die "invalid --name '$NAME_OVERRIDE': use [a-z][a-z0-9_-] up to 32 chars (docs/naming.md)" 2
+fi
+
 if [[ "${SHOW_TARGET:-}" != "" ]]; then  target=$SHOW_TARGET
   if [[ -f "$(printf '%s/%s.json' "$STATE_DIR" "$target")" ]]; then
     : # already an agent name
