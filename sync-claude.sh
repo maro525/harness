@@ -34,6 +34,7 @@ HARNESS_FILES=(
   scripts/codex-consult.sh
   scripts/consult.sh
   scripts/orchestrate-parallel.sh
+  scripts/herdr-cleanup.sh
   skills/herdr-boss/SKILL.md
 )
 
