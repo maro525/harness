@@ -52,32 +52,77 @@ Claude Code 自身からは使わない（自分自身を呼ぶ形になる）�
 - モデルは `-m` / `CONSULT_MODEL` / `CONSULT_IMPLEMENT_MODEL`、追加フラグは `CONSULT_<ROLE>_ARGS`（例 `--effort high`）。旧 `CLAUDE_CONSULT_*` も読む
 - フラグやモデルを変えたときは `--new` で tab を作り直す（起動済みセッションには反映されない）
 
+## ラフな指示から実行まで（呼び出し側のエージェント向け）
+
+**ユーザーにフラグやファイル名を打たせない。聞き返さない。** 次の対応表で自分で決めて、そのまま実行する。
+
+| ユーザーの言い方 | role | 実行 |
+|---|---|---|
+| 「相談して」「聞いてみて」「意見ほしい」 | `consult` | `claude-consult.sh --text "{そのままの言葉}"` |
+| 「レビューして」「見てほしい」「まずいとこある？」 | `review` | `claude-consult.sh --role review --text "{そのまま＋対象の diff}"` |
+| 「実装して」「直して」「やっておいて」 | `implement` | `claude-consult.sh --role implement --text "{そのまま}"` |
+| 「codex にも聞いて」 | `consult` | `codex-consult.sh --text "{同じ質問}"` |
+| 「consult と review 両方の立場で」 | `--roles consult,review` | 1 コマンドで並列。出力はロールごとの節 |
+| 「両方に聞いて」「比べて」（モデル違い） | `consult` | claude と codex を**同時に**起動 → 両方待って差分を表に |
+| 「並行で別々の仕事を進めて」「裏で走らせて」 | herdr-boss | `delegate`（非同期・子の画面は見えない。報告で判断） |
+| 「終わって」「もういい」 | — | `--close --role {使ったロール}` / `close` / `reap` |
+
+並列の 3 種類は別物（混ぜない）:
+
+| 種類 | 何が並ぶ | 待ち方 |
+|---|---|---|
+| `--roles consult,review` | 同じリポジトリの 2 ロール | 1 コマンド内で待つ |
+| claude + codex | 別モデル 2 本 | 2 コマンドを同時起動 → 両方待つ |
+| `delegate` × 子の数 | 別 tab / worktree | 待たない（inbox の報告） |
+
+- **既定値**（何も指定しなくてよい）: role=`consult`、`--context` はインラインのとき自動で付く、タイムアウト 20 分、バックエンドは Herdr
+- 足りない前提は**自分で調べて補う**（リポジトリを見る、`--context` で付く repo/branch/直近コミットを使う）
+- 呼び出しは**フォアグラウンド**。回答が返るまで待ち、返ってきた本文をそのまま読んで要約する
+- `--close` は**採用/却下を決めた後**に自分で実行する（ユーザーに言われなくても）
+
 ## 手順
 
 ### 1. 相談を書く
 
-作業ディレクトリの外（`/tmp` など）か、コミットされない場所にプロンプトファイルを作る。**Claude はこの会話を知らない**ので、次を自己完結で書く。
+**思いつきの 1〜2 行でよい。ファイルも、立派な依頼文も要らない。** 不足する前提（リポジトリ・ブランチ・直近のコミット・変更ファイル数）は `--context` が自動で付ける。呼び出し側のエージェントは、**ユーザーに書き直させずに**、そのままの言葉で投げてよい。
 
-- 目的と背景（何を作る・直すのか）
-- 現状と制約（関係するファイルパスを具体的に。Claude が Read で読める）
-- 聞きたいこと（案の比較、落とし穴、設計の妥当性など。1 回に 1 テーマ）
-- 回答の形式の希望（結論を先に、理由、代替案、など）
+```bash
+# 最短（引数で渡す。ファイルを作らない）
+~/.claude/scripts/claude-consult.sh --context --text "CI をもっとはやくしたい。方法を考えたい"
 
-秘密情報（API キー・個人情報）は書かない。
+# 複数行をそのまま（ヒアドキュメント）
+~/.claude/scripts/claude-consult.sh --context - <<'EOF'
+CI をもっとはやくしたいんだよね。方法を考えたい
+EOF
+
+# 長い相談・`--append` で使い回す相談だけファイルにする
+~/.claude/scripts/claude-consult.sh /tmp/q.md
+```
+
+- `--text` / 標準入力のときの出力は `$TMPDIR/harness-consult/out/` なので、リポジトリの cwd は汚れない
+- `--context` を付けると「repo / branch / cwd / changed files / 直近 5 コミット」が質問の前に付く。1 行の相談でも見当違いの回答になりにくい
+- **Claude はこの会話を知らない。** だから最低限、次のどれかは入れる（足りなければ自分で調べる前提でよい）:
+  - 何をしたいか（目的・つらさ）
+  - 対象（ファイルパスやブランチ。`--context` が入れる分を除く）
+  - 回答の形（結論を先に / 候補を 3 つ / リスクも / 短く）
+- 秘密情報（API キー・個人情報）は書かない
 
 ### 2. 実行する
 
 ```bash
 ~/.claude/scripts/claude-consult.sh {prompt_file}                    # consult（読み取り専用）
+~/.claude/scripts/claude-consult.sh --context --text "{一言}"       # 一番短い形
+~/.claude/scripts/claude-consult.sh - < {prompt_file}               # 標準入力から
 ~/.claude/scripts/claude-consult.sh --role review {prompt_file}       # review 用 tab
 ~/.claude/scripts/claude-consult.sh --role implement {prompt_file}    # 実装用 tab（書き込み可）
 ~/.claude/scripts/claude-consult.sh --roles review,consult {prompt_file}  # 並列に別ロールへ
 ~/.claude/scripts/claude-consult.sh -t 30m -m sonnet {prompt_file}    # タイムアウト / モデル
 ```
 
-- 長くかかる（数分〜）ので、使えるならバックグラウンドで実行して完了を待つ。タイムアウト既定 20 分（`-t` / `CLAUDE_CONSULT_TIMEOUT`）
-- stdout が回答本文。`{prompt_file の拡張子を除いた名前}.answer.md` に同じ内容、`.json` にターミナルの生テキストと送信結果が残る（`--roles` は `.{role}.answer.md` / `.{role}.json`）
-- stderr の `AI_MODEL=claude/{model}` / `AGENT={agent名}` / `PANE={pane id}` を控える（tab 名は agent 名になる）
+- **このコマンドは回答が返るまで戻らない（同期）**。バックグラウンドに回さず、フォアグラウンドで待って stdout をそのまま読めばよい（追加の「待つ」手順は無い）。タイムアウト既定 20 分（`-t` / `CONSULT_TIMEOUT`）
+- どうしてもバックグラウンドにするなら、**完了通知の後に stderr の `ANSWER_FILE={path}` を読む**（回答本文はそこにも書かれている）
+- stdout が回答本文。`{prompt_file の拡張子を除いた名前}.answer.md` に同じ内容、`.json` にターミナルの生テキストと送信結果が残る（`--roles` は `.{role}.answer.md` / `.{role}.json`。標準入力のときは `$TMPDIR/harness-consult/out/{target}-consult-{timestamp}.answer.md`）
+- stderr の `ANSWER_FILE=…` / `AI_MODEL=claude/{model}` / `AGENT={agent名}` / `PANE={pane id}` を控える（tab 名は agent 名になる）
 - 回答は tab に常駐するセッションが `$TMPDIR/harness-consult/{agent}/` に書いた Markdown をそのまま使う（TUI の描画を経由しないのでコードフェンスが保たれる）
 - `--debug` でターミナルの生テキストを `{base}.pane.txt` に保存
 

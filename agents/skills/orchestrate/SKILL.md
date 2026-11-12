@@ -37,6 +37,43 @@ $ARGUMENTS: "{task description} [--tier=S|M|L] [--task-file={TASK_FILE}] [--line
 - **失敗しても止まらない**: フェーズが失敗（exit ≠ 0 / 空出力 / タイムアウト）したら 1 度だけ別 runner で再試行し（`phase-run.sh` の fallback が自動で行う）、それでも駄目なら報告して停止する。TASK_FILE には失敗を書かない
 - 報告は日本語。モデル名・runner 名・URL・ブランチ名はそのまま書く
 
+## ラフな指示から実行まで（呼び出し側のエージェント向け）
+
+**ユーザーに `--tier` / `--phase` / TASK_FILE のパスを打たせない。聞き返さない**（Linear ID だけは、既存 issue に紐づける必要があるときに確認してよい）。
+
+| ユーザーの言い方 | モード | 自分で決めること |
+|---|---|---|
+| 「これ実装して」「PR まで」「最後までやって」 | 通常（STEP 0〜7） | tier 判定、feature 名、branch / base |
+| 「この 1 フェーズだけ」「レビューだけ回して」 | フェーズ指定（STEP 3P） | どの phase か。`--task-file` は `task-file.sh find` で探す |
+| 「さっきの PR に追加で」 | 追加修正（STEP 3F） | 既存 TASK_FILE を `find` で特定 |
+| 「issue は無いけど頼む」 | 通常（NOLINEAR） | Linear は触らない。ロックは feature 名で取る |
+| 「終わって」「もういい」 | — | `lock release`、残った tab を `close` / `reap` |
+| 「A / B / C それぞれ進めて」（並列） | 並列（下の「並列で回す」） | `orchestrate-parallel.sh A B C` |
+
+- runner は自分の CLI 名（Cursor なら `--runner=cursor`）。ロックと `## Meta` の `runner:` に入る
+- **同じ issue を並列で回さない**（実行ロックが止める）。別 issue なら並列可
+- 報告は日本語。Linear を触ったか（投稿 / ステータス / description）を最後に 1 行で添える
+- 途中で相談が必要になったら `claude-consult.sh --text "..."`（前の回答を引き継ぐときだけ `--append {answer.md}`）
+
+## 並列で回す（複数タスク）
+
+「task-A / task-B / task-C をそれぞれ進めて」と言われたら、**順番に回さず**、worktree を分けて同時に流す。条件は 3 つで、どれか外すと静かに壊れる。
+
+1. **1 タスク 1 ラン** — 実行ロックは `repo + LINEAR_ID` 単位。同じ issue を 2 本にすると片方が acquire で止まる
+2. **1 ラン 1 worktree** — ブランチ切替・commit・push・PR 作成をするので、同じ作業ツリーで 2 本走らせると git が壊れる。**ロックは issue 単位なのでこれを見逃す**
+3. **`delegate` ではなく `ask`** — `delegate` は boss の protocol を付ける。その節は phase-run.sh / consult / サブエージェントを禁じるので orchestrate と衝突する
+
+```bash
+~/.claude/scripts/orchestrate-parallel.sh PROJ-573:ci PROJ-580:cache :quick-fix
+```
+
+- 各タスクに worktree + tab を作り、`ask --no-wait` で依頼して**すぐ戻る**（待たない）
+- 既定は `--kind claude --model sonnet`（`--kind codex|pi` も可）。`--runner` はロックと `## Meta` の `runner:` に入る
+- 進捗は `herdr-agent.sh read orch-{id}-{feature}` / `herdr-agent.sh list`。終わったら `close` / `reap`
+- 同じ issue を 2 つ渡すとエラー。既にロックがある issue は警告を出して続行（その run は acquire で止まる）
+- `--dry-run` で計画だけ、`--ensure-only` で worktree / tab だけ作る
+- モデルを散らすと 429 を避けやすい（例: `--kind claude --model sonnet` と `--kind codex` を混ぜる）
+
 ## モード判定
 
 | モード | 条件 | 開始 |

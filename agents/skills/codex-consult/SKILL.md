@@ -23,6 +23,16 @@ Cursor / pi / Cline / OpenCode などから、**別の Codex セッション**�
   - 外部リサーチ → `ai-fallback.sh`（codex も候補に入っている）
 - **`herdr-agent.sh ensure` / `delegate` を直接使わない**（`hx-*` の tab/pane 管理はこのスクリプトが持つ）
 
+## ラフな指示から実行まで
+
+言い方と既定値の対応表は claude-consult の SKILL.md「ラフな指示から実行まで」を見る（codex でも同じ。実行するスクリプトが `codex-consult.sh` になるだけ）。codex は read-only なので、`consult` / `review` の質問に「コードを直さないで」と改めて書く必要はない。
+
+**ユーザーにフラグやファイル名を打たせない。聞き返さない。** 例:
+
+```bash
+~/.claude/scripts/codex-consult.sh --text "{ユーザーの言葉}"
+```
+
 ## claude-consult との違い
 
 | | claude-consult | codex-consult |
@@ -54,6 +64,10 @@ Cursor / pi / Cline / OpenCode などから、**別の Codex セッション**�
 
 ```bash
 ~/.claude/scripts/codex-consult.sh {prompt_file}                      # consult（read-only）
+~/.claude/scripts/codex-consult.sh --context --text "{一言}"          # 一番短い形
+~/.claude/scripts/codex-consult.sh - <<'EOF'                          # ファイルを作らずにその場で
+この設計の弱点を 3 つ挙げて。対象は src/foo.ts。結論を先に。
+EOF
 ~/.claude/scripts/codex-consult.sh --role review {prompt_file}         # review 用 tab
 ~/.claude/scripts/codex-consult.sh --role implement {prompt_file}      # 実装用 tab（workspace-write）
 ~/.claude/scripts/codex-consult.sh --roles review,consult {prompt_file} # 並列に別ロールへ
@@ -61,8 +75,10 @@ Cursor / pi / Cline / OpenCode などから、**別の Codex セッション**�
 ~/.claude/scripts/codex-consult.sh -b print {prompt_file}              # Herdr 無しの単発 codex exec
 ```
 
-- stdout が回答本文、`{base}.answer.md` と `.json`（生ログ）が残る。stderr の `AI_MODEL=codex/{model}` / `AGENT=hx-{role}` / `PANE={pane id}` を控える
-- 長くかかる（数分〜）。既定タイムアウト 20 分（`-t` / `CONSULT_TIMEOUT`）
+- **回答が返るまで戻らない（同期）**。フォアグラウンドで待って stdout を読むだけでよい。バックグラウンドにするなら、完了通知の後に stderr の `ANSWER_FILE=` を読む
+- `--text` で一言を渡せる。`--context` を付けると repo / branch / 直近のコミットが質問の前に付く（claude-consult と同じ）
+- stdout が回答本文、`{base}.answer.md` と `.json`（生ログ）が残る（標準入力のときは `$TMPDIR/harness-consult/out/` 配下）。stderr の `ANSWER_FILE=…` / `AI_MODEL=codex/{model}` / `AGENT=hx-{role}` / `PANE={pane id}` を控える
+- 既定タイムアウト 20 分（`-t` / `CONSULT_TIMEOUT`）
 
 ### 3. 続ける / 閉じる
 
