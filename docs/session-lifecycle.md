@@ -93,6 +93,19 @@ Herdr の構造は workspace → tab → pane。セッションをどこに作�
 
 3. **迷ったとき**: `--status` / `herdr-agent.sh list` を見て、`idle` のまま用のないものを閉じる
 
+4. **同じタスクを 2 セッションでやらない**: TASK_FILE はブランチ単位で別ファイルになるので、記録だけでは重複を防げない。orchestrate は STEP 2 で **リース**を取り、取れなければ開始しない。
+
+   ```bash
+   ~/.claude/scripts/task-file.sh lock acquire --linear-id={LINEAR_ID} --feature={feature} --runner={claude|cursor|pi}
+   ~/.claude/scripts/task-file.sh lock refresh --linear-id={LINEAR_ID} --runner={runner}   # 各 STEP で
+   ~/.claude/scripts/task-file.sh lock release --linear-id={LINEAR_ID} --runner={runner}   # 終了時 / 中止時
+   ~/.claude/scripts/task-file.sh lock show    --linear-id={LINEAR_ID}                    # 保持者の確認
+   ```
+
+   - リースは `~/.local/share/harness/locks/{repo}-{LINEAR_ID}.lock`（45 分で失効。**更新を怠ると別のランナーに奪われる**）
+   - `acquire` が exit 1 なら、表示された保持者（runner / started / cwd / task_file）と経過時間をユーザーに報告して止まる。奪うのは `--takeover` を明示したときだけ
+   - TASK_FILE を引き継ぐとき（追加修正・フェーズ指定）は `--task-file={TASK_FILE}` を付ける
+
 ## 安全策
 
 - `--close` / `reap` は **自分が作った tab のときだけ** tab を閉じる（状態ファイルの `tab_owned`）。

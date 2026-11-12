@@ -17,6 +17,9 @@
 #   task-file.sh new     [--repo=DIR] --feature=SLUG [--linear-id=ID] [--branch=BR]
 #   task-file.sh find    [--repo=DIR] [--linear-id=ID]
 #   task-file.sh resolve <path-or-name> [--repo=DIR]
+#   task-file.sh lock    <acquire|refresh|release|show> [--repo=DIR]
+#                        [--linear-id=ID] [--feature=SLUG] [--runner=NAME]
+#                        [--ttl=45m] [--takeover] [--task-file=PATH]
 #   task-file.sh legacy  [--repo=DIR]                     in-repo dir, if any
 #   task-file.sh root                                     the tasks root
 #
@@ -25,13 +28,24 @@
 #   --linear-id=ID  Linear issue id; omitted = NOLINEAR
 #   --feature=SLUG  short feature name used in the file name (required by `new`)
 #   --branch=BR     current branch, used to avoid clobbering a same-named task
+#   --runner=NAME   who holds the lock (claude / cursor / pi ...)
+#   --ttl=45m       lease lifetime; older leases may be taken over (lock)
+#   --takeover      steal a lease that is still fresh (lock)
+#   --task-file=P  TASK_FILE to record in the lease (lock)
 #   -h, --help      this help
+#
+# `lock` exists because the TASK_FILE alone cannot stop two orchestrators from
+# starting the same issue: `new` keeps one file per branch, so a Claude run and
+# a Cursor run on different branches never see each other. The lease is keyed on
+# the repository + Linear id (feature slug when there is no issue), lives outside
+# the repository, and is refreshed as the runner works.
 #
 # exit: 0 = ok, 1 = nothing found (find/resolve), 2 = usage error
 
 set -uo pipefail
 
 TASKS_ROOT="${HARNESS_TASKS_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/harness/tasks}"
+LOCKS_ROOT="${HARNESS_LOCKS_DIR:-$(dirname "$TASKS_ROOT")/locks}"
 
 die() {
   printf 'task-file: %s\n' "$1" >&2
@@ -47,6 +61,8 @@ Usage: task-file.sh <command> [options]
                                          path for a new TASK_FILE (not created)
   find     [--repo=DIR] [--linear-id=ID] existing TASK_FILEs (bucket, then legacy)
   resolve  <path-or-name> [--repo=DIR]   absolute path of an existing TASK_FILE
+  lock     acquire|refresh|release|show   one runner per task (lease file)
+                                         [--runner=NAME] [--ttl=45m] [--takeover]
   legacy   [--repo=DIR]                  <repo>/.claude/docs/decisions, if any
   root                                   the tasks root
 
@@ -55,6 +71,10 @@ Options:
   --linear-id=ID  Linear issue id (default: NOLINEAR)
   --feature=SLUG  short feature name used in the file name
   --branch=BR     current branch (same issue in two worktrees)
+  --runner=NAME   who holds the lock (claude / cursor / pi ...)
+  --ttl=45m       lock: lease lifetime (45m / 90s / 2h); older leases may be taken
+  --takeover      lock: steal a lease that is still fresh
+  --task-file=P   lock: TASK_FILE recorded in the lease
   -h, --help      this help
 
 TASK_FILEs live in ${HARNESS_TASKS_DIR:-~/.local/share/harness/tasks}/<repo>/,
@@ -70,6 +90,10 @@ REPO_ARG=""
 FEATURE=""
 LINEAR_ID=""
 BRANCH=""
+RUNNER=""
+TTL="45m"
+TAKEOVER=0
+LOCK_TASK_FILE=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -77,6 +101,10 @@ while [[ $# -gt 0 ]]; do
     --feature=*) FEATURE=${1#*=} ;;
     --linear-id=*) LINEAR_ID=${1#*=} ;;
     --branch=*) BRANCH=${1#*=} ;;
+    --runner=*) RUNNER=${1#*=} ;;
+    --ttl=*) TTL=${1#*=} ;;
+    --task-file=*) LOCK_TASK_FILE=${1#*=} ;;
+    --takeover) TAKEOVER=1 ;;
     -h|--help) usage; exit 0 ;;
     --*) die "unknown option: $1" ;;
     *)
@@ -254,6 +282,139 @@ cmd_resolve() {
   exit 1
 }
 
+# ─── task lock (one task, one runner) ─────────────────────────────────
+#
+# A lease, not a held fd: an orchestrator is a series of separate commands, not
+# one long-lived process, so there is nothing to keep open. The runner refreshes
+# `updated_epoch` as it works; a lease older than --ttl may be taken over by the
+# next acquire (with a warning), a fresh one needs --takeover.
+
+lock_seconds() { # 45m / 90s / 2h / 600
+  local t=$1 mult=1 num
+  case "$t" in
+    *m) mult=60; num=${t%m} ;;
+    *s) num=${t%s} ;;
+    *h) mult=3600; num=${t%h} ;;
+    *) num=$t ;;
+  esac
+  [[ "$num" =~ ^[0-9]+$ ]] || die "invalid --ttl: $1"
+  (( num > 0 )) || die "invalid --ttl: $1"
+  printf '%s' $((num * mult))
+}
+
+# Repository + Linear id (the identity that two orchestrators share), falling
+# back to the feature slug, then to the repository alone.
+lock_key() {
+  local repo key slugged
+  repo=$(repo_dir)
+  key=$(repo_key "$repo")
+  if [[ -n "$LINEAR_ID" && "$LINEAR_ID" != "NOLINEAR" ]]; then
+    printf '%s-%s' "$key" "$LINEAR_ID"
+    return 0
+  fi
+  slugged=$(slug "${FEATURE:-}")
+  if [[ -n "$slugged" ]]; then
+    printf '%s-task-%s' "$key" "$slugged"
+  else
+    printf '%s-repo' "$key"
+  fi
+}
+
+lease_field() { # file key
+  [[ -f "$1" ]] || return 0
+  sed -n "s/^$2=//p" "$1" | head -1
+}
+
+cmd_lock() {
+  local action=${ARG:-} key path now holder age ttl_s runner tmp upd held_ttl
+  case "$action" in
+    acquire|refresh|release|show) ;;
+    *) die "lock needs acquire|refresh|release|show" ;;
+  esac
+
+  key=$(lock_key)
+  path="$LOCKS_ROOT/$key.lock"
+  runner=${RUNNER:-unknown}
+  now=$(date +%s)
+
+  if [[ "$action" == "show" ]]; then
+    [[ -f "$path" ]] || { printf 'task-file: no lock: %s\n' "$path" >&2; exit 1; }
+    printf '%s\n' "$path"
+    cat "$path"
+    return 0
+  fi
+
+  mkdir -p "$LOCKS_ROOT"
+
+  # The read-modify-write runs under a guard file so two acquires cannot both
+  # win. The guard is only for this critical section; the lease is the state.
+  (
+    flock -w 10 9 || die "another lock operation is stuck on $path"
+
+    if [[ "$action" == "acquire" ]]; then
+      ttl_s=$(lock_seconds "$TTL")
+      if [[ -f "$path" ]]; then
+        holder=$(lease_field "$path" runner)
+        upd=$(lease_field "$path" updated_epoch)
+        upd=${upd:-0}
+        age=$(( now - upd ))
+        # The holder's own TTL decides when its lease goes stale, not the TTL of
+        # the runner that arrives later.
+        held_ttl=$(lease_field "$path" ttl)
+        [[ -n "$held_ttl" ]] && ttl_s=$(lock_seconds "$held_ttl")
+        if [[ $TAKEOVER -eq 1 ]]; then
+          printf 'task-file: taking over the lock held by %s\n' "${holder:-?}" >&2
+        elif (( age > ttl_s )); then
+          printf 'task-file: stale lease of %s (%ss > ttl %ss), taking it over\n' \
+            "${holder:-?}" "$age" "$ttl_s" >&2
+        else
+          printf 'task-file: %s is already running this task (updated %ss ago, ttl %ss)\n' \
+            "${holder:-?}" "$age" "$ttl_s" >&2
+          sed 's/^/  /' "$path" >&2
+          exit 1
+        fi
+      fi
+      {
+        printf 'key=%s\n' "$key"
+        printf 'runner=%s\n' "$runner"
+        printf 'pid=%s\n' "$$"
+        printf 'cwd=%s\n' "$PWD"
+        printf 'task_file=%s\n' "$LOCK_TASK_FILE"
+        printf 'started=%s\n' "$(date -Iseconds)"
+        printf 'updated_epoch=%s\n' "$now"
+        printf 'ttl=%s\n' "$TTL"
+      } >"$path"
+      printf '%s\n' "$path"
+      exit 0
+    fi
+
+    if [[ "$action" == "refresh" ]]; then
+      [[ -f "$path" ]] || die "no lock to refresh: $path (acquire first)"
+      holder=$(lease_field "$path" runner)
+      if [[ "$holder" != "$runner" && $TAKEOVER -ne 1 ]]; then
+        die "the lock is held by ${holder:-?}, not $runner (use --takeover)"
+      fi
+      tmp="$path.tmp.$$"
+      { grep -v '^updated_epoch=' "$path"; printf 'updated_epoch=%s\n' "$now"; } >"$tmp" &&
+        mv "$tmp" "$path"
+      printf '%s\n' "$path"
+      exit 0
+    fi
+
+    # release
+    if [[ ! -f "$path" ]]; then
+      printf 'task-file: no lock to release: %s\n' "$path" >&2
+      exit 0
+    fi
+    holder=$(lease_field "$path" runner)
+    if [[ "$holder" != "$runner" && $TAKEOVER -ne 1 ]]; then
+      die "the lock is held by ${holder:-?}, not $runner (use --takeover)"
+    fi
+    rm -f "$path"
+    printf 'released %s\n' "$path"
+  ) 9>"$path.guard"
+}
+
 case "$CMD" in
   root) cmd_root ;;
   dir) cmd_dir ;;
@@ -261,5 +422,6 @@ case "$CMD" in
   new) cmd_new ;;
   find) cmd_find ;;
   resolve) cmd_resolve ;;
+  lock) cmd_lock ;;
   *) usage >&2; exit 2 ;;
 esac

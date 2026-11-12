@@ -30,6 +30,7 @@ $ARGUMENTS: "{task description} --task-file={TASK_FILE} [--tier=S|M|L] [--linear
 - 書くのは自分の節（`## startproject` / `## team-implement` / `## team-review` / `## deploy`）だけ
 - **`## Meta` の `status:` は絶対に書かない**（orchestrator 専権）。例外は **TASK_FILE を新規作成するときの `status: planning` だけ**（`startproject` が `--task-file` のファイルを作るケース。orchestrator が既に作っている場合は書かない）。`tier:` / `branch:` / `base:` / `issue:` のうち、書いてよいのはそのフェーズの定義が明示している項目だけ
 - **Linear のステータスと description の書き手は orchestrator**（フェーズは触らない）。フェーズは `### RESULT` の `linear:` で状態を返す。コメントは、汎用 / OpenCode のフェーズが自分の結果を投稿してよい（Claude 版の command は投稿せず、orchestrator が投稿する）
+- **`## Meta` の `runner:` / `updated:` も orchestrator 専権**（`runner` は実行主体（claude / cursor / pi ...）、`updated` は status を変えるたびに更新する。同じタスクを 2 セッションが拾っていないかを見るための記録）
 - `##` 見出しは増やさない（kanban が `##` 見出しで列を判定する）。`###` 以下は自由
 - 節の外には何も追記しない。**TASK_FILE の commit / push はしない**（リポジトリ外にあり、git 管理しない）。分岐元への復帰は orchestrator の仕事（STEP 6c / 3P P7）
 - `利用AI:` 行の書式は既存どおり（`team-review` は見出し直下に日時付き、`deploy` は日時なし）

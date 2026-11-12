@@ -47,7 +47,23 @@ $ARGUMENTS: "{task description} [--tier=S|M|L] [--task-file={TASK_FILE}] [--line
 
 ## 状態管理（TASK_FILE と Linear）
 
-`## Meta` の `status:` を更新するタイミングと、Linear に反映する内容。`LINEAR_ID` が `NOLINEAR` なら Linear 側は何もしない。Claude 版（`claude/commands/orchestrate.md`「状態管理」）と同じ表で、**ステータスを変えるのは orchestrator だけ**。
+### 実行ロック（1 タスク 1 ランナー）
+
+TASK_FILE はブランチ単位で別ファイルになるため、それだけでは「Claude と Cursor が同じ issue を別ブランチで同時にやる」のを防げない。**issue（`repo` + `LINEAR_ID`）単位のリース**を `task-file.sh lock` で取り、取れなければ始めない。
+
+| いつ | コマンド |
+|---|---|
+| STEP 2（TASK_FILE を作る前） | `task-file.sh lock acquire --linear-id={LINEAR_ID} --feature={feature} --runner={runner}` |
+| 各 STEP の先頭（少なくとも 30 分に 1 回） | `task-file.sh lock refresh --linear-id={LINEAR_ID} --runner={runner}` |
+| STEP 7 の報告後、または中止・失敗で抜けるとき | `task-file.sh lock release --linear-id={LINEAR_ID} --runner={runner}` |
+| 状況確認 | `task-file.sh lock show --linear-id={LINEAR_ID}` |
+
+- リースは `~/.local/share/harness/locks/{repo}-{LINEAR_ID}.lock`。`LINEAR_ID` が無いときは feature 名、それも無ければリポジトリ単位。既存の TASK_FILE を引き継ぐときは `--task-file={TASK_FILE}` を付けるとリースに記録される
+- 既定の寿命は 45 分（`--ttl=45m`）。**持ち主が決めた寿命**で判定するので、refresh を怠ると別のランナーに奪われる
+- `acquire` が exit 1 のときは**開始しない**。保持者（runner / started / cwd / task_file）と経過時間を報告して止まる。生きているリースを奪うのは `--takeover` を明示したときだけ
+- 追加修正・フェーズ指定モードでも同じ（TASK_FILE を触る前に acquire、終了時に release）。ロックはリポジトリ外なので commit しない
+
+`## Meta` の `status:` と `updated:` を更新するタイミングと、Linear に反映する内容。`LINEAR_ID` が `NOLINEAR` なら Linear 側は何もしない。Claude 版（`claude/commands/orchestrate.md`「状態管理」）と同じ表で、**ステータスを変えるのは orchestrator だけ**。
 
 | タイミング | TASK_FILE `status` | Linear ステータス | description 更新 |
 |---|---|---|---|
@@ -81,12 +97,21 @@ $ARGUMENTS: "{task description} [--tier=S|M|L] [--task-file={TASK_FILE}] [--line
 
 ## STEP 2: TASK_FILE 作成
 
+**同じタスクを 2 つのセッションでやらないよう、先に実行ロックを取る**（「状態管理」の「実行ロック」）。取れなければ停止して報告する。
+
+```bash
+~/.claude/scripts/task-file.sh lock acquire \
+  --linear-id={LINEAR_ID} --feature={feature} --runner={runner}
+```
+
 ```bash
 TASK_FILE=$(~/.claude/scripts/task-file.sh new \
   --linear-id={LINEAR_ID} --feature={feature} --branch={branch})
 ```
 
 `{feature}` は内容から短いスネークケース。`NOLINEAR` のときは `--linear-id` を省く（`task-NOLINEAR-{feature}.md` になる）。
+
+Linear が使えるなら、この時点で**「実行開始」コメントを 1 回だけ**投稿する（`runner: {runner}`、TASK_FILE のパス、実行モード）。**ステータスは変えない**（"In Progress" は STEP 4 / 3F F4）。
 
 **TASK_FILE はリポジトリ内に置かない。** 出力は `~/.local/share/harness/tasks/{repo}/` 配下の絶対パス（`{repo}` = 本体リポジトリ名。worktree 共通）。旧配置（`{repo}/.claude/docs/decisions/`）のファイルは `task-file.sh find` / `resolve` で読める。
 
@@ -97,6 +122,8 @@ TASK_FILE=$(~/.claude/scripts/task-file.sh new \
 - linear_id: {LINEAR_ID}
 - tier: {tier}
 - created: {YYYY-MM-DD HH:MM}
+- runner: {runner}
+- updated: {YYYY-MM-DD HH:MM}
 - status: planning
 - branch:
 - base:
@@ -225,6 +252,14 @@ git switch {base}
 ```
 
 `利用AI:` の値は `phase-run.sh` が stderr に出す `LABEL=` を使う（推測で書かない）。
+
+報告の最後に **[MUST]** 実行ロックを離す:
+
+```bash
+~/.claude/scripts/task-file.sh lock release --linear-id={LINEAR_ID} --runner={runner}
+```
+
+STEP 7 まで来ずに中止・失敗した場合も、終了前に同じ release を実行する（取れなかったロックは release しない）。
 
 ## STEP 3F: 追加修正モード
 
