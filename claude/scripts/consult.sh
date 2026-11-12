@@ -85,7 +85,7 @@ Roles (pick the pane the question goes to):
   --role ROLE        consult (default) | review | implement
                      consult / review read the repo and write only their answer
                      file (claude only — codex is read-only there); implement
-                     keeps write access (claude: acceptEdits,
+                     keeps write access (claude: --permission-mode auto,
                      codex: workspace-write)
   --roles A,B        run several roles in parallel; output is one section per
                      role and answers land in <base>.<role>.answer.md
@@ -105,6 +105,7 @@ Backend:
 Other:
   -m, --model MODEL  model alias or id (default: claude → opus,
                      codex → ~/.codex/config.toml)
+                     claude permission mode is `auto` (CONSULT_PERMISSION_MODE)
   -t, --timeout T    timeout, e.g. 20m / 600s / 600 (default: $CONSULT_TIMEOUT or 20m)
   --close            herdr backend: close the role's pane after the answer;
                      with no prompt file, close the recorded session(s) and exit
@@ -296,12 +297,15 @@ role_settings() {
   fi
 
   ROLE_SANDBOX=""
+  # `auto` is Claude Code's automatic permission mode: the tab does not stop on
+  # approval dialogs, which matters because nobody is watching a consult pane.
+  # The tool list still limits consult/review to reading the repo plus writing
+  # their answer file. CONSULT_PERMISSION_MODE overrides the mode.
+  ROLE_MODE=${CONSULT_PERMISSION_MODE:-auto}
   if [[ "$role" == "implement" ]]; then
-    ROLE_MODE=acceptEdits
     ROLE_TOOLS=""
     ROLE_ALLOWED=""
   else
-    ROLE_MODE=default
     ROLE_TOOLS="Read,Grep,Glob,Write"
     ROLE_ALLOWED="Write($(role_answer_dir "$(role_agent_name "$role")")/**)"
     ROLE_ANSWER=1
@@ -751,6 +755,15 @@ herdr_consult() {
       break
     fi
 
+    # A TUI that exited (Ctrl+C, a crash, a closed pane) never answers, so stop
+    # early instead of waiting out the whole timeout.
+    if (( waited >= 10 )) && ! herdr agent get "$name" >/dev/null 2>&1; then
+      echo "error: session $name is gone (pane $pane) — the $TARGET TUI exited" >&2
+      echo "       retry with --new, or inspect the pane with: $(basename "$0") --to $TARGET --show $name" >&2
+      if [[ "$CLOSE_AFTER" == "1" ]]; then herdr_close_session "$name"; fi
+      die "session $name disappeared" 1
+    fi
+
     if (( waited >= TIMEOUT_S )); then
       answer=""
       break
@@ -758,11 +771,14 @@ herdr_consult() {
 
     # An answered turn always leaves a new marker block (the protocol requires
     # it), so "no new block and the agent is idle" means the question never ran:
-    # clear whatever is in the input box and submit it again.
+    # clear whatever is in the input box and submit it again. Ctrl+C clears the
+    # input in Claude Code but quits the Codex TUI, so codex gets Esc instead.
     if (( waited >= resend_at && resends < 3 )); then
       state_now=$(herdr_agent_state "$name")
       if [[ "$state_now" == "idle" || "$state_now" == "done" ]]; then
-        herdr agent send-keys "$name" ctrl+c >/dev/null 2>&1 || true
+        local clear_key=ctrl+c
+        [[ "$TARGET" == "codex" ]] && clear_key=esc
+        herdr agent send-keys "$name" "$clear_key" >/dev/null 2>&1 || true
         sleep 1
         set +e
         out=$(herdr agent prompt "$name" "$submit_line" 2>&1)

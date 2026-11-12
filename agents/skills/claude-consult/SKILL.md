@@ -34,11 +34,13 @@ Claude Code 自身からは使わない（自分自身を呼ぶ形になる）�
 |---|---|---|---|
 | `consult`（既定） | Read / Grep / Glob ＋ 回答ファイルの書き込み | opus | `hc-consult` |
 | `review` | 同上（レビュー用の tab を分けたいとき） | opus | `hc-review` |
-| `implement` | フルツール（編集は `acceptEdits` で事前承認） | opus | `hc-implement` |
+| `implement` | フルツール（編集可） | opus | `hc-implement` |
+
+- どのロールも `--permission-mode auto` で起動する。相談用の tab は誰も見ていないので、承認ダイアログで止まらないようにしている（変えたいときは `CONSULT_PERMISSION_MODE`。例 `plan` / `acceptEdits` / `bypassPermissions`）。`consult` / `review` の書き込み権限は回答ファイル 1 つだけに絞ってある
 
 - ロールごとに tab と会話が独立する。実装は `implement`、確認は `review` に投げる、という分担ができる
 - `--name` で agent 名を変えられる（同じロールを複数持ちたいとき）
-- モデルは `-m` / `CLAUDE_CONSULT_MODEL` / `CLAUDE_CONSULT_IMPLEMENT_MODEL`、追加フラグは `CLAUDE_CONSULT_<ROLE>_ARGS`（例 `--effort high`）
+- モデルは `-m` / `CONSULT_MODEL` / `CONSULT_IMPLEMENT_MODEL`、追加フラグは `CONSULT_<ROLE>_ARGS`（例 `--effort high`）。旧 `CLAUDE_CONSULT_*` も読む
 - フラグやモデルを変えたときは `--new` で tab を作り直す（起動済みセッションには反映されない）
 
 ## 手順
