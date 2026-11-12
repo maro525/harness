@@ -145,6 +145,13 @@ LINEAR_ID = "XXX-123"
 
 ## STEP 2: タスクファイル作成
 
+**同じタスクを 2 つのセッションでやらないよう、先に実行ロックを取る**（「状態管理」の「実行ロック」）。取れなければ停止して報告する。
+
+```bash
+~/.claude/scripts/task-file.sh lock acquire \
+  --linear-id={LINEAR_ID} --feature={feature} --runner={runner}
+```
+
 以下のパスにタスクファイルを作成して即 STEP 3 へ進む。feature は LINEAR_ID のタスク内容から短いスネークケースで命名する。
 
 ```bash
@@ -155,6 +162,7 @@ TASK_FILE=$(~/.claude/scripts/task-file.sh new \
 - 出力はリポジトリ外の絶対パス（`~/.local/share/harness/tasks/{repo}/task-{LINEAR_ID}-{feature}.md`）。親ディレクトリはスクリプトが作る
 - 同じ Linear issue のファイルがすでにある場合は、同じブランチならそのまま再利用し、別ブランチなら `-{branch}` を付けた別ファイルになる（戻り値をそのまま使う）
 - `task-file.sh` が使えない場合のフォールバック: `TASKS=${HARNESS_TASKS_DIR:-$HOME/.local/share/harness/tasks}/{repo}`（`{repo}` = `basename $(git rev-parse --git-common-dir)` の `.git` を除いたもの）
+- Linear が使えるなら、この時点で**「実行開始」コメントを 1 回だけ**投稿する（`runner: {runner}`、TASK_FILE のパス、実行モード）。**ステータスは変えない**（"In Progress" は STEP 4 / 3F F5）。同じタスクを別のセッションが拾おうとしたときに人が気づけるようにするための宣言
 
 **初期テンプレート:**
 
@@ -165,6 +173,8 @@ TASK_FILE=$(~/.claude/scripts/task-file.sh new \
 - linear_id: {LINEAR_ID}
 - tier: {tier}
 - created: {timestamp}
+- runner: {runner}
+- updated: {timestamp}
 - status: planning
 - branch:
 - base:
@@ -601,7 +611,32 @@ tier=S では startproject 行を「（S: orchestrate が計画、Gate 1: {GATE1
 
 deploy 以外のフェーズ（startproject / team-implement / team-review）を 6c の後に回した場合、P1 のガードで作業ブランチに移ってから TASK_FILE に追記する（TASK_FILE はリポジトリ外なので、追記が作業ツリーに残ることはない）。その場合は「現在のブランチ」に加えて、分岐元へ戻るには `git switch {base}` すればよい旨を報告に添える。
 
+報告の最後に **[MUST]** 実行ロックを離す:
+
+```bash
+~/.claude/scripts/task-file.sh lock release --linear-id={LINEAR_ID} --runner={runner}
+```
+
+STEP 7 まで来ずに中止・失敗した場合も、終了前に同じ release を実行する（取れなかったロックは release しない）。
+
 ## 状態管理
+
+### 実行ロック（1 タスク 1 ランナー）
+
+TASK_FILE はブランチ単位で別ファイルになるため、それだけでは「Claude と Cursor が同じ issue を別ブランチで同時にやる」のを防げない。**issue（`repo` + `LINEAR_ID`）単位のリース**を `task-file.sh lock` で取り、取れなければ始めない。
+
+| いつ | コマンド |
+|---|---|
+| STEP 2（TASK_FILE を作る前） | `task-file.sh lock acquire --linear-id={LINEAR_ID} --feature={feature} --runner={runner}` |
+| 各 STEP の先頭（少なくとも 30 分に 1 回） | `task-file.sh lock refresh --linear-id={LINEAR_ID} --runner={runner}` |
+| STEP 7 の報告後、または中止・失敗で抜けるとき | `task-file.sh lock release --linear-id={LINEAR_ID} --runner={runner}` |
+| 状況確認 | `task-file.sh lock show --linear-id={LINEAR_ID}` |
+
+- リースは `~/.local/share/harness/locks/{repo}-{LINEAR_ID}.lock`（`HARNESS_LOCKS_DIR` で変更可）。`LINEAR_ID` が無いときは feature 名、それも無ければリポジトリ単位。既存の TASK_FILE を引き継ぐとき（追加修正・フェーズ指定モード）は `--task-file={TASK_FILE}` を付けるとリースに記録される
+- 既定の寿命は 45 分（`--ttl=45m`）。**リースの持ち主が決めた寿命**で判定するので、refresh を怠ると別のランナーに奪われる
+- `acquire` が exit 1 のときは **開始しない**。表示された保持者（runner / started / cwd / task_file）と経過時間をユーザーに報告して止まる。生きているリースを奪うのは `--takeover` を明示したときだけ
+- 追加修正・フェーズ指定モードでも同じ（TASK_FILE を触る前に acquire、終了時に release）
+- ロックはリポジトリ外のファイルなので **commit しない**
 
 orchestrator は以下を変数として保持し、全 command に引数で渡す。
 
@@ -618,9 +653,9 @@ orchestrator は以下を変数として保持し、全 command に引数で渡�
 
 フェーズ指定モード（STEP 3P）は Linear ステータスを**変えず**、`status` は STEP 3P P4 末尾の表で更新する（成功後に、実行したフェーズの値へ）。下表は通常・追加修正モードだけに適用する。
 
-### TASK_FILE の `status` と Linear ステータス
+各 STEP の開始時に `## Meta` の `status` と `updated:` を更新する（Gate 2 で STEP 4 に戻った場合も `implementing` に戻す）。例外は `in-review` で、STEP 6b（deploy 返却後、作業ブランチ上）で書く。`done` には orchestrator はしない。PR がマージされた後に人間が変更する。
 
-各 STEP の開始時に `## Meta` の `status` を更新する（Gate 2 で STEP 4 に戻った場合も `implementing` に戻す）。例外は `in-review` で、STEP 6b（deploy 返却後、作業ブランチ上）で書く。`done` には orchestrator はしない。PR がマージされた後に人間が変更する。
+### TASK_FILE の `status` と Linear ステータス
 
 | タイミング | TASK_FILE `status` | Linear ステータス | description 更新 |
 |---|---|---|---|
