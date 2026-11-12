@@ -23,6 +23,16 @@ Cursor / pi / Cline / OpenCode などから、**別の Codex セッション**�
   - 外部リサーチ → `ai-fallback.sh`（codex も候補に入っている）
 - **`herdr-agent.sh ensure` / `delegate` を直接使わない**（`hx-*` の tab/pane 管理はこのスクリプトが持つ）
 
+## ラフな指示から実行まで
+
+言い方と既定値の対応表は claude-consult の SKILL.md「ラフな指示から実行まで」を見る（codex でも同じ。実行するスクリプトが `codex-consult.sh` になるだけ）。codex は read-only なので、`consult` / `review` の質問に「コードを直さないで」と改めて書く必要はない。
+
+**ユーザーにフラグやファイル名を打たせない。聞き返さない。** 例:
+
+```bash
+~/.claude/scripts/codex-consult.sh --text "{ユーザーの言葉}"
+```
+
 ## claude-consult との違い
 
 | | claude-consult | codex-consult |

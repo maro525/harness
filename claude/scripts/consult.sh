@@ -62,7 +62,8 @@ CLOSE_AFTER=0
 REUSE_CWD=0
 APPEND_FILES=()
 INLINE_TEXT=""
-WITH_CONTEXT=0
+WITH_CONTEXT=auto   # auto = on for an inline prompt (--text / stdin), off for a file
+INLINE_PROMPT=0
 READ_LINES=${CONSULT_READ_LINES:-${CLAUDE_CONSULT_READ_LINES:-800}}
 STATE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/harness/herdr-consult"
 
@@ -87,7 +88,8 @@ Usage: consult.sh [OPTIONS] <prompt-file> | -
   --text TEXT    pass the question as an argument (same output location as -);
                 handy for a one-liner, and the shortest thing to type
   --context      prepend the repository, branch, recent commits and the number
-                of changed files to the question (so a one-liner is enough)
+                of changed files (default: on for --text / stdin, off for a file)
+  --no-context   never prepend it
   --append FILE append a previous answer to the question (also -)
 
 Target:
@@ -155,6 +157,7 @@ while [[ $# -gt 0 ]]; do
     --text)          need_value "$@"; INLINE_TEXT=$2; shift 2 ;;
     --text=*)        INLINE_TEXT=${1#*=}; shift ;;
     --context)       WITH_CONTEXT=1; shift ;;
+    --no-context)    WITH_CONTEXT=0; shift ;;
     --new)           FORCE_NEW=1; shift ;;
     --debug)         CLAUDE_CONSULT_DEBUG=1; shift ;;
     --close)         CLOSE_AFTER=1; shift ;;
@@ -410,9 +413,20 @@ $(git log --oneline -5 2>/dev/null | sed 's/^/  - /' || printf '  - (none)')
 EOF
 }
 
+# Is the auto context block wanted? With the default (auto) it is on exactly
+# when the prompt was given inline, which is the case where the session has no
+# file name (and usually no brief) to orient itself by.
+context_enabled() {
+  case "$WITH_CONTEXT" in
+    1) return 0 ;;
+    0) return 1 ;;
+    *) [[ "$INLINE_PROMPT" == "1" ]] ;;
+  esac
+}
+
 prompt_body() {
   local body=$1 f
-  if [[ "$WITH_CONTEXT" == "1" ]]; then
+  if context_enabled; then
     context_header
     printf '\n'
   fi
@@ -1000,10 +1014,12 @@ inline_base() {
 if [[ -n "$INLINE_TEXT" ]]; then
   [[ -z "$src" ]] || die "--text and a prompt file are mutually exclusive" 2
   prompt=$INLINE_TEXT
+  INLINE_PROMPT=1
   base=$(inline_base)
   mkdir -p "$(dirname "$base")"
 elif [[ "$src" == "-" ]]; then
   prompt=$(cat)
+  INLINE_PROMPT=1
   base=$(inline_base)
   mkdir -p "$(dirname "$base")"
 else

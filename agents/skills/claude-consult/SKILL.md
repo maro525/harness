@@ -52,6 +52,24 @@ Claude Code 自身からは使わない（自分自身を呼ぶ形になる）�
 - モデルは `-m` / `CONSULT_MODEL` / `CONSULT_IMPLEMENT_MODEL`、追加フラグは `CONSULT_<ROLE>_ARGS`（例 `--effort high`）。旧 `CLAUDE_CONSULT_*` も読む
 - フラグやモデルを変えたときは `--new` で tab を作り直す（起動済みセッションには反映されない）
 
+## ラフな指示から実行まで（呼び出し側のエージェント向け）
+
+**ユーザーにフラグやファイル名を打たせない。聞き返さない。** 次の対応表で自分で決めて、そのまま実行する。
+
+| ユーザーの言い方 | role | 実行 |
+|---|---|---|
+| 「相談して」「聞いてみて」「意見ほしい」 | `consult` | `claude-consult.sh --text "{そのままの言葉}"` |
+| 「レビューして」「見てほしい」「まずいとこある？」 | `review` | `claude-consult.sh --role review --text "{そのまま＋対象の diff}"` |
+| 「実装して」「直して」「やっておいて」 | `implement` | `claude-consult.sh --role implement --text "{そのまま}"` |
+| 「codex にも聞いて」 | `consult` | `codex-consult.sh --text "{同じ質問}"` |
+| 「両方に聞いて」「比べて」 | `consult` | 2 本並列（claude と codex） |
+| 「終わって」「もういい」 | — | `--close --role {使ったロール}` |
+
+- **既定値**（何も指定しなくてよい）: role=`consult`、`--context` はインラインのとき自動で付く、タイムアウト 20 分、バックエンドは Herdr
+- 足りない前提は**自分で調べて補う**（リポジトリを見る、`--context` で付く repo/branch/直近コミットを使う）
+- 呼び出しは**フォアグラウンド**。回答が返るまで待ち、返ってきた本文をそのまま読んで要約する
+- `--close` は**採用/却下を決めた後**に自分で実行する（ユーザーに言われなくても）
+
 ## 手順
 
 ### 1. 相談を書く
