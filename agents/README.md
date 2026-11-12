@@ -35,7 +35,7 @@ agents/
 | 見出し | Claude 版の通常モードと同じ。startproject: `--label` あり → `### 案 {k}` + `#### Brief/Design/Plan`、なし → `### Brief/Design/Plan` を上書き。team-implement / team-review: `### {m}回目`。deploy: `#### PR / MR`（追加は `#### 追加 push（…）`）。見出しに実行者名や日時を入れない |
 | 利用AI 行 | `--label` があれば見出しのすぐ下（空行なし）に `利用AI: {label}（{YYYY-MM-DD HH:MM}）`（deploy は日時の行が別にあるので `利用AI: {label}`）。無ければ書かない。同じ見出しが並んでも（同じ回を別の AI がレビュー）区別はこの行で付ける。節の中に実行経路の説明（「外部 CLI で実行」など）は書かない |
 | 対話 | 質問できない環境では推定して続行し、`前提（推定）` として節に残す。Gate 1 は候補モード・非対話では待たず `gate1: 要確認` |
-| 外部ツール | サブエージェント・Web 検索・Linear 連携は「あれば使う、無ければ自分で行い、その旨を書く」。Linear のステータスは変えない |
+| 外部ツール | サブエージェント・Web 検索・Linear 連携は「あれば使う、無ければ自分で行い、その旨を書く」。フェーズは **`linear:` を返すだけ**で、Linear のステータス・description は触らない（書くのは orchestrate） |
 | 最終メッセージ | `### RESULT`（phase / task_file / written / section / linear / フェーズ固有行）+ `### SECTION`（書いた節の丸写し）。サンドボックスで書けなかったとき orchestrate がこれを代筆する |
 
 Claude 固有要素（`context: fork`、`agent:`、`allowed-tools`、`model:`、AskUserQuestion、Agent ツール、hook、`$HOME/.claude/rules`）には依存しない。tier の意味・セキュリティ観点・git 保護ブランチなど必要な共通ルールは各 SKILL.md に内包してある。
@@ -169,7 +169,7 @@ timeout -k 1m 30m {上表のコマンド} "$(cat {prompt_file})" < /dev/null > {
 |---|---|---|
 | TASK_FILE の書き手 | orchestrate（command は OUTPUT を返す） | 各フェーズ自身（`written: no` のときだけ orchestrate が代筆） |
 | orchestrator | `claude/commands/orchestrate.md`（`/orchestrate`） | `agents/skills/orchestrate/SKILL.md`（pi / cline / codex でも回せる。フェーズは `~/.claude/scripts/phase-run.sh` 経由） |
-| Linear | orchestrate が投稿・ステータス変更 | 連携ツールがあればコメントのみ。ステータスは変えない |
+| Linear | orchestrate がコメント・ステータス変更・description 更新を行う | 同じ（orchestrate が行う。フェーズは `### RESULT` の `linear:` で返すだけ）。MCP が無ければ「Linear: unavailable」で続行 |
 | `status:` | orchestrate が各 STEP で更新 | 書かない（フェーズ指定モードでは orchestrate が STEP 3P P4 で、実行したフェーズの値に更新する） |
 | 回数・候補 | `### {m}回目` | 同じ `### {m}回目`（startproject は `### 案 {k}`）。実行者は見出し直下の `利用AI: {label}（{日時}）` 行 |
 | 承認（Gate 1） | AskUserQuestion で待つ | 質問できれば待つ。候補モード・非対話では `gate1: 要確認` |

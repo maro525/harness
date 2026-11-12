@@ -33,7 +33,7 @@ $ARGUMENTS: "{task description} [--tier=S|M|L] [--task-file={TASK_FILE}] [--line
 - **TASK_FILE に書くのは自分だけ**: `## Meta`（`tier:` / `status:` / `branch:` / `base:` / `issue:`）と `#### 追加依頼 {n}` は orchestrator が書く。各フェーズは自分の節（`## startproject` など）を自分で書く。フェーズに `status:` を書かせない
 - **フェーズの起動は `~/.claude/scripts/phase-run.sh` に一本化**する（CLI / モデルの差はスクリプトが吸収する）。1 フェーズ 1 プロセスで、完了を待ってから次へ進む
 - **質問は `### QUESTIONS` プロトコル**（`docs/phase-contract.md`）。フェーズの出力に `### QUESTIONS` があれば、ユーザーに聞けるなら聞き、答えをファイルに書いて `--answers-file=` を付けて同じフェーズを再実行する。聞けないなら質問をそのまま最終メッセージに転記して終了する（推測で答えを作らない）
-- **Linear は任意**: MCP が使えれば `save_comment` で各フェーズの結果を投稿する。使えなければ「Linear: unavailable」と記録して続行し、止まらない
+- **Linear の状態の書き手は自分（orchestrator）**: ステータス変更と description 更新は自分だけが行う（フェーズには書かせない）。コメントは、フェーズの系統が自分で投稿する場合（汎用 / OpenCode のフェーズ）はそれを尊重し、投稿しない系統（Claude の command）なら自分が `save_comment` で投稿する — **同じ結果を二重投稿しない**。`LINEAR_ID` が `NOLINEAR`、または MCP が無ければ「Linear: unavailable」と記録して続行し、止まらない。失敗も黙って飛ばさず報告する
 - **失敗しても止まらない**: フェーズが失敗（exit ≠ 0 / 空出力 / タイムアウト）したら 1 度だけ別 runner で再試行し（`phase-run.sh` の fallback が自動で行う）、それでも駄目なら報告して停止する。TASK_FILE には失敗を書かない
 - 報告は日本語。モデル名・runner 名・URL・ブランチ名はそのまま書く
 
@@ -44,6 +44,25 @@ $ARGUMENTS: "{task description} [--tier=S|M|L] [--task-file={TASK_FILE}] [--line
 | フェーズ指定 | `--phase=` がある（`--task-file` 必須） | STEP 3P |
 | 追加修正 | `--phase` が無く、`--task-file` が既存、または Linear ID の `task-*.md` が存在する | STEP 3F |
 | 通常 | それ以外 | STEP 0 |
+
+## 状態管理（TASK_FILE と Linear）
+
+`## Meta` の `status:` を更新するタイミングと、Linear に反映する内容。`LINEAR_ID` が `NOLINEAR` なら Linear 側は何もしない。Claude 版（`claude/commands/orchestrate.md`「状態管理」）と同じ表で、**ステータスを変えるのは orchestrator だけ**。
+
+| タイミング | TASK_FILE `status` | Linear ステータス | description 更新 |
+|---|---|---|---|
+| STEP 2（作成時） | `planning` | — | ✓ |
+| STEP 3 完了後（計画を書いた直後） | `planning` のまま | — | ✓ |
+| STEP 3F F4 / STEP 4 開始 | `implementing` | "In Progress" | ✓ |
+| STEP 5 開始 | `reviewing` | — | ✓ |
+| STEP 6 開始 | `deploying` | — | ✓ |
+| STEP 6b（deploy 返却後） | `in-review` | "In Review" | ✓（PR / MR の URL を含める） |
+| STEP 7 | —（報告のみ） | — | — |
+
+- **フェーズ指定モード（STEP 3P）は Linear ステータスを変えない**（既存タスクへの追記だから）。`status:` は 3P の手順で更新し、description はフェーズの結果で更新する
+- `done` は自分では書かない（PR マージ後に人が変える）
+- **description の規則**（Claude 版と同じ）: `get_issue` で現状を取り、行頭が `## 🤖 Orchestrate` の行から末尾だけを TASK_FILE から作り直して置換する（人の記述は一字も変えない）。`save_issue` には description だけを渡す（タイトル・ステータスは渡さない）
+- コメントと description は別物: コメントは履歴、description はつねに最新の要約
 
 ## STEP 0: CLASSIFY
 
@@ -170,7 +189,7 @@ deploy フェーズはコードだけをコミットし、**作業ブランチ�
 
 - `## deploy` を書く（`written: no` なら `### SECTION` から代筆。追加修正モードでは上書きせず末尾に追記）
 - `## Meta` の `status:` を **`in-review`** にする（ここで書く）
-- MCP があれば `save_comment` で結果を投稿する（無ければスキップ）
+- Linear が使えるなら: ステータスを "In Review" にし、「状態管理」の規則で description を更新する。`save_comment` は **deploy がまだ投稿していないときだけ**（汎用 / OpenCode の deploy は自分でコメントする）。MCP が無ければスキップして「Linear: unavailable」と報告
 
 ### 6c: 分岐元へ戻る
 
@@ -220,9 +239,10 @@ git switch {base}
 1. `--task-file` が必須。`## Meta` から `tier:` / `linear_id:` を復元する
 2. `phase-run.sh --phase={phase} --task-file={TASK_FILE} {--runner=...} [--answers-file=...]` を実行する（startproject は `--candidate` を付けて `### 案 {k}` として追記させる）
 3. `written: no` なら `### SECTION` を該当節に書き、`利用AI: {label}` を書いた見出しの直下に入れる
-4. `status:` を実行したフェーズの値に更新する（startproject → `planning` / team-implement → `implementing` / team-review → `reviewing` / deploy → `in-review`）
+4. `status:` を実行したフェーズの値に更新する（startproject → `planning` / team-implement → `implementing` / team-review → `reviewing` / deploy → `in-review`）。**Linear のステータスは変えない**（フェーズ指定は既存タスクへの追記のため）
 5. `--adopt=案 {k}` が指定されていれば、`### 案 {k}` の `#### Brief` / `#### Design` / `#### Plan` を `### Brief` / `### Design` / `### Plan` に昇格し、`利用AI:` の直後に `採用: {YYYY-MM-DD HH:MM}` を足す
-6. STEP 7 の報告をフェーズ指定モード用に書く（他のフェーズは「（未実行）」、次に回すフェーズと `phase-run.sh` の呼び出し例を添える）
+6. Linear が使えるなら、「状態管理」の規則で description を更新する。コメントは **実行したフェーズが自分で投稿していないときだけ** `save_comment`（ステータスは変えない）
+7. STEP 7 の報告をフェーズ指定モード用に書く（他のフェーズは「（未実行）」、次に回すフェーズと `phase-run.sh` の呼び出し例を添える）
 
 ## 失敗時の扱い
 
