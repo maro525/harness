@@ -29,7 +29,7 @@ Claude Code 自身からは使わない（自分自身を呼ぶ形になる）�
   - 並行で走らせて報告で判断したい → [herdr-boss](../herdr-boss/SKILL.md) の `delegate`（非同期。子の画面は見えない）
   - 4 フェーズの実行 → `phase-run.sh`（orchestrate 経由）
   - 外部リサーチ → `ai-fallback.sh`
-- **`herdr-agent.sh ensure` / `delegate` を直接使わない**（consult の tab/pane 管理はこのスクリプトが持つ。混ざると `hc-*` と任意名のセッションが二重に残る）
+- **`herdr-agent.sh ensure` / `delegate` を直接使わない**（consult の tab/pane 管理はこのスクリプトが持つ。混ざると `consult*` と任意名のセッションが二重に残る）
 
 ## 前提
 
@@ -41,12 +41,12 @@ Claude Code 自身からは使わない（自分自身を呼ぶ形になる）�
 
 | role | できること | 既定モデル | 既定の agent 名 |
 |---|---|---|---|
-| `consult`（既定） | Read / Grep / Glob ＋ 回答ファイルの書き込み | opus | `hc-consult` |
-| `review` | 同上（レビュー用の tab を分けたいとき） | opus | `hc-review` |
-| `implement` | フルツール（編集可） | opus | `hc-implement` |
+| `consult`（既定） | Read / Grep / Glob ＋ 回答ファイルの書き込み | opus | `consult` |
+| `review` | 同上（レビュー用の tab を分けたいとき） | opus | `consult-review` |
+| `implement` | フルツール（編集可） | opus | `consult-implement` |
 
 - どのロールも `--permission-mode auto` で起動する。相談用の tab は誰も見ていないので、承認ダイアログで止まらないようにしている（変えたいときは `CONSULT_PERMISSION_MODE`。例 `plan` / `acceptEdits` / `bypassPermissions`）。`consult` / `review` の**組み込み**ツールは `Read,Grep,Glob` と回答ファイルへの `Write` だけに絞ってある
-- セッション名は `hc-<role>` / `hx-<role>`（`~/src/harness/docs/naming.md` の規則。`--name` で上書きするときも同じ形にする）
+- セッション名は `consult` / `consult-<role>`（codex は `consult-codex` / `consult-codex-<role>`。`~/src/harness/docs/naming.md` の規則。`--name` で上書きするときも同じ形にする）
 - **MCP は使える**（`~/.claude/settings.json` に設定したサーバー。Linear / firecrawl / GitHub など）。「Linear の issue を見て判断して」のような相談ができる。ただし**Linear への書き込み（コメント・ステータス・description）は orchestrator の仕事**で、consult は書かない（フェーズ契約）
 
 - ロールごとに tab と会話が独立する。実装は `implement`、確認は `review` に投げる、という分担ができる
@@ -175,7 +175,7 @@ EOF
 
 ## Herdr バックエンドの仕組み（保守する人向け）
 
-1. ロールの agent 名（`hc-*`）で `herdr agent get` を引き、いなければ**呼び出し元の workspace に新しい tab を作り**（`herdr tab create --workspace $HERDR_WORKSPACE_ID --cwd $PWD --no-focus`、tab 名は agent 名にする）、その root pane で `herdr agent start --kind claude` する
+1. ロールの agent 名（`consult*`）で `herdr agent get` を引き、いなければ**呼び出し元の workspace に新しい tab を作り**（`herdr tab create --workspace $HERDR_WORKSPACE_ID --cwd $PWD --no-focus`、tab 名は agent 名にする）、その root pane で `herdr agent start --kind claude` する
 2. 質問は**ファイル**に書き、ターミナルには 1 行のポインタ（「このファイルの指示に従え」）だけを打つ。長い貼り付けは TUI の再描画中に落ちることがあるため
 3. セッションは回答を `$TMPDIR/harness-consult/{agent}/{base}.answer.md` に書き、ターミナルには `<<<ANSWER>>>` で挟んだ 1 行を返す。スクリプトはファイルを優先し、無ければマーカーから本文を拾う
 4. 新しい tab の TUI は最初の Enter を落とすことがあるので、`idle` のままマーカーが現れない場合は入力をクリアして再送信する（最大 3 回）

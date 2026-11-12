@@ -21,7 +21,7 @@ Cursor / pi / Cline / OpenCode などから、**別の Codex セッション**�
   - 並行で走らせて報告で判断したい → [herdr-boss](../herdr-boss/SKILL.md) の `delegate`
   - 4 フェーズの実行 → `phase-run.sh`
   - 外部リサーチ → `ai-fallback.sh`（codex も候補に入っている）
-- **`herdr-agent.sh ensure` / `delegate` を直接使わない**（`hx-*` の tab/pane 管理はこのスクリプトが持つ）
+- **`herdr-agent.sh ensure` / `delegate` を直接使わない**（`consult-codex*` の tab/pane 管理はこのスクリプトが持つ）
 
 ## ラフな指示から実行まで
 
@@ -42,7 +42,7 @@ Cursor / pi / Cline / OpenCode などから、**別の Codex セッション**�
 | `implement` の権限 | `acceptEdits` | `-s workspace-write -a never` |
 | 回答の受け取り | 回答ファイル優先、マーカーはフォールバック | **常に `<<<ANSWER>>>` マーカーから抽出** |
 | 既定モデル | `opus` | `~/.codex/config.toml` の `model`（`-m` で上書き） |
-| agent 名 | `hc-<role>` | `hx-<role>`（claude と同居できる） |
+| agent 名 | `consult` / `consult-<role>` | `consult-codex` / `consult-codex-<role>`（claude と同居できる） |
 | `-b print` | `claude -p`（`-r` で再開可） | `codex exec -s read-only`（`-r` 不可） |
 
 読み取り専用なので、**コードフェンスの多い回答はターミナル描画の影響を受けうる**。整形が崩れたら `--show consult` で pane をそのまま読む。
@@ -77,7 +77,7 @@ EOF
 
 - **回答が返るまで戻らない（同期）**。フォアグラウンドで待って stdout を読むだけでよい。バックグラウンドにするなら、完了通知の後に stderr の `ANSWER_FILE=` を読む
 - `--text` で一言を渡せる。`--context` を付けると repo / branch / 直近のコミットが質問の前に付く（claude-consult と同じ）
-- stdout が回答本文、`{base}.answer.md` と `.json`（生ログ）が残る（標準入力のときは `$TMPDIR/harness-consult/out/` 配下）。stderr の `ANSWER_FILE=…` / `AI_MODEL=codex/{model}` / `AGENT=hx-{role}` / `PANE={pane id}` を控える
+- stdout が回答本文、`{base}.answer.md` と `.json`（生ログ）が残る（標準入力のときは `$TMPDIR/harness-consult/out/` 配下）。stderr の `ANSWER_FILE=…` / `AI_MODEL=codex/{model}` / `AGENT=consult-codex[-{role}]` / `PANE={pane id}` を控える
 - 既定タイムアウト 20 分（`-t` / `CONSULT_TIMEOUT`）
 
 ### 3. 続ける / 閉じる
@@ -85,7 +85,7 @@ EOF
 ```bash
 ~/.claude/scripts/codex-consult.sh --append {前の回答} --role review {review_file}
 ~/.claude/scripts/codex-consult.sh --close --role consult      # 採用 / 却下したら即
-~/.claude/scripts/codex-consult.sh --status                    # hx-* も含めて一覧
+~/.claude/scripts/codex-consult.sh --status                    # codex のセッションも含めて一覧
 ~/.claude/scripts/codex-consult.sh --show consult              # pane の末尾
 ```
 

@@ -17,15 +17,20 @@ Herdr のセッション名は **agent 名・tab 名・（worktree のときは�
 
 | 対象 | 形式 | 例 |
 |---|---|---|
-| consult（claude） | `hc-<role>` / 追加は `hc-<role>-<topic>` | `hc-consult`, `hc-review`, `hc-consult-ci` |
-| consult（codex） | `hx-<role>` / `hx-<role>-<topic>` | `hx-consult`, `hx-review` |
-| 並列 orchestrate | `orch-<linear-id 小文字>[-<feature>]` | `orch-nsketch-1983-ci-cache` |
-| issue 無しの orchestrate | `orch-noissue-<feature>` | `orch-noissue-quick-fix` |
+| consult（claude、既定ロール） | `consult` | `consult` |
+| consult（claude、他のロール） | `consult-<role>` | `consult-review`, `consult-implement` |
+| consult（codex） | `consult-codex` / `consult-codex-<role>` | `consult-codex`, `consult-codex-review` |
+| 並列 orchestrate | `orchestrate-<linear-id 小文字>[-<feature>]` | `orchestrate-nsketch-1983` |
+| issue 無しの orchestrate | `orchestrate-noissue-<feature>` | `orchestrate-noissue-quick-fix` |
 | delegate の子 | `<claude\|codex\|pi>-<purpose>` | `claude-review-1983`, `codex-research-cache` |
 | boss | `boss-<repo>` | `boss-nanco-next` |
 | 相談・配布以外の一時セッション | `<kind>-<purpose>-<短い id>` | `pi-repro-4f2a` |
 
-`<role>` は `consult` / `review` / `implement` のいずれか（`consult.sh` のロール名と一致させる）。
+`<role>` は `consult` / `review` / `implement` のいずれか（`consult.sh` のロール名と一致させる）。**claude が既定**なので、codex のときだけ `-codex` を付ける。
+
+### 32 文字の扱い
+
+Herdr の上限は 32 文字。`orchestrate-<id>-<feature>` が超えるときは **feature を先に落とす**（`orchestrate-nsketch-1983`）。それでも超えるなら末尾の単語単位で切る。
 
 ## 3. ブランチ
 
@@ -55,8 +60,8 @@ TASK_FILE とロックは **ID を大文字のまま**使う（ブランチだ�
 | 場面 | 守る仕組み |
 |---|---|
 | `herdr-agent.sh ensure` / `restart` / `delegate` | 名前を検証する。空白・`/` はエラー、小文字でない・32 文字超は警告 |
-| `consult.sh` | `hc-<role>` / `hx-<role>` を自動で作る（`--name` で上書き可） |
-| `orchestrate-parallel.sh` | `orch-<id>-<feature>` と `feature/<id>-<feature>` を自動生成 |
+| `consult.sh` | `consult` / `consult-<role>`（codex は `consult-codex[-<role>]`）を自動で作る（`--name` で上書き可） |
+| `orchestrate-parallel.sh` | `orchestrate-<id>[-<feature>]` と `feature/<id>-<feature>` を自動生成 |
 | 手で `ensure` するとき | この文書の表に従う |
 
 ## 6. なぜ決めるか

@@ -68,9 +68,9 @@ $ARGUMENTS: "{task description} [--tier=S|M|L] [--task-file={TASK_FILE}] [--line
 ```
 
 - 各タスクに worktree + tab を作り、`ask --no-wait` で依頼して**すぐ戻る**（待たない）
-- 名前は `~/src/harness/docs/naming.md` の規則（セッション `orch-<id>-<feature>`、ブランチ `feature/<id>-<feature>`）
+- 名前は `~/src/harness/docs/naming.md` の規則（セッション `orchestrate-<id>[-<feature>]`、ブランチ `feature/<id>-<feature>`）
 - 既定は `--kind claude --model sonnet`（`--kind codex|pi` も可）。`--runner` はロックと `## Meta` の `runner:` に入る
-- 進捗は `herdr-agent.sh read orch-{id}-{feature}` / `herdr-agent.sh list`。終わったら `close` / `reap`
+- 進捗は `herdr-agent.sh read orchestrate-{id}` / `herdr-agent.sh list`。終わったら `close` / `reap`
 - 同じ issue を 2 つ渡すとエラー。既にロックがある issue は警告を出して続行（その run は acquire で止まる）
 - `--dry-run` で計画だけ、`--ensure-only` で worktree / tab だけ作る
 - モデルを散らすと 429 を避けやすい（例: `--kind claude --model sonnet` と `--kind codex` を混ぜる）
