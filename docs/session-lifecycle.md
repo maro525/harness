@@ -126,6 +126,7 @@ Herdr の構造は workspace → tab → pane。セッションをどこに作�
 | 1 つ閉じる | `claude-consult.sh --close --role ROLE` / `herdr-agent.sh close NAME` |
 | 複数ロールを閉じる | `claude-consult.sh --close --roles implement,review` |
 | 全部閉じる | `claude-consult.sh --close` / `herdr-agent.sh reap` |
+| 記録を突き合わせて整理（推奨） | `herdr-cleanup.sh`（既定はレポート）/ `--apply`（live は残す）/ `--apply --include-live` |
 | 種類で絞って閉じる | `herdr-agent.sh reap --kind pi` |
 | 作り直す（文脈リセット） | `claude-consult.sh --new --role ROLE` / `herdr-agent.sh restart NAME` |
 | ターミナルの末尾を見る | `claude-consult.sh --show ROLE` / `herdr-agent.sh read NAME` |
