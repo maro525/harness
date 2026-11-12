@@ -10,18 +10,20 @@ metadata:
 
 harness が起動したセッションは `~/.cache/harness/` に記録を残す。TUI が落ちた・tab を手で閉じた・マシンを再起動した、といった場合に**記録だけが残る**ので、記録と Herdr の実体を突き合わせて片付けるのがこのスキル。
 
-**既定はレポートのみ。** `--apply` を付けたときだけ閉じる／解放する。生きているセッションは `--include-live` を明示しない限り触らない（`reap` のような「全部閉じる」はしない）。
+**既定はレポートのみ。** `--apply` を付けても、**一覧を見せて了承を得るまで何も閉じない**（ターミナルがあれば `[y/N]` を聞き、無ければ何もせず exit 2 で止まる → `--apply --yes` は了承後だけ）。生きているセッションは `--include-live` を明示しない限り触らない（`reap` のような「全部閉じる」はしない）。
 
 ## ラフな指示から実行まで
 
 | ユーザーの言い方 | 実行 |
 |---|---|
 | 「herdr のセッション整理して」「溜まってない？」 | `~/.claude/scripts/herdr-cleanup.sh`（レポートだけ。結果を見せて、何を消すか伝える） |
-| 「終わったやつは消して」「片付けて」 | `~/.claude/scripts/herdr-cleanup.sh --apply` |
-| 「動いてないのも消していい」 | `herdr-cleanup.sh --apply --include-live` |
+| 「終わったやつは消して」 | まず `herdr-cleanup.sh` で一覧を出す → **一覧を見せて了承を得る** → `herdr-cleanup.sh --apply --yes` |
+| 「動いてないのも消していい」 | 上と同じ手順で `--include-live` を足す（了承を得てから `--apply --yes --include-live`） |
 | 「worktree も見て」 | 上に `--worktrees` を足す（**一覧のみ**。削除はしない） |
-| 「◯◯ だけ消して」 | `herdr-cleanup.sh --apply --name ◯◯` |
+| 「◯◯ だけ消して」 | `herdr-cleanup.sh --name ◯◯` で一覧 → 了承 → `--apply --yes --name ◯◯` |
 | 「ロックが残ってない？」 | `herdr-cleanup.sh --only locks` |
+
+**閉じる前に必ず人が確認する。** `--apply` だけでは何も閉じない（TTY 無しでは exit 2）。`--yes` は「一覧を見せて了承をもらった後」にだけ付ける。
 
 ## 何を見ているか
 
@@ -36,10 +38,11 @@ harness が起動したセッションは `~/.cache/harness/` に記録を残す
 
 ```bash
 ~/.claude/scripts/herdr-cleanup.sh                  # レポート（安全）
-~/.claude/scripts/herdr-cleanup.sh --apply          # 消す（live は残す）
-~/.claude/scripts/herdr-cleanup.sh --apply --include-live
+~/.claude/scripts/herdr-cleanup.sh --apply          # 一覧＋確認（TTY が無ければ何もせず停止）
+~/.claude/scripts/herdr-cleanup.sh --apply --yes    # 了承後の実行
+~/.claude/scripts/herdr-cleanup.sh --apply --yes --include-live
 ~/.claude/scripts/herdr-cleanup.sh --only consult --only locks
-~/.claude/scripts/herdr-cleanup.sh --name consult-review --apply
+~/.claude/scripts/herdr-cleanup.sh --name consult-review --apply --yes
 ```
 
 - 出力は `live`（残す） / `close`（消す予定） / `closed` / `released` の 4 種
@@ -48,6 +51,7 @@ harness が起動したセッションは `~/.cache/harness/` に記録を残す
 
 ## やらないこと
 
+- **了承なしに `--apply --yes` を付けない**（`--yes` は一覧を見せてユーザーが OK した後だけ）
 - **`herdr-agent.sh reap` を無条件に使わない**（記録済みの全部を閉じる。他の作業を巻き込む）
 - 生きているセッションを勝手に閉じない（`--include-live` はユーザーが明示したときだけ）
 - worktree を勝手に消さない（`--worktrees` は一覧のみ）
