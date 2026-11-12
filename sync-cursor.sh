@@ -1,31 +1,23 @@
 #!/bin/bash
-# Distribute ~/.agents/skills into the skill directories Cursor reads.
+# Distribute ~/.agents/skills into Cursor's user skill directory.
 #
-#   ~/.agents/skills/<name>/  --copy-->  {profile}/.cursor/skills/<name>/
-#                                        {profile}/.claude/skills/<name>/  (Windows only)
+#   ~/.agents/skills/<name>/  --copy-->  ~/.cursor/skills/<name>/
 #
-# Cursor reads user-level skills from ~/.cursor/skills and ~/.claude/skills
-# (project-level ones from <repo>/.cursor/skills); it does NOT read
-# ~/.agents/skills. Its own bundled skills sit in ~/.cursor/skills-cursor with a
-# .sync-manifest.json and are never touched here.
-#
-# Unlike Cline, which is served with a symlink by sync-agents.sh, Cursor needs
-# real copies: a symlink created from WSL on /mnt/c is a WSL-only reparse point
-# that the Windows build of Cursor cannot resolve. For the same reason the
-# Windows profile is preferred when a WSL/Windows mount is reachable, and
-# $HOME/.cursor/skills (WSL-side Cursor) is the fallback.
+# Cursor reads user-level skills from ~/.cursor/skills (project-level ones from
+# <repo>/.cursor/skills) and does NOT read ~/.agents/skills. Unlike Cline, which
+# is served with a symlink by sync-agents.sh, Cursor needs real copies: a symlink
+# created from WSL on /mnt/c is a WSL-only reparse point that the Windows build
+# of Cursor cannot resolve. For the same reason the Windows profile is preferred
+# when a WSL/Windows mount is reachable, and ~/.cursor/skills (WSL-side Cursor)
+# is the fallback.
 #
 # This is the one sync script that is NOT a HOME <-> repo sync: it is a one-way
 # mirror of the skills this script owns. Every run re-copies the trees and prunes
 # the skill directories that disappeared from ~/.agents/skills; what was
-# distributed is recorded in <dest>/.harness-managed. A name that also exists in
-# Cursor's bundled skills-cursor/ is reported as a collision, and which side
-# Cursor picks is not documented.
-#
-# The Windows profile gets both directories because a Cursor session was seen
-# listing only ~/.cursor/skills-cursor and ~/.claude/skills. On the WSL side
-# ~/.claude/skills is NOT filled: it belongs to the dotfiles repo, whose
-# sync-claude.sh walks that directory per skill.
+# distributed is recorded in <dest>/.harness-managed. Cursor's own bundled skills
+# live in ~/.cursor/skills-cursor with its own .sync-manifest.json and are never
+# touched — a name that exists on both sides is reported as a collision, and
+# which side Cursor picks is not documented.
 #
 # ~/.agents/skills is also managed by `npx skills` (.skill-lock.json), so only
 # directories are copied (never the lock file) and --exclude narrows the set
@@ -44,19 +36,17 @@ source "$SCRIPT_DIR/lib/sync-common.sh"
 DRY_RUN=0
 PRUNE=1
 EXCLUDES=()
-DEST_ARGS=()
+DEST="${CURSOR_SKILLS_DIR:-}"
 
 usage() {
   cat <<EOF
 Usage: $(basename "$0") [OPTIONS]
 
-Copy ~/.agents/skills into the skill directories Cursor reads. Default dests:
-the first Cursor profile under /mnt/c/Users/* ({profile}/.cursor/skills and
-{profile}/.claude/skills), else \$HOME/.cursor/skills.
+Copy ~/.agents/skills into Cursor's user skill directory (~/.cursor/skills).
+Default dest: the first Cursor profile under /mnt/c/Users/*, else \$HOME/.cursor.
 
 Options:
-      --dest DIR           Copy into DIR instead of the detected defaults
-                           (repeatable; skips the second default directory)
+      --dest DIR           Copy into DIR instead of the detected profile
       --exclude NAME       Skip skill NAME (repeatable)
       --exclude-cloudflare Skip the Cloudflare plugin bundle (vendor docs)
       --no-prune           Keep copies of skills that left ~/.agents/skills
@@ -70,11 +60,11 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --dest)
       [[ $# -ge 2 ]] || { echo "Error: --dest needs a directory" >&2; exit 1; }
-      DEST_ARGS+=("$2")
+      DEST="$2"
       shift 2
       ;;
     --dest=*)
-      DEST_ARGS+=("${1#*=}")
+      DEST="${1#*=}"
       shift
       ;;
     --exclude)
@@ -108,10 +98,10 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# Print the home directory of the first Cursor profile found under /mnt/c/Users.
-# Windows profiles that are not a real user home are skipped. Falls back to
-# $HOME (WSL-side Cursor). Returns 1 when neither exists.
-detect_profile() {
+# Print the skill directory of the first Cursor profile found under
+# /mnt/c/Users. Windows profiles that are not a real user home are skipped.
+# Falls back to the WSL-side ~/.cursor. Returns 1 when neither exists.
+detect_dest() {
   local profile
   for profile in /mnt/c/Users/*/; do
     profile="${profile%/}"
@@ -119,12 +109,12 @@ detect_profile() {
       "All Users"|"Default"|"Default User"|Public|defaultuser0) continue ;;
     esac
     if [[ -d "$profile/.cursor" ]]; then
-      printf '%s\n' "$profile"
+      printf '%s/.cursor/skills\n' "$profile"
       return 0
     fi
   done
   if [[ -d "$HOME/.cursor" ]]; then
-    printf '%s\n' "$HOME"
+    printf '%s/.cursor/skills\n' "$HOME"
     return 0
   fi
   return 1
@@ -160,27 +150,17 @@ if [[ ! -d "$SRC" ]]; then
   exit 1
 fi
 
-DESTS=()
-if [[ ${#DEST_ARGS[@]} -gt 0 ]]; then
-  DESTS=("${DEST_ARGS[@]}")
-else
-  if ! profile="$(detect_profile)"; then
+if [[ -z "$DEST" ]]; then
+  if ! DEST="$(detect_dest)"; then
     echo "Error: no Cursor profile found (~/.cursor or /mnt/c/Users/*/.cursor)." >&2
     echo "       Pass --dest DIR, e.g. /mnt/c/Users/<you>/.cursor/skills." >&2
     exit 1
-  fi
-  DESTS=("$profile/.cursor/skills")
-  # Cursor also reads {profile}/.claude/skills. Only the Windows profile gets
-  # that copy: on the WSL side the directory is the dotfiles repo's (its
-  # sync-claude.sh walks ~/.claude/skills and would pull the skills into it).
-  if [[ "$profile" == /mnt/* ]]; then
-    DESTS+=("$profile/.claude/skills")
   fi
 fi
 
 echo "=== $(basename "$0") ==="
 echo "Source: $SRC"
-printf 'Dest:   %s\n' "${DESTS[@]}"
+echo "Dest:   $DEST"
 if [[ ${#EXCLUDES[@]} -gt 0 ]]; then
   echo "Exclude: ${EXCLUDES[*]}"
 fi
@@ -192,126 +172,97 @@ if [[ $DRY_RUN -eq 1 ]]; then
 fi
 echo ""
 
-total_copied=0
-total_same=0
-total_skipped=0
-total_pruned=0
+if [[ $DRY_RUN -eq 0 ]]; then
+  mkdir -p "$DEST"
+fi
+
+copied=0
+same=0
+skipped=0
+pruned=0
+managed=()
 linux_only=()
 
-# Windows-native Cursor has no ~/.claude/scripts, so the skills that call those
-# scripts cannot run there. The prefix is matched literally (the skills spell it
-# as ~/..., $HOME/... or a bare .claude/...), so only the tail is searched for.
-for dest in "${DESTS[@]}"; do
-  [[ "$dest" == /mnt/*/Users/* ]] || continue
-  for src_dir in "$SRC"/*/; do
-    name="$(basename "${src_dir%/}")"
-    sync_common::path_excluded "$name" ${EXCLUDES[@]+"${EXCLUDES[@]}"} && continue
-    if grep -qsF '.claude/scripts/' "$src_dir/SKILL.md"; then
-      linux_only+=("$name")
+# --- 1. prune copies of skills that left HOME --------------------------------
+if [[ $PRUNE -eq 1 && -f "$DEST/$MANIFEST_NAME" ]]; then
+  while IFS= read -r name; do
+    [[ -z "$name" ]] && continue
+    # Still distributed (and re-copied below) or deliberately excluded.
+    if [[ -d "$SRC/$name" ]]; then
+      continue
     fi
-  done
-  break
-done
-
-for DEST in "${DESTS[@]}"; do
-  if [[ ${#DESTS[@]} -gt 1 ]]; then
-    echo "--- $DEST"
-  fi
-
-  if [[ $DRY_RUN -eq 0 ]]; then
-    mkdir -p "$DEST"
-  fi
-
-  copied=0
-  same=0
-  skipped=0
-  pruned=0
-  managed=()
-
-  # --- 1. prune copies of skills that left HOME ------------------------------
-  if [[ $PRUNE -eq 1 && -f "$DEST/$MANIFEST_NAME" ]]; then
-    while IFS= read -r name; do
-      [[ -z "$name" ]] && continue
-      # Still distributed (and re-copied below) or deliberately excluded.
-      if [[ -d "$SRC/$name" ]]; then
-        continue
-      fi
-      if sync_common::path_excluded "$name" ${EXCLUDES[@]+"${EXCLUDES[@]}"}; then
-        continue
-      fi
-      if [[ ! -d "$DEST/$name" ]]; then
-        continue
-      fi
-
-      if [[ $DRY_RUN -eq 1 ]]; then
-        echo "  prune $name (dry-run)"
-      else
-        rm -rf -- "${DEST:?}/$name"
-        echo "  prune $name"
-      fi
-      pruned=$((pruned + 1))
-    done <"$DEST/$MANIFEST_NAME"
-  fi
-
-  # --- 2. copy every skill directory ---------------------------------------
-  for src_dir in "$SRC"/*/; do
-    src_dir="${src_dir%/}"
-    name="$(basename "$src_dir")"
-
     if sync_common::path_excluded "$name" ${EXCLUDES[@]+"${EXCLUDES[@]}"}; then
-      skipped=$((skipped + 1))
       continue
     fi
-
-    if [[ ! -f "$src_dir/SKILL.md" ]]; then
-      echo "  skip  $name (no SKILL.md)"
-      skipped=$((skipped + 1))
+    if [[ ! -d "$DEST/$name" ]]; then
       continue
-    fi
-
-    managed+=("$name")
-
-    # Cursor's bundled skills (~/.cursor/skills-cursor) may use the same name.
-    if [[ -e "$(dirname "$DEST")/skills-cursor/$name/SKILL.md" ]]; then
-      echo "  warn  $name also exists in Cursor's bundled skills-cursor/ (collision)"
     fi
 
     if [[ $DRY_RUN -eq 1 ]]; then
-      echo "  copy  $name (dry-run)"
-      copied=$((copied + 1))
-      continue
-    fi
-
-    changed="$(mirror_tree "$src_dir" "$DEST/$name")"
-    if [[ "$changed" -eq 0 ]]; then
-      echo "  same  $name"
-      same=$((same + 1))
+      echo "  prune $name (dry-run)"
     else
-      echo "  copy  $name"
-      copied=$((copied + 1))
+      rm -rf -- "${DEST:?}/$name"
+      echo "  prune $name"
     fi
-  done
+    pruned=$((pruned + 1))
+  done <"$DEST/$MANIFEST_NAME"
+fi
 
-  # --- 3. record what this script owns -------------------------------------
-  if [[ $DRY_RUN -eq 0 ]]; then
-    printf '%s\n' ${managed[@]+"${managed[@]}"} >"$DEST/$MANIFEST_NAME"
+# --- 2. copy every skill directory -----------------------------------------
+for src_dir in "$SRC"/*/; do
+  src_dir="${src_dir%/}"
+  name="$(basename "$src_dir")"
+
+  if sync_common::path_excluded "$name" ${EXCLUDES[@]+"${EXCLUDES[@]}"}; then
+    skipped=$((skipped + 1))
+    continue
   fi
 
-  echo ""
-  echo "$DEST: copied $copied, unchanged $same, skipped $skipped, pruned $pruned"
+  if [[ ! -f "$src_dir/SKILL.md" ]]; then
+    echo "  skip  $name (no SKILL.md)"
+    skipped=$((skipped + 1))
+    continue
+  fi
 
-  total_copied=$((total_copied + copied))
-  total_same=$((total_same + same))
-  total_skipped=$((total_skipped + skipped))
-  total_pruned=$((total_pruned + pruned))
+  managed+=("$name")
+
+  # Cursor's bundled skills (~/.cursor/skills-cursor) may use the same name.
+  if [[ -e "$DEST/../skills-cursor/$name/SKILL.md" ]]; then
+    echo "  warn  $name also exists in Cursor's bundled skills-cursor/ (collision)"
+  fi
+
+  # Windows-native Cursor has no ~/.claude/scripts, so these cannot run there.
+  # The prefix is matched literally (the skills spell it as ~/..., $HOME/... or
+  # a bare .claude/...), so only the tail is searched for.
+  if [[ "$DEST" == /mnt/*/Users/* ]] && grep -qsF '.claude/scripts/' "$src_dir/SKILL.md"; then
+    linux_only+=("$name")
+  fi
+
+  if [[ $DRY_RUN -eq 1 ]]; then
+    echo "  copy  $name (dry-run)"
+    copied=$((copied + 1))
+    continue
+  fi
+
+  changed="$(mirror_tree "$src_dir" "$DEST/$name")"
+  if [[ "$changed" -eq 0 ]]; then
+    echo "  same  $name"
+    same=$((same + 1))
+  else
+    echo "  copy  $name"
+    copied=$((copied + 1))
+  fi
 done
+
+# --- 3. record what this script owns ---------------------------------------
+if [[ $DRY_RUN -eq 0 ]]; then
+  printf '%s\n' ${managed[@]+"${managed[@]}"} >"$DEST/$MANIFEST_NAME"
+fi
 
 # --- 4. summary ------------------------------------------------------------
 echo ""
-if [[ ${#DESTS[@]} -gt 1 ]]; then
-  echo "Total: copied $total_copied, unchanged $total_same, skipped $total_skipped, pruned $total_pruned"
-fi
-echo "Managed skills are listed in each destination's $MANIFEST_NAME"
+echo "Copied: $copied  Unchanged: $same  Skipped: $skipped  Pruned: $pruned"
+echo "Managed skills are listed in $DEST/$MANIFEST_NAME"
 
 if [[ ${#linux_only[@]} -gt 0 ]]; then
   echo ""
