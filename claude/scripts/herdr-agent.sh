@@ -57,6 +57,7 @@
 #   --from CHILD      report: who is reporting (default: this pane's agent name / pane id)
 #   --kind K          report: report (default) | question
 #   --no-watch        delegate: do not start the watcher
+#   --no-wait         ask: hand the request over and return (fan-out; poll yourself)
 #   --watch-timeout T delegate / watch: watcher lifetime (default: $HERDR_WATCH_TIMEOUT or 2h).
 #                     The watcher reports a child idle without a report after
 #                     $HERDR_WATCH_GRACE (default 90s), and leaves an .expired note
@@ -107,6 +108,7 @@ BOSS=""
 FROM=""
 TARGET=""
 WATCH=1
+NO_WAIT=0
 WATCH_TIMEOUT=${HERDR_WATCH_TIMEOUT:-2h}
 
 while [[ $# -gt 0 ]]; do
@@ -122,6 +124,7 @@ while [[ $# -gt 0 ]]; do
     --boss) BOSS=$2; shift 2 ;;
     --from) FROM=$2; shift 2 ;;
     --no-watch) WATCH=0; shift ;;
+    --no-wait) NO_WAIT=1; shift ;;
     --watch-timeout) WATCH_TIMEOUT=$2; shift 2 ;;
     --) shift; NATIVE_ARGS=("$@"); break ;;
     -h|--help) usage; exit 0 ;;
@@ -330,6 +333,20 @@ cmd_ask() {
 
   local out rc=0
   set +e
+  if [[ "$NO_WAIT" == "1" ]]; then
+    # Hand the request over and return: the caller fans out several sessions and
+    # polls them itself. --wait --until working only observes that the turn
+    # started (and presses Enter once if the pointer sits unsent).
+    out=$(herdr agent prompt "$NAME" "$pointer" --wait --until working --until blocked --timeout 8000 2>&1)
+    rc=$?
+    set -e
+    if ((rc != 0)); then
+      echo "herdr-agent: submission returned $(jq -r '.error.code // "error"' <<<"$out" 2>/dev/null || echo error)" >&2
+      exit 1
+    fi
+    echo "SENT=$NAME" >&2
+    exit 0
+  fi
   out=$(herdr agent prompt "$NAME" "$pointer" 2>&1)
   rc=$?
   set -e

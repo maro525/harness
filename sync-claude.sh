@@ -33,6 +33,7 @@ HARNESS_FILES=(
   scripts/claude-consult.sh
   scripts/codex-consult.sh
   scripts/consult.sh
+  scripts/orchestrate-parallel.sh
   skills/herdr-boss/SKILL.md
 )
 

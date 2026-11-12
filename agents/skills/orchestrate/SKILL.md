@@ -48,11 +48,31 @@ $ARGUMENTS: "{task description} [--tier=S|M|L] [--task-file={TASK_FILE}] [--line
 | 「さっきの PR に追加で」 | 追加修正（STEP 3F） | 既存 TASK_FILE を `find` で特定 |
 | 「issue は無いけど頼む」 | 通常（NOLINEAR） | Linear は触らない。ロックは feature 名で取る |
 | 「終わって」「もういい」 | — | `lock release`、残った tab を `close` / `reap` |
+| 「A / B / C それぞれ進めて」（並列） | 並列（下の「並列で回す」） | `orchestrate-parallel.sh A B C` |
 
 - runner は自分の CLI 名（Cursor なら `--runner=cursor`）。ロックと `## Meta` の `runner:` に入る
 - **同じ issue を並列で回さない**（実行ロックが止める）。別 issue なら並列可
 - 報告は日本語。Linear を触ったか（投稿 / ステータス / description）を最後に 1 行で添える
 - 途中で相談が必要になったら `claude-consult.sh --text "..."`（前の回答を引き継ぐときだけ `--append {answer.md}`）
+
+## 並列で回す（複数タスク）
+
+「task-A / task-B / task-C をそれぞれ進めて」と言われたら、**順番に回さず**、worktree を分けて同時に流す。条件は 3 つで、どれか外すと静かに壊れる。
+
+1. **1 タスク 1 ラン** — 実行ロックは `repo + LINEAR_ID` 単位。同じ issue を 2 本にすると片方が acquire で止まる
+2. **1 ラン 1 worktree** — ブランチ切替・commit・push・PR 作成をするので、同じ作業ツリーで 2 本走らせると git が壊れる。**ロックは issue 単位なのでこれを見逃す**
+3. **`delegate` ではなく `ask`** — `delegate` は boss の protocol を付ける。その節は phase-run.sh / consult / サブエージェントを禁じるので orchestrate と衝突する
+
+```bash
+~/.claude/scripts/orchestrate-parallel.sh PROJ-573:ci PROJ-580:cache :quick-fix
+```
+
+- 各タスクに worktree + tab を作り、`ask --no-wait` で依頼して**すぐ戻る**（待たない）
+- 既定は `--kind claude --model sonnet`（`--kind codex|pi` も可）。`--runner` はロックと `## Meta` の `runner:` に入る
+- 進捗は `herdr-agent.sh read orch-{id}-{feature}` / `herdr-agent.sh list`。終わったら `close` / `reap`
+- 同じ issue を 2 つ渡すとエラー。既にロックがある issue は警告を出して続行（その run は acquire で止まる）
+- `--dry-run` で計画だけ、`--ensure-only` で worktree / tab だけ作る
+- モデルを散らすと 429 を避けやすい（例: `--kind claude --model sonnet` と `--kind codex` を混ぜる）
 
 ## モード判定
 
