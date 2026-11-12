@@ -56,7 +56,19 @@ Claude Code 自身からは使わない（自分自身を呼ぶ形になる）�
 
 ### 1. 相談を書く
 
-作業ディレクトリの外（`/tmp` など）か、コミットされない場所にプロンプトファイルを作る。**Claude はこの会話を知らない**ので、次を自己完結で書く。
+**ファイルは必須ではない。** 短い相談ならそのまま標準入力で渡せる（出力は `$TMPDIR/harness-consult/out/` に出るので、リポジトリの cwd は汚れない）。長い相談や、後で読み返したい相談だけファイルにする。
+
+```bash
+# その場で頼む（ファイルを作らない）
+~/.claude/scripts/claude-consult.sh - <<'EOF'
+この設計の弱点を 3 つ挙げて。対象は src/foo.ts。結論を先に。
+EOF
+
+# ファイルに書いてから頼む（長い相談・`--append` で使い回すとき）
+~/.claude/scripts/claude-consult.sh /tmp/q.md
+```
+
+**Claude はこの会話を知らない** ので、どちらの形でも次を自己完結で書く。
 
 - 目的と背景（何を作る・直すのか）
 - 現状と制約（関係するファイルパスを具体的に。Claude が Read で読める）
@@ -69,15 +81,17 @@ Claude Code 自身からは使わない（自分自身を呼ぶ形になる）�
 
 ```bash
 ~/.claude/scripts/claude-consult.sh {prompt_file}                    # consult（読み取り専用）
+~/.claude/scripts/claude-consult.sh - < {prompt_file}               # 標準入力から
 ~/.claude/scripts/claude-consult.sh --role review {prompt_file}       # review 用 tab
 ~/.claude/scripts/claude-consult.sh --role implement {prompt_file}    # 実装用 tab（書き込み可）
 ~/.claude/scripts/claude-consult.sh --roles review,consult {prompt_file}  # 並列に別ロールへ
 ~/.claude/scripts/claude-consult.sh -t 30m -m sonnet {prompt_file}    # タイムアウト / モデル
 ```
 
-- 長くかかる（数分〜）ので、使えるならバックグラウンドで実行して完了を待つ。タイムアウト既定 20 分（`-t` / `CLAUDE_CONSULT_TIMEOUT`）
-- stdout が回答本文。`{prompt_file の拡張子を除いた名前}.answer.md` に同じ内容、`.json` にターミナルの生テキストと送信結果が残る（`--roles` は `.{role}.answer.md` / `.{role}.json`）
-- stderr の `AI_MODEL=claude/{model}` / `AGENT={agent名}` / `PANE={pane id}` を控える（tab 名は agent 名になる）
+- **このコマンドは回答が返るまで戻らない（同期）**。バックグラウンドに回さず、フォアグラウンドで待って stdout をそのまま読めばよい（追加の「待つ」手順は無い）。タイムアウト既定 20 分（`-t` / `CONSULT_TIMEOUT`）
+- どうしてもバックグラウンドにするなら、**完了通知の後に stderr の `ANSWER_FILE={path}` を読む**（回答本文はそこにも書かれている）
+- stdout が回答本文。`{prompt_file の拡張子を除いた名前}.answer.md` に同じ内容、`.json` にターミナルの生テキストと送信結果が残る（`--roles` は `.{role}.answer.md` / `.{role}.json`。標準入力のときは `$TMPDIR/harness-consult/out/{target}-consult-{timestamp}.answer.md`）
+- stderr の `ANSWER_FILE=…` / `AI_MODEL=claude/{model}` / `AGENT={agent名}` / `PANE={pane id}` を控える（tab 名は agent 名になる）
 - 回答は tab に常駐するセッションが `$TMPDIR/harness-consult/{agent}/` に書いた Markdown をそのまま使う（TUI の描画を経由しないのでコードフェンスが保たれる）
 - `--debug` でターミナルの生テキストを `{base}.pane.txt` に保存
 

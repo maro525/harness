@@ -26,9 +26,15 @@
 #   stdout : the answer body (with --roles: one `## <role>` section per role)
 #   files  : <base>.answer.md (answer) and <base>.json (raw)
 #            --roles: <base>.<role>.answer.md / <base>.<role>.json
-#   stderr : AI_MODEL=<target>/<model>, AGENT=<name>, PANE=<id>
+#            <base> is the prompt file without its extension; with `-` (stdin)
+#            it is $TMPDIR/harness-consult/out/<target>-consult-<timestamp>, so
+#            nothing is written into the caller's cwd
+#   stderr : ANSWER_FILE=<path>, AI_MODEL=<target>/<model>, AGENT=<name>, PANE=<id>
 #            (print backend: AI_MODEL=..., SESSION_ID=... (claude only))
 #   exit   : 0 = answered, 1 = failed, 2 = usage error
+#
+# The call blocks until the session answers (herdr backend: until the timeout),
+# so run it in the foreground and read stdout — no separate "wait" step.
 #
 # Run it from the repository you want to discuss: the consult pane inherits the
 # cwd and the session reads files relative to it.
@@ -74,7 +80,8 @@ Usage: consult.sh [OPTIONS] <prompt-file> | -
   in a Herdr pane (created on demand, reused afterwards); outside Herdr a
   one-shot `claude -p` / `codex exec` runs instead.
 
-  prompt-file   file holding the question (use - for stdin)
+  prompt-file   file holding the question (use - for stdin: nothing is written
+                into the cwd, the answer lands under $TMPDIR/harness-consult/out)
   --append FILE append a previous answer to the question (also -)
 
 Target:
@@ -147,6 +154,7 @@ while [[ $# -gt 0 ]]; do
     --show)          need_value "$@"; SHOW_TARGET=$2; shift 2 ;;
     -h|--help)       usage; exit 0 ;;
     --)              shift; break ;;
+    -)               break ;;   # stdin prompt: read it from standard input
     -*)              usage >&2; exit 2 ;;
     *)               break ;;
   esac
@@ -832,6 +840,7 @@ herdr_consult() {
       state:$state, submit:$submitted, pane_text:$text}' > "${base}.json"
   printf '%s\n' "$answer" > "${base}.answer.md"
 
+  echo "ANSWER_FILE=${base}.answer.md" >&2
   echo "AI_MODEL=$(target_model_label)" >&2
   if [[ "$CLOSE_AFTER" == "1" ]]; then
     herdr_close_session "$name"
@@ -871,6 +880,7 @@ claude_print_consult() {
     return 1
   fi
   cat "$answer_file"
+  echo "ANSWER_FILE=$answer_file" >&2
   echo "AI_MODEL=$(target_model_label)" >&2
   echo "SESSION_ID=$(jq -r '.session_id // empty' <<<"$result")" >&2
 }
@@ -897,6 +907,7 @@ codex_print_consult() {
     return 1
   fi
   cat "$answer_file"
+  echo "ANSWER_FILE=$answer_file" >&2
   echo "AI_MODEL=$(target_model_label)" >&2
 }
 
@@ -938,7 +949,10 @@ fi
 
 if [[ "$src" == "-" ]]; then
   prompt=$(cat)
-  base="$TARGET-consult"
+  # Nothing to name the outputs after, so keep them out of the caller's cwd (a
+  # consult must never drop .answer.md / .json into the repository).
+  base="${TMPDIR:-/tmp}/harness-consult/out/$TARGET-consult-$(date +%Y%m%d-%H%M%S)"
+  mkdir -p "$(dirname "$base")"
 else
   prompt=$(read_source "$src")
   base="${src%.*}"

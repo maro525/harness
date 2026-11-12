@@ -54,6 +54,9 @@ Cursor / pi / Cline / OpenCode などから、**別の Codex セッション**�
 
 ```bash
 ~/.claude/scripts/codex-consult.sh {prompt_file}                      # consult（read-only）
+~/.claude/scripts/codex-consult.sh - <<'EOF'                          # ファイルを作らずにその場で
+この設計の弱点を 3 つ挙げて。対象は src/foo.ts。結論を先に。
+EOF
 ~/.claude/scripts/codex-consult.sh --role review {prompt_file}         # review 用 tab
 ~/.claude/scripts/codex-consult.sh --role implement {prompt_file}      # 実装用 tab（workspace-write）
 ~/.claude/scripts/codex-consult.sh --roles review,consult {prompt_file} # 並列に別ロールへ
@@ -61,8 +64,9 @@ Cursor / pi / Cline / OpenCode などから、**別の Codex セッション**�
 ~/.claude/scripts/codex-consult.sh -b print {prompt_file}              # Herdr 無しの単発 codex exec
 ```
 
-- stdout が回答本文、`{base}.answer.md` と `.json`（生ログ）が残る。stderr の `AI_MODEL=codex/{model}` / `AGENT=hx-{role}` / `PANE={pane id}` を控える
-- 長くかかる（数分〜）。既定タイムアウト 20 分（`-t` / `CONSULT_TIMEOUT`）
+- **回答が返るまで戻らない（同期）**。フォアグラウンドで待って stdout を読むだけでよい。バックグラウンドにするなら、完了通知の後に stderr の `ANSWER_FILE=` を読む
+- stdout が回答本文、`{base}.answer.md` と `.json`（生ログ）が残る（標準入力のときは `$TMPDIR/harness-consult/out/` 配下）。stderr の `ANSWER_FILE=…` / `AI_MODEL=codex/{model}` / `AGENT=hx-{role}` / `PANE={pane id}` を控える
+- 既定タイムアウト 20 分（`-t` / `CONSULT_TIMEOUT`）
 
 ### 3. 続ける / 閉じる
 
