@@ -105,6 +105,8 @@ Herdr の構造は workspace → tab → pane。セッションをどこに作�
 
 | やりたいこと | コマンド |
 |---|---|
+| 相談して答えを受け取りたい（同期） | `claude-consult.sh` / `codex-consult.sh --role {role}` |
+| 並行で走らせて報告で判断（非同期） | `herdr-agent.sh delegate` ＋ `close` / `reap` |
 | 記録済みセッションの一覧 | `claude-consult.sh --status` / `herdr-agent.sh list` |
 | 1 つ閉じる | `claude-consult.sh --close --role ROLE` / `herdr-agent.sh close NAME` |
 | 複数ロールを閉じる | `claude-consult.sh --close --roles implement,review` |

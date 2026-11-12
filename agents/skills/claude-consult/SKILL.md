@@ -22,6 +22,15 @@ Herdr が動いていれば、**専用の tab に常駐する Claude Code セッ
 
 Claude Code 自身からは使わない（自分自身を呼ぶ形になる）。
 
+## 使う / 使わない
+
+- **使う**: 設計相談・レビュー・実装の引き継ぎ。**同期**——回答が返るまで待ち、stdout と `<base>.answer.md` で受け取って自分で検証できる
+- **使わない**:
+  - 並行で走らせて報告で判断したい → [herdr-boss](../herdr-boss/SKILL.md) の `delegate`（非同期。子の画面は見えない）
+  - 4 フェーズの実行 → `phase-run.sh`（orchestrate 経由）
+  - 外部リサーチ → `ai-fallback.sh`
+- **`herdr-agent.sh ensure` / `delegate` を直接使わない**（consult の tab/pane 管理はこのスクリプトが持つ。混ざると `hc-*` と任意名のセッションが二重に残る）
+
 ## 前提
 
 - `~/.claude/scripts/claude-consult.sh`（`./sync-claude.sh` で配布）、`claude` と `jq`
