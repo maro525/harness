@@ -113,7 +113,8 @@ Backend:
                      pane or not; it never falls back to the one-shot backend
                      on its own (pass '-b print' to run it)
   -r, --resume ID    print backend only, claude only: resume an earlier session
-  --name NAME        herdr backend: agent name (default hc-<role> / hx-<role>)
+  --name NAME        herdr backend: agent name (default consult / consult-<role>,
+                     codex: consult-codex / consult-codex-<role>)
   --new              herdr backend: replace the role's tab with a fresh one
   --reuse-cwd        herdr backend: reuse a session whose cwd differs
 
@@ -172,19 +173,39 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# Target = the CLI binary to drive. The agent prefix keeps the two targets from
-# sharing a Herdr session name (both live in the same state directory).
+# Target = the CLI binary to drive.
 case "$TARGET" in
-  claude) AGENT_KIND=claude; AGENT_PREFIX=hc ;;
-  codex)  AGENT_KIND=codex;  AGENT_PREFIX=hx ;;
+  claude) AGENT_KIND=claude ;;
+  codex)  AGENT_KIND=codex ;;
   *) usage >&2; exit 2 ;;
 esac
+
+# Session names become the Herdr agent name / tab label (docs/naming.md). Herdr
+# refuses anything but [a-z][a-z0-9_-]{0,31} after the tab exists, so check the
+# same rule before a tab is created.
+if [[ -n "$NAME_OVERRIDE" && ! "$NAME_OVERRIDE" =~ ^[a-z][a-z0-9_-]{0,31}$ ]]; then
+  die "invalid --name '$NAME_OVERRIDE': use [a-z][a-z0-9_-] up to 32 chars (docs/naming.md)" 2
+fi
+
+# Session name (docs/naming.md): the role name is readable on purpose - `consult`
+# for the default role, `consult-review` / `consult-implement` for the others,
+# and a `-codex` marker only when codex is the target (claude is the default).
+default_agent_name() {
+  local role=$1 base
+  base=consult
+  [[ "$TARGET" == "codex" ]] && base=consult-codex
+  if [[ "$role" == "consult" ]]; then
+    printf '%s' "$base"
+  else
+    printf '%s-%s' "$base" "$role"
+  fi
+}
 
 if [[ "${SHOW_TARGET:-}" != "" ]]; then  target=$SHOW_TARGET
   if [[ -f "$(printf '%s/%s.json' "$STATE_DIR" "$target")" ]]; then
     : # already an agent name
   else
-    target="$AGENT_PREFIX-$target"
+    target=$(default_agent_name "$target")
   fi
   herdr agent read "$target" --source recent-unwrapped --lines "$READ_LINES"
   exit 0
@@ -348,11 +369,10 @@ role_extra_args() {
 }
 
 role_agent_name() {
-  local role=$1
   if [[ -n "$NAME_OVERRIDE" ]]; then
     printf '%s' "$NAME_OVERRIDE"
   else
-    printf '%s-%s' "$AGENT_PREFIX" "$role"
+    default_agent_name "$1"
   fi
 }
 

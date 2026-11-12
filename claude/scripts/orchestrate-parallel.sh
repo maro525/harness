@@ -130,6 +130,21 @@ native_args() {
   esac
 }
 
+# Session name (docs/naming.md): `orchestrate-<id>[-<feature>]`, kept inside
+# Herdr's 32-char limit. The feature is dropped before anything is truncated, and a
+# truncation only ever cuts a whole trailing word.
+session_name() { # id-lower [feature]
+  local cand="orchestrate-$1"
+  if [[ -n "${2:-}" ]] && (( ${#cand} + ${#2} + 1 <= 32 )); then
+    cand="$cand-$2"
+  fi
+  if (( ${#cand} > 32 )); then
+    cand=${cand:0:32}
+    cand=$(printf '%s' "$cand" | sed 's/-[^-]*$//')
+  fi
+  printf '%s' "$cand"
+}
+
 # TASK -> ID / FEATURE / NAME / BRANCH
 parse_task() { # task
   local task=$1 id feature
@@ -154,11 +169,11 @@ parse_task() { # task
   FEATURE=$(slug "$feature")
   [[ -n "$FEATURE" ]] || die "feature is empty after slugging: $task"
   if [[ -n "$ID" ]]; then
-    NAME="orch-$(slug "$ID-$FEATURE")"
+    NAME=$(session_name "$(slug "$ID")" "$FEATURE")
     BRANCH="${PREFIX}$(slug "$ID")-$FEATURE"
   else
     ID="NOLINEAR"
-    NAME="orch-$(slug "noissue-$FEATURE")"
+    NAME=$(session_name "noissue-$FEATURE")
     BRANCH="${PREFIX}${FEATURE}"
   fi
 }

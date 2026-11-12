@@ -26,7 +26,7 @@ Herdr 上のエージェント・セッションは、**閉じるまで残る**�
 
 Herdr の構造は workspace → tab → pane。セッションをどこに作るかは `herdr-agent.sh ensure` の `--topology` で選ぶ（`claude-consult.sh` / `codex-consult.sh` は常に `tab`）。
 
-相談先は 2 つで、実装は同じ `consult.sh`（`--to claude|codex`）。以下の `claude-consult.sh` は、Codex を相談先にするとき `codex-consult.sh` に読み替えればそのまま使える。Herdr の agent 名は claude が `hc-*`、codex が `hx-*` で分かれるので、両方を並べて残せる（引数なしの `--close` は両方閉じる）。
+相談先は 2 つで、実装は同じ `consult.sh`（`--to claude|codex`）。以下の `claude-consult.sh` は、Codex を相談先にするとき `codex-consult.sh` に読み替えればそのまま使える。Herdr の agent 名は claude が `consult` / `consult-<role>`、codex が `consult-codex` / `consult-codex-<role>` なので、両方を並べて残せる（引数なしの `--close` は両方閉じる）。
 
 | topology | 何ができる | 向いている場面 |
 |---|---|---|
@@ -75,6 +75,8 @@ Herdr の構造は workspace → tab → pane。セッションをどこに作�
 ```
 
 ## タスク境界のルール
+
+セッション名・ブランチ名・workspace 名は [`naming.md`](naming.md) の規則に従う（`<種類>-<対象>[-<補足>]`、英小文字とハイフン）。以下のコマンドはその名前で対象を選ぶので、命名が揃っていないと**閉じ間違い・閉じ忘れ**が起きる。
 
 1. **開始時**: 前のタスクのセッションが残っていたら閉じる（または `--new` で作り直す）
 
