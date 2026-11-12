@@ -54,6 +54,21 @@ Cursor は `~/.agents/skills` を直接読むので symlink は不要（CLI 2026
 
 orchestrate のフェーズ指定モードは探索に頼らず、プロンプトで `Read {abs path}/SKILL.md and follow it` と絶対パスを渡す（CLI ごとの探索差を吸収するため）。各 CLI の起動オプションは下の「外部 CLI のフェーズ実行」。
 
+## どの道具をいつ使うか
+
+境界は 2 つだけ。**「待って答えを受け取る（同期）＝ consult」「待たずに配る（非同期）＝ delegate」**。boss として動いているセッションでも、相談は consult に寄せる。
+
+| 目的 | 使う | 使わない |
+|---|---|---|
+| 設計相談・レビュー（回答を読んで自分で決める） | `claude-consult.sh` / `codex-consult.sh`（`consult` / `review`） | `herdr-agent.sh delegate` |
+| 実装を同じブランチでやらせて結果を受け取る | `claude-consult.sh --role implement` | delegate（worktree が分かれる） |
+| 実装を別ブランチ / worktree で並行、報告を inbox で受ける | `herdr-agent.sh ensure --topology worktree` + `delegate`（`herdr-boss`） | consult |
+| 4 フェーズを回す | `phase-run.sh`（orchestrate 経由） | consult / delegate の直呼び |
+| 外部リサーチ（Web・単発の別モデル調査） | `ai-fallback.sh` | consult |
+
+- `delegate` は**待たない・子の画面は見ない**。判断材料は inbox の報告（やったこと / 変えたファイル / 実行したコマンドと結果 / 未解決）。過程を見たいなら consult を使う
+- 委任も相談も **tab は閉じるまで残る**。フローの最後に `herdr-agent.sh close {name}` / `reap`、consult は `--close`
+
 ## 外部 CLI のフェーズ実行
 
 `/orchestrate` のフェーズ指定モード（`../claude/commands/orchestrate.md` STEP 3P）が、既存 TASK_FILE の 1 フェーズを外部 CLI に実行させるときの呼び出し表。対象 CLI は **pi / cline / opencode / codex**（Claude の別モデルは対象外。`context: fork` の command は frontmatter の `model` が優先され `--model` で変えられない）。読ませる定義は `~/.agents/skills/{phase}/SKILL.md`（この `skills/` の配布先。配布は `../sync-agents.sh`）。

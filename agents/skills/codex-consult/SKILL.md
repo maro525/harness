@@ -12,6 +12,17 @@ Cursor / pi / Cline / OpenCode などから、**別の Codex セッション**�
 
 実装は [claude-consult](../claude-consult/SKILL.md) と同じ `consult.sh` で、`--to codex` が固定された薄いラッパー `codex-consult.sh` を呼ぶ。Herdr の扱い（tab の作り方・再利用・再送信・`--status` / `--close`）は完全に共通なので、**詳細は claude-consult の SKILL.md を読む**。ここには codex 固有の差分だけを書く。
 
+## 使う / 使わない
+
+境界は claude-consult と同じ: **待って答えを受け取る（同期）＝ consult、待たずに配る（非同期）＝ delegate**。
+
+- **使う**: 設計相談・レビュー・実装の引き継ぎ（claude とは別モデルの意見がほしいとき）
+- **使わない**:
+  - 並行で走らせて報告で判断したい → [herdr-boss](../herdr-boss/SKILL.md) の `delegate`
+  - 4 フェーズの実行 → `phase-run.sh`
+  - 外部リサーチ → `ai-fallback.sh`（codex も候補に入っている）
+- **`herdr-agent.sh ensure` / `delegate` を直接使わない**（`hx-*` の tab/pane 管理はこのスクリプトが持つ）
+
 ## claude-consult との違い
 
 | | claude-consult | codex-consult |
