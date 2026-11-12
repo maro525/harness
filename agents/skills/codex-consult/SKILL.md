@@ -54,6 +54,7 @@ Cursor / pi / Cline / OpenCode などから、**別の Codex セッション**�
 
 ```bash
 ~/.claude/scripts/codex-consult.sh {prompt_file}                      # consult（read-only）
+~/.claude/scripts/codex-consult.sh --context --text "{一言}"          # 一番短い形
 ~/.claude/scripts/codex-consult.sh - <<'EOF'                          # ファイルを作らずにその場で
 この設計の弱点を 3 つ挙げて。対象は src/foo.ts。結論を先に。
 EOF
@@ -65,6 +66,7 @@ EOF
 ```
 
 - **回答が返るまで戻らない（同期）**。フォアグラウンドで待って stdout を読むだけでよい。バックグラウンドにするなら、完了通知の後に stderr の `ANSWER_FILE=` を読む
+- `--text` で一言を渡せる。`--context` を付けると repo / branch / 直近のコミットが質問の前に付く（claude-consult と同じ）
 - stdout が回答本文、`{base}.answer.md` と `.json`（生ログ）が残る（標準入力のときは `$TMPDIR/harness-consult/out/` 配下）。stderr の `ANSWER_FILE=…` / `AI_MODEL=codex/{model}` / `AGENT=hx-{role}` / `PANE={pane id}` を控える
 - 既定タイムアウト 20 分（`-t` / `CONSULT_TIMEOUT`）
 

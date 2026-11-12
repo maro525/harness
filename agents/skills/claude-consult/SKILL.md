@@ -56,31 +56,34 @@ Claude Code 自身からは使わない（自分自身を呼ぶ形になる）�
 
 ### 1. 相談を書く
 
-**ファイルは必須ではない。** 短い相談ならそのまま標準入力で渡せる（出力は `$TMPDIR/harness-consult/out/` に出るので、リポジトリの cwd は汚れない）。長い相談や、後で読み返したい相談だけファイルにする。
+**思いつきの 1〜2 行でよい。ファイルも、立派な依頼文も要らない。** 不足する前提（リポジトリ・ブランチ・直近のコミット・変更ファイル数）は `--context` が自動で付ける。呼び出し側のエージェントは、**ユーザーに書き直させずに**、そのままの言葉で投げてよい。
 
 ```bash
-# その場で頼む（ファイルを作らない）
-~/.claude/scripts/claude-consult.sh - <<'EOF'
-この設計の弱点を 3 つ挙げて。対象は src/foo.ts。結論を先に。
+# 最短（引数で渡す。ファイルを作らない）
+~/.claude/scripts/claude-consult.sh --context --text "CI をもっとはやくしたい。方法を考えたい"
+
+# 複数行をそのまま（ヒアドキュメント）
+~/.claude/scripts/claude-consult.sh --context - <<'EOF'
+CI をもっとはやくしたいんだよね。方法を考えたい
 EOF
 
-# ファイルに書いてから頼む（長い相談・`--append` で使い回すとき）
+# 長い相談・`--append` で使い回す相談だけファイルにする
 ~/.claude/scripts/claude-consult.sh /tmp/q.md
 ```
 
-**Claude はこの会話を知らない** ので、どちらの形でも次を自己完結で書く。
-
-- 目的と背景（何を作る・直すのか）
-- 現状と制約（関係するファイルパスを具体的に。Claude が Read で読める）
-- 聞きたいこと（案の比較、落とし穴、設計の妥当性など。1 回に 1 テーマ）
-- 回答の形式の希望（結論を先に、理由、代替案、など）
-
-秘密情報（API キー・個人情報）は書かない。
+- `--text` / 標準入力のときの出力は `$TMPDIR/harness-consult/out/` なので、リポジトリの cwd は汚れない
+- `--context` を付けると「repo / branch / cwd / changed files / 直近 5 コミット」が質問の前に付く。1 行の相談でも見当違いの回答になりにくい
+- **Claude はこの会話を知らない。** だから最低限、次のどれかは入れる（足りなければ自分で調べる前提でよい）:
+  - 何をしたいか（目的・つらさ）
+  - 対象（ファイルパスやブランチ。`--context` が入れる分を除く）
+  - 回答の形（結論を先に / 候補を 3 つ / リスクも / 短く）
+- 秘密情報（API キー・個人情報）は書かない
 
 ### 2. 実行する
 
 ```bash
 ~/.claude/scripts/claude-consult.sh {prompt_file}                    # consult（読み取り専用）
+~/.claude/scripts/claude-consult.sh --context --text "{一言}"       # 一番短い形
 ~/.claude/scripts/claude-consult.sh - < {prompt_file}               # 標準入力から
 ~/.claude/scripts/claude-consult.sh --role review {prompt_file}       # review 用 tab
 ~/.claude/scripts/claude-consult.sh --role implement {prompt_file}    # 実装用 tab（書き込み可）

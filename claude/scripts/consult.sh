@@ -61,6 +61,8 @@ FORCE_NEW=0
 CLOSE_AFTER=0
 REUSE_CWD=0
 APPEND_FILES=()
+INLINE_TEXT=""
+WITH_CONTEXT=0
 READ_LINES=${CONSULT_READ_LINES:-${CLAUDE_CONSULT_READ_LINES:-800}}
 STATE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/harness/herdr-consult"
 
@@ -82,6 +84,10 @@ Usage: consult.sh [OPTIONS] <prompt-file> | -
 
   prompt-file   file holding the question (use - for stdin: nothing is written
                 into the cwd, the answer lands under $TMPDIR/harness-consult/out)
+  --text TEXT    pass the question as an argument (same output location as -);
+                handy for a one-liner, and the shortest thing to type
+  --context      prepend the repository, branch, recent commits and the number
+                of changed files to the question (so a one-liner is enough)
   --append FILE append a previous answer to the question (also -)
 
 Target:
@@ -146,6 +152,9 @@ while [[ $# -gt 0 ]]; do
     -r|--resume)     need_value "$@"; RESUME_ID=$2; shift 2 ;;
     --name)          need_value "$@"; NAME_OVERRIDE=$2; shift 2 ;;
     --append)        need_value "$@"; APPEND_FILES+=("$2"); shift 2 ;;
+    --text)          need_value "$@"; INLINE_TEXT=$2; shift 2 ;;
+    --text=*)        INLINE_TEXT=${1#*=}; shift ;;
+    --context)       WITH_CONTEXT=1; shift ;;
     --new)           FORCE_NEW=1; shift ;;
     --debug)         CLAUDE_CONSULT_DEBUG=1; shift ;;
     --close)         CLOSE_AFTER=1; shift ;;
@@ -204,10 +213,10 @@ case "$BACKEND" in
 esac
 
 src=${1:-}
-if [[ -z "$src" && "$CLOSE_AFTER" == "1" ]]; then
+if [[ -z "$src" && -z "$INLINE_TEXT" && "$CLOSE_AFTER" == "1" ]]; then
   CLOSE_ONLY=1
 fi
-if [[ -z "$src" && "${CLOSE_ONLY:-0}" != "1" ]]; then
+if [[ -z "$src" && -z "$INLINE_TEXT" && "${CLOSE_ONLY:-0}" != "1" ]]; then
   usage >&2
   exit 2
 fi
@@ -378,8 +387,35 @@ read_source() {
   fi
 }
 
+# A tiny, deterministic context block: repo / branch / recent commits / how many
+# files are dirty. It is what makes a one-line question ("CI をはやくしたい")
+# answerable without the caller writing a full brief first.
+context_header() {
+  local repo branch dirty
+  repo=$(git rev-parse --show-toplevel 2>/dev/null || printf '%s' "$PWD")
+  branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || printf 'none')
+  dirty=$(git status --short 2>/dev/null | wc -l | tr -d ' ')
+  cat <<EOF
+## Context (auto, not part of the question)
+
+- repo: $repo
+- branch: $branch
+- cwd: $PWD
+- changed files: $dirty
+- recent commits:
+$(git log --oneline -5 2>/dev/null | sed 's/^/  - /' || printf '  - (none)')
+
+--- end of context
+
+EOF
+}
+
 prompt_body() {
   local body=$1 f
+  if [[ "$WITH_CONTEXT" == "1" ]]; then
+    context_header
+    printf '\n'
+  fi
   printf '%s\n' "$body"
   if [[ ${#APPEND_FILES[@]} -gt 0 ]]; then
     printf '\n---\n## Earlier answer(s) to build on\n\n'
@@ -859,7 +895,11 @@ claude_print_consult() {
               --strict-mcp-config --output-format json)
   [[ -n "$RESUME_ID" ]] && args+=(--resume "$RESUME_ID")
   local rc=0
-  timeout -k 1m "${TIMEOUT_S}s" claude "${args[@]}" "$prompt" < /dev/null > "$raw_file" || rc=$?
+  # The prompt goes through stdin, not argv: it can be long (ARG_MAX) and it may
+  # start with '-' (a Markdown rule, a bullet), which the CLI would parse as an
+  # option.
+  printf '%s' "$prompt" |
+    timeout -k 1m "${TIMEOUT_S}s" claude "${args[@]}" > "$raw_file" || rc=$?
   if (( rc != 0 )); then
     echo "error: claude exited with $rc (see $raw_file)" >&2
     return 1
@@ -906,6 +946,8 @@ codex_print_consult() {
     echo "error: codex returned no final message (see $raw_file)" >&2
     return 1
   fi
+  # codex -o writes the final message without a trailing newline.
+  [[ -n "$(tail -c 1 "$answer_file")" ]] && echo >>"$answer_file"
   cat "$answer_file"
   echo "ANSWER_FILE=$answer_file" >&2
   echo "AI_MODEL=$(target_model_label)" >&2
@@ -947,11 +989,22 @@ if [[ "${CLOSE_ONLY:-0}" == "1" ]]; then
   exit 0
 fi
 
-if [[ "$src" == "-" ]]; then
+# A prompt with no file name to derive the outputs from (stdin or --text): keep
+# them out of the caller's cwd, because a consult must never drop .answer.md /
+# .json into the repository.
+inline_base() {
+  printf '%s/harness-consult/out/%s-consult-%s' \
+    "${TMPDIR:-/tmp}" "$TARGET" "$(date +%Y%m%d-%H%M%S)"
+}
+
+if [[ -n "$INLINE_TEXT" ]]; then
+  [[ -z "$src" ]] || die "--text and a prompt file are mutually exclusive" 2
+  prompt=$INLINE_TEXT
+  base=$(inline_base)
+  mkdir -p "$(dirname "$base")"
+elif [[ "$src" == "-" ]]; then
   prompt=$(cat)
-  # Nothing to name the outputs after, so keep them out of the caller's cwd (a
-  # consult must never drop .answer.md / .json into the repository).
-  base="${TMPDIR:-/tmp}/harness-consult/out/$TARGET-consult-$(date +%Y%m%d-%H%M%S)"
+  base=$(inline_base)
   mkdir -p "$(dirname "$base")"
 else
   prompt=$(read_source "$src")
