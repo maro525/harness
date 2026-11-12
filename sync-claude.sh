@@ -31,6 +31,8 @@ HARNESS_FILES=(
   scripts/task-file.sh
   scripts/herdr-agent.sh
   scripts/claude-consult.sh
+  scripts/codex-consult.sh
+  scripts/consult.sh
   skills/herdr-boss/SKILL.md
 )
 

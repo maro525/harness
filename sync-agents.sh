@@ -25,7 +25,7 @@ DEST="$SCRIPT_DIR/agents/skills"
 CLINE_SKILLS="$HOME/.cline/skills"
 PI_SKILLS="$HOME/.pi/agent/skills"
 
-AGENT_SKILLS=(startproject team-implement team-review deploy orchestrate claude-consult herdr-boss)
+AGENT_SKILLS=(startproject team-implement team-review deploy orchestrate claude-consult codex-consult herdr-boss)
 
 # shellcheck source=lib/sync-common.sh
 source "$SCRIPT_DIR/lib/sync-common.sh"
