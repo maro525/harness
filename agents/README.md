@@ -62,7 +62,7 @@ orchestrate のフェーズ指定モードは探索に頼らず、プロンプ�
 |---|---|---|
 | 設計相談・レビュー（回答を読んで自分で決める） | `claude-consult.sh` / `codex-consult.sh`（`consult` / `review`） | `herdr-agent.sh delegate` |
 | 実装を同じブランチでやらせて結果を受け取る | `claude-consult.sh --role implement` | delegate（worktree が分かれる） |
-| 実装を別ブランチ / worktree で並行、報告を inbox で受ける | `herdr-agent.sh ensure --topology worktree` + `delegate`（`herdr-boss`） | consult |
+| 実装を別ブランチ / worktree で並行、報告を inbox で受ける | `herdr-agent.sh ensure --topology worktree --branch feature/<name>` + `delegate`（`herdr-boss`） | consult |
 | 4 フェーズを回す | `phase-run.sh`（orchestrate 経由） | consult / delegate の直呼び |
 | 外部リサーチ（Web・単発の別モデル調査） | `ai-fallback.sh` | consult |
 

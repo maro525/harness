@@ -40,7 +40,7 @@ Bash ツールの呼び出しごとにシェルが変わる環境では、`--bos
 ### 1. 子を用意する
 
 ```bash
-~/.claude/scripts/herdr-agent.sh ensure child-a --kind claude -- --model sonnet --permission-mode auto
+~/.claude/scripts/herdr-agent.sh ensure child-a --kind claude --topology worktree --branch feature/child-a -- --model sonnet --permission-mode auto
 ~/.claude/scripts/herdr-agent.sh ensure child-b --kind pi
 ```
 
