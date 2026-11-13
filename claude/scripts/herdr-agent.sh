@@ -152,6 +152,20 @@ done
 
 [[ -n "$CMD" ]] || { usage >&2; exit 2; }
 
+# A claude child must not stop on approval dialogs: nobody is watching its pane.
+# Unless the caller picked a mode explicitly, start it in `auto` (the same default
+# consult sessions use). Without this, a caller that passes no flags inherits
+# nothing in particular and a caller copying an old example got `acceptEdits`.
+if [[ "${KIND:-}" == "claude" ]]; then
+  has_mode=0
+  for arg in ${NATIVE_ARGS[@]+"${NATIVE_ARGS[@]}"}; do
+    case "$arg" in --permission-mode|--permission-mode=*) has_mode=1 ;; esac
+  done
+  if (( has_mode == 0 )) && [[ "$CMD" == "ensure" || "$CMD" == "restart" ]]; then
+    NATIVE_ARGS+=(--permission-mode auto)
+  fi
+fi
+
 # Naming rule (docs/naming.md): lowercase words joined by '-'. The name becomes
 # the Herdr agent name, the tab label and (with --topology worktree) the
 # workspace label. Herdr itself refuses anything but [a-z][a-z0-9_-]{0,31}, and

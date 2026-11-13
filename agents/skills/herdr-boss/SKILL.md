@@ -44,7 +44,7 @@ inbox のディレクトリ名と通知の宛先になる。
 ### 1. 子を用意する
 
 ```bash
-~/.claude/scripts/herdr-agent.sh ensure child-a --kind claude -- --model sonnet --permission-mode acceptEdits
+~/.claude/scripts/herdr-agent.sh ensure child-a --kind claude -- --model sonnet --permission-mode auto
 ~/.claude/scripts/herdr-agent.sh ensure child-b --kind pi
 ```
 

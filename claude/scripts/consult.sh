@@ -305,7 +305,7 @@ role_answer_dir() {
 # ROLE_ANSWER=1 means the role writes its answer file (claude consult/review: the
 # Write tool, limited to its own temp directory). codex is read-only there, so it
 # answers between the terminal markers only; implement keeps write access
-# (claude: acceptEdits, codex: workspace-write). Plan mode is not used for the
+# (claude: auto, codex: workspace-write). Plan mode is not used for the
 # herdr backend because it forbids the answer file (see build_prompt) — the tool
 # list is what limits the session.
 role_settings() {
