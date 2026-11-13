@@ -47,7 +47,9 @@
 #                     tab        : a new tab in the calling workspace
 #                     workspace  : a new workspace for the repo (no git changes)
 #                     worktree   : a new git worktree + its workspace + a tab
-#   --branch BR       worktree: branch to create (default: herdr/<name>)
+#   --branch BR       worktree: branch to create (default: feature/<name>). Herdr's
+#                     own default would be "worktree/<random words>", which does not
+#                     follow docs/naming.md; an explicit --branch always wins
 #   --base REF        worktree: base ref (default: the repo's HEAD)
 #   --timeout T       ask: overall timeout, e.g. 20m (default: $HERDR_AGENT_TIMEOUT or 20m)
 #   --answer-file F   ask: wait for this file instead of just the settled state
@@ -281,8 +283,14 @@ cmd_ensure() {
       ws_owned="true"
       ;;
     worktree)
-      local -a wt_args=(--cwd "$REPO" --label "$NAME" --no-focus)
-      [[ -n "$BRANCH" ]] && wt_args+=(--branch "$BRANCH")
+      # Never let Herdr name the branch (it picks worktree/<random>): default to the
+      # house style feature/<name>, the same prefix orchestrate uses.
+      [[ -n "$BRANCH" ]] || BRANCH="feature/$NAME"
+      case "$BRANCH" in
+        herdr/*|cursor/*)
+          echo "herdr-agent: warning: branch '$BRANCH' does not follow docs/naming.md (use feature/<slug>)" >&2 ;;
+      esac
+      local -a wt_args=(--cwd "$REPO" --label "$NAME" --no-focus --branch "$BRANCH")
       [[ -n "$BASE" ]] && wt_args+=(--base "$BASE")
       created=$(herdr worktree create "${wt_args[@]}" 2>&1) ||
         die "herdr worktree create failed: $created"

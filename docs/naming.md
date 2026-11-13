@@ -39,10 +39,12 @@ Herdr の上限は 32 文字。`orchestrate-<id>-<feature>` が超えるとき�
 | orchestrate（並列含む） | `feature/<linear-id 小文字>-<slug>` | `feature/nsketch-1983-ci-cache` |
 | issue 無し | `feature/<slug>` | `feature/quick-fix` |
 | delegate / worktree を手で切るとき | `<type>/<slug>`（`type` は `feature` / `fix` / `chore` / `docs`） | `fix/flutter-model-path-filter` |
+| `ensure --topology worktree` で `--branch` を省いたとき | **`feature/<セッション名>`**（スクリプトの既定） | `feature/claude-help-page-access` |
 
 - **Linear ID はブランチ名に小文字で入れる**（deploy が紐づけを確認する）
 - ブランチ名は `orchestrate-parallel.sh` が `feature/` ＋ ID ＋ slug で自動生成する。変えたいときは `--prefix`
 - worktree のパスは Herdr が `~/.herdr/worktrees/<repo>/<branch の / を - にしたもの>` に作る（名前は決め打ちできない）
+- **`herdr/` と `cursor/` の接頭辞は使わない。** `herdr/` は Herdr 自身の worktree 既定（`worktree/<ランダム>`）と混同しやすく、`cursor/` は実行者ごとに増えてしまう。スクリプトは `--branch` にこの 2 つが来たら警告する
 
 ## 4. その他の記録物
 
