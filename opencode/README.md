@@ -77,14 +77,12 @@ Claude 版のリサーチ・設計相談は `~/.claude/scripts/ai-fallback.sh`�
 |---|---|---|
 | v2 | `opencode2` 2.1.4 | **本線**。`run --standalone --agent plan` で動く（実測 `PONG`） |
 | v1 | `opencode` 1.14.48 | `run` が全モデルで `NOT NULL constraint failed: session_message.seq` |
-| pi | `pi -p --no-session` | 最後の砦。`opencode-go/*` は `oc-sdk-go/*` に読み替え |
+| pi | `pi -p --no-session` | 最後の砦 |
 
 | 順 | モデル | OpenCode からそのまま使えるか |
 |---|---|---|
 | 1 | `codex`（`codex/{config.toml の model}`） | OpenCode を使わない（Codex CLI で実行） |
-| 2 | `github-copilot/gpt-6-astra` | 使える。ただし Copilot の**月間 quota 切れ**で `quota` 判定になる（実測） |
-| 3 | `opencode-go/deepseek-v4-pro` | モデルは `opencode2 models` に出るが、この環境では **401（invalid credential）** |
-| 4 | `ollama-cloud/deepseek-v4.1-flash` | **provider 登録が必要**（下記）。未登録ならスクリプトが `pi -p --model` に切り替える |
+| 2 | `ollama-cloud/deepseek-v4.1-flash` | **provider 登録が必要**（下記）。未登録ならスクリプトが `pi -p --model` に切り替える |
 
 ### v1 と v2 の CLI 差分
 
@@ -124,7 +122,7 @@ config / data / DB / log のパスは v1 と v2 で共通（`opencode2 debug pat
 
 - キーは `~/.bashrc.local` で `export OLLAMA_API_KEY=...`（OpenCode の設定ファイルに直書きしない）
 - 疎通: `opencode run --agent plan -m ollama-cloud/deepseek-v4.1-flash "Reply with exactly: PONG" < /dev/null`
-- 未登録のままスクリプトを回すと、4 番目は `pi -p --no-session --model ollama-cloud/deepseek-v4.1-flash` で実行される（pi 側は登録済み）
+- 未登録のままスクリプトを回すと、ollama-cloud は `pi -p --no-session --model ollama-cloud/deepseek-v4.1-flash` で実行される（pi 側は登録済み）
 
 ## Limitations
 

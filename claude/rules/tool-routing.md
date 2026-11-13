@@ -53,20 +53,18 @@
 | 順 | モデル | 提供元 | 位置づけ |
 |---|---|---|---|
 | 1 | `codex`（`AI_MODEL` は `codex/{config.toml の model}`） | Codex CLI（`codex exec`、読み取り専用） | 既定 |
-| 2 | `github-copilot/gpt-6-astra` | OpenCode（GitHub Copilot） | 1 が quota / 認証 / タイムアウト / 空出力 / 未インストールのとき |
-| 3 | `opencode-go/deepseek-v4-pro` | OpenCode Go（`https://opencode.ai/zen/go/v1`） | 1・2 が 429 / 残高切れのとき |
-| 4 | `ollama-cloud/deepseek-v4.1-flash` | Ollama Cloud（`https://ollama.com/v1`） | 1〜3 が 429 / 残高切れのとき |
+| 2 | `ollama-cloud/deepseek-v4.1-flash` | Ollama Cloud（`https://ollama.com/v1`） | 1 が quota / 認証 / タイムアウト / 空出力 / 未インストールのとき |
 
-- 候補の上書き: `AI_CHAIN="opencode-go/deepseek-v4-pro ollama-cloud/deepseek-v4.1-flash" ~/.claude/scripts/ai-fallback.sh {prompt_file}`。Codex は `codex`（`-m` なし。モデルは `${CODEX_HOME:-~/.codex}/config.toml` の `model` で、読めなければ `codex/default` と記録）か `codex:{model}`（`-m {model}` を付ける）と書く（例: `AI_CHAIN="codex:gpt-6-sol github-copilot/gpt-6-astra"`）
+- 候補の上書き: `AI_CHAIN="ollama-cloud/deepseek-v4.1-flash" ~/.claude/scripts/ai-fallback.sh {prompt_file}`。Codex は `codex`（`-m` なし。モデルは `${CODEX_HOME:-~/.codex}/config.toml` の `model` で、読めなければ `codex/default` と記録）か `codex:{model}`（`-m {model}` を付ける）と書く（例: `AI_CHAIN="codex:gpt-6-sol ollama-cloud/deepseek-v4.1-flash"`）
 - **Codex はエンジン切替なしの単発候補。** 失敗したら（quota / 認証 / タイムアウト / 空出力 / exit ≠ 0）そのまま次のモデルへ進む。`codex` が入っていなければ `skip: codex/{model} on codex (not installed)` を出して OpenCode 連鎖だけで動く。逆に OpenCode 系エンジンが無く `codex` だけでも動く（`provider/model` 候補は `(no engine)` で skip）
 - Codex の判定は **exit 0 かつ最終メッセージ（`-o`）が非空なら成功**で、出力は grep しない（プロンプトに「quota」等が含まれても誤判定しない）。失敗したときだけ stderr と出力を quota（`429` / `rate limit` / `usage limit` など）→ 認証（`401` / `403` / `unauthorized`）の順に見て理由を付ける
 - 切替条件（スクリプトが判定）: HTTP 429 / `insufficient_quota` / rate limit → 次の候補。401 / 403（認証エラー）→ 次の候補。`exit 124` / `137`（タイムアウト）→ 次の候補。**空出力**のときは 429 をログ（`~/.local/share/opencode/log/`）、`ERROR` を stderr（`--print-logs --log-level ERROR`）で見て、どちらも無ければ「空出力」として次の候補
 - **quota 以外の理由で落ちたときはエンジンを切り替える。** OpenCode 側の不具合（DB 破損・インストール不全）は次のモデルでも同じ壁に当たるので、その場合だけ `pi -p --no-session --model` に切り替えて連鎖を続ける（stderr に `switching to pi` を出す）。quota のときは切り替えない
-- **記録は必須。** 成果物（`DESIGN` / `## team-review` / PR 本文など）に `利用AI: {AI_MODEL}` を書き、落とした候補があれば `（{model} は {理由} で skip）` を添える（例: `利用AI: github-copilot/gpt-6-astra（codex/gpt-6-sol は quota で skip）`）。スクリプトは stderr に `AI_ENGINE` / `AI_MODEL` / `AI_SKIPPED` を出す
+- **記録は必須。** 成果物（`DESIGN` / `## team-review` / PR 本文など）に `利用AI: {AI_MODEL}` を書き、落とした候補があれば `（{model} は {理由} で skip）` を添える（例: `利用AI: ollama-cloud/deepseek-v4.1-flash（codex/gpt-6-sol は quota で skip）`）。スクリプトは stderr に `AI_ENGINE` / `AI_MODEL` / `AI_SKIPPED` を出す
 - 全候補が失敗したときだけ OpenCode なしで続け、成果物に「OpenCode 不可: {理由}」と書く
-- エンジンも連鎖する（`provider/model` 候補のみ。Codex は対象外）: `opencode2`（v2）→ `opencode`（v1）→ `pi` の順で、入っているものを使う。1 つのエンジンでモデル連鎖を回し、**quota 以外**の理由（DB 破損・認証エラー・タイムアウトなど）で落ちたら次のエンジンで同じモデルから再開する。`pi` に回ったときは `opencode-go/*` を `oc-sdk-go/*` に読み替える
+- エンジンも連鎖する（`provider/model` 候補のみ。Codex は対象外）: `opencode2`（v2）→ `opencode`（v1）→ `pi` の順で、入っているものを使う。1 つのエンジンでモデル連鎖を回し、**quota 以外**の理由（DB 破損・認証エラー・タイムアウトなど）で落ちたら次のエンジンで同じモデルから再開する
 - v1 と v2 の差分（`--auto`・`--standalone`・`--log-level` の大小文字・`-m provider/model#variant`）は下の「ラッパーが内部で使うコマンド」の表を参照
-- 4 番目の候補を OpenCode から使うには provider 登録が要る（`../opencode/README.md`「フォールバック先の登録」）。未登録なら 4 番目は pi 側に切り替わる
+- ollama-cloud（`ollama-cloud/deepseek-v4.1-flash`）を OpenCode から使うには provider 登録が要る（`../opencode/README.md`「フォールバック先の登録」）。未登録なら pi 側に切り替わる
 - 長文プロンプトはファイルに落として渡す（スクリプトはファイルパスか `-`（stdin）を受ける）
 - ツール呼び出しで止まらせたくなければ、プロンプト冒頭に `DO NOT USE ANY TOOLS`
 

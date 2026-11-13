@@ -1,8 +1,7 @@
 ---
 description: Deploy subagent — commit the reviewed changes, push the work branch, create the PR/MR via gh (GitHub) or glab (GitLab) CLI (or push to and annotate an existing open PR/MR), update Linear, and stay on the work branch. TASK_FILEs live outside the repository and are never committed; returning to the base branch is the caller's job. Without --task-file, runs a single ad-hoc git write operation (commit / push / branch / merge etc.).
 mode: subagent
-model: github-copilot/gpt-5.6-terra
-variant: low
+model: ollama-cloud/deepseek-v4.1-flash
 permission:
   edit: allow
 ---

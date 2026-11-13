@@ -191,7 +191,7 @@ Linear が使えるなら、この時点で**「実行開始」コメントを 1
 | M | `--runner=auto` | `--runner=auto` | `--runner=auto` | `--runner=auto` |
 | L | `--runner=auto`（リサーチ併用） | `--runner=auto` | `--runner=auto` | `--runner=auto` |
 
-`--phase-map` が渡されたら全フェーズでそれを優先する（例: `--phase-map="startproject=claude:opus,team-implement=pi:ollama-cloud/deepseek-v4.1-flash,team-review=opencode2:opencode-go/deepseek-v4-pro,deploy=claude:haiku"`）。
+`--phase-map` が渡されたら全フェーズでそれを優先する（例: `--phase-map="startproject=claude:opus,team-implement=pi:ollama-cloud/deepseek-v4.1-flash,team-review=codex:gpt-6-sol,deploy=claude:haiku"`）。
 
 ## STEP 3: startproject
 

@@ -1,8 +1,7 @@
 ---
 description: Implementation subagent — reads design and plan, implements code, writes the team-implement section of TASK_FILE.
 mode: subagent
-model: github-copilot/gpt-5.6-terra
-variant: xhigh
+model: ollama-cloud/deepseek-v4.1-flash
 permission:
   edit: allow
 ---
