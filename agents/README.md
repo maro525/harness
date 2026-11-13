@@ -95,12 +95,12 @@ orchestrate のフェーズ指定モードは探索に頼らず、プロンプ�
 | `cline` | `cline --json --auto-approve true -t 1800 "{prompt}"` | `-m {model}`（provider は cline の設定値。変えるなら `-P {provider}` を併記） |
 | `opencode` | `opencode run --agent build --dangerously-skip-permissions "{prompt}"` | `-m {provider/model}` |
 | `opencode2` | `opencode2 run --standalone --agent build --auto "{prompt}"` | `-m {provider/model}#{variant}` |
-| `claude` | `claude -p --model {model} --permission-mode acceptEdits "--allowedTools={tools}" "{prompt}"` | `--model {model}` |
+| `claude` | `claude -p --model {model} --permission-mode auto "--allowedTools={tools}" "{prompt}"` | `--model {model}` |
 | `codex` | `codex exec -s workspace-write -c 'sandbox_workspace_write.writable_roots=["{repo}/.git"]' -o {last} "{prompt}"`。deploy は push のため `-c 'sandbox_workspace_write.network_access=true'` を加える | `-m {model}` |
 
 - モデル名は**変換せずそのまま**渡す（各 CLI で通る名前をユーザーが指定する）
 - **claude の `--allowedTools` は `=` 形式で渡す**（`--allowedTools=Read,Write,...`）。空白区切りだと後ろのプロンプトがツール名として吞み込まれ、`Input must be provided either through stdin or as a prompt argument` で落ちる
-- **claude は `--permission-mode acceptEdits` を付ける**（付けないと非対話では書き込みが拒否される）。`--dangerously-skip-permissions` は使わない
+- **claude は `--permission-mode auto` を付ける**（承認ダイアログで止まらないため。非対話で書き込みを拒否させない）。`--dangerously-skip-permissions` は使わない
 - **codex に `-s danger-full-access` は使わない。** `workspace-write` は writable root 配下の `.git` を読み取り専用にするため、`git checkout -b` / `git commit` が失敗する。`.git` を `writable_roots` に足せば足り、deploy の push は `network_access=true` で通る（キー名は codex の config reference `sandbox_workspace_write.writable_roots` / `.network_access`）。codex を更新したら `codex exec --help` と config reference でキー名が生きているか確認する
 - codex の最終メッセージは `-o {last}`（`--output-last-message`）でファイルに取る。stdout は `--json` を付けなくてもイベントログが混ざるので、そこから拾わない
 - `which -a codex` で複数見つかる環境（WSL で Windows 側の `npm` の codex が先に来る等）では、PATH の先頭がどちらかを `codex --version` で確認してから使う
