@@ -218,6 +218,15 @@ for src_dir in "$SRC"/*/; do
     continue
   fi
 
+  # A symlinked skill is a pointer into a shared copy elsewhere (~/.agents/skills/
+  # yomiyasu -> ~/.claude/skills/yomiyasu). Windows Cursor cannot resolve a WSL
+  # symlink and a duplicate is not wanted there, so share it and skip the copy.
+  if [[ -L "$src_dir" ]]; then
+    echo "  skip  $name (symlink -> $(readlink "$src_dir"))"
+    skipped=$((skipped + 1))
+    continue
+  fi
+
   if [[ ! -f "$src_dir/SKILL.md" ]]; then
     echo "  skip  $name (no SKILL.md)"
     skipped=$((skipped + 1))
