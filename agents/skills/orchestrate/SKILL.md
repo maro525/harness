@@ -253,6 +253,7 @@ deploy フェーズはコードだけをコミットし、**作業ブランチ�
 ### 6b: TASK_FILE の記録と status
 
 - `## deploy` を書く（`written: no` なら `### SECTION` から代筆。追加修正モードでは上書きせず末尾に追記）
+- **文章の下書きは別モデルに任せてもよい**: Linear に投稿するコメントや `## deploy` の要約を `consult.sh --to pi -m google/gemini-4-carbon` に下書きさせ、内容を確かめてから自分で書く（投稿・記録の主体はあくまで orchestrator）
 - `## Meta` の `status:` を **`in-review`** にする（ここで書く）
 - Linear が使えるなら: ステータスを "In Review" にし、「状態管理」の規則で description を更新する。`save_comment` は **deploy がまだ投稿していないときだけ**（汎用 / OpenCode の deploy は自分でコメントする）。MCP が無ければスキップして「Linear: unavailable」と報告
 

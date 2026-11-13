@@ -548,6 +548,8 @@ deploy はコミット・push・PR / MR 作成（既存の PR / MR があれば�
 
 ### 6b: TASK_FILE への記録と Linear（作業ブランチ上）
 
+**文章の下書きは別モデルに任せてもよい**: Linear へのコメントや `## deploy` の要約を `~/.claude/scripts/consult.sh --to pi -m google/gemini-4-carbon` に下書きさせ、内容を確かめてから自分で書く（フェーズを越えない。投稿・記録の主体は orchestrator）
+
 **[MUST]** 返却内容を TASK_FILE に書き込む:
 
 | OUTPUT セクション | 書き込み先 |
