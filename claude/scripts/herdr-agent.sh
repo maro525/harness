@@ -60,6 +60,8 @@
 #   --kind K          report: report (default) | question
 #   --no-watch        delegate: do not start the watcher
 #   --no-wait         ask: hand the request over and return (fan-out; poll yourself)
+#   --preset NAME     pi: writing | video — starts the session on google/gemini-4-carbon
+#                     (prose and image/video work). A --model after `--` wins.
 #   --watch-timeout T delegate / watch: watcher lifetime (default: $HERDR_WATCH_TIMEOUT or 2h).
 #                     The watcher reports a child idle without a report after
 #                     $HERDR_WATCH_GRACE (default 90s), and leaves an .expired note
@@ -111,6 +113,7 @@ FROM=""
 TARGET=""
 WATCH=1
 NO_WAIT=0
+PRESET=""
 WATCH_TIMEOUT=${HERDR_WATCH_TIMEOUT:-2h}
 
 while [[ $# -gt 0 ]]; do
@@ -126,6 +129,7 @@ while [[ $# -gt 0 ]]; do
     --boss) BOSS=$2; shift 2 ;;
     --from) FROM=$2; shift 2 ;;
     --no-watch) WATCH=0; shift ;;
+    --preset) PRESET=$2; shift 2 ;;
     --no-wait) NO_WAIT=1; shift ;;
     --watch-timeout) WATCH_TIMEOUT=$2; shift 2 ;;
     --) shift; NATIVE_ARGS=("$@"); break ;;
@@ -154,7 +158,25 @@ done
 
 [[ -n "$CMD" ]] || { usage >&2; exit 2; }
 
-# A claude child must not stop on approval dialogs: nobody is watching its pane.
+# A preset names the intent, not a model id, so a caller (Cursor, or claude via
+# this script) does not have to know pi's provider/model strings. --model after
+# `--` still wins.
+if [[ -n "$PRESET" ]]; then
+  has_model=0
+  for arg in ${NATIVE_ARGS[@]+"${NATIVE_ARGS[@]}"}; do
+    case "$arg" in --model|--model=*|-m) has_model=1 ;; esac
+  done
+  case "$PRESET" in
+    writing|video)
+      if [[ "${KIND:-}" != "pi" ]]; then
+        die "--preset $PRESET is defined for --kind pi (claude/codex have their own defaults)" 2
+      fi
+      (( has_model )) || NATIVE_ARGS+=(--model google/gemini-4-carbon)
+      ;;
+    *) die "unknown --preset '$PRESET' (writing | video)" 2 ;;
+  esac
+fi
+
 # Unless the caller picked a mode explicitly, start it in `auto` (the same default
 # consult sessions use). Without this, a caller that passes no flags inherits
 # nothing in particular and a caller copying an old example got `acceptEdits`.
