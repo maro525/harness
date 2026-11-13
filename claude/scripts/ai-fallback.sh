@@ -15,8 +15,7 @@
 # in skills and commands, they must call this script.
 #
 # Two fallback axes:
-#   models  : codex -> github-copilot/gpt-6-astra -> opencode-go/deepseek-v4-pro
-#             -> ollama-cloud/deepseek-v4.1-flash   (AI_CHAIN overrides)
+#   models  : codex -> ollama-cloud/deepseek-v4.1-flash   (AI_CHAIN overrides)
 #   engines : opencode2 (v2) -> opencode (v1) -> pi  (whichever is installed)
 # `codex` / `codex:<model>` is a single-shot candidate run by the Codex CLI
 # (`codex exec`, read-only sandbox, non-interactive). It never switches engines:
@@ -37,7 +36,7 @@
 
 set -uo pipefail
 
-CHAIN_DEFAULT="codex github-copilot/gpt-6-astra opencode-go/deepseek-v4-pro ollama-cloud/deepseek-v4.1-flash"
+CHAIN_DEFAULT="codex ollama-cloud/deepseek-v4.1-flash"
 CHAIN=${AI_CHAIN:-$CHAIN_DEFAULT}
 TIMEOUT=${AI_TIMEOUT:-20m}
 
@@ -51,8 +50,7 @@ Usage: ai-fallback.sh <prompt-file> | -
 
 Environment:
   AI_CHAIN     space-separated candidate models, first try first
-               (default: codex github-copilot/gpt-6-astra
-                opencode-go/deepseek-v4-pro ollama-cloud/deepseek-v4.1-flash)
+               (default: codex ollama-cloud/deepseek-v4.1-flash)
                `codex` / `codex:<model>` runs on the Codex CLI; everything else
                is an OpenCode `provider/model`
   AI_TIMEOUT   timeout per attempt (default: 20m)
@@ -136,14 +134,6 @@ run_codex() { # candidate raw err last
     -- "$prompt" </dev/null >"$2" 2>"$3"
 }
 
-# pi knows the OpenCode Go plan under a different provider name.
-pi_model() {
-  case "$1" in
-    opencode-go/*) printf 'oc-sdk-go/%s' "${1#opencode-go/}" ;;
-    *) printf '%s' "$1" ;;
-  esac
-}
-
 # OpenCode can exit 0 with empty output on a quota failure, so the logs are the
 # only place that failure shows up. v1 writes one log per session, v2 appends to
 # a single opencode.log — so callers compare the size before/after the run and
@@ -175,7 +165,7 @@ run_candidate() { # engine model out err
         --print-logs --log-level ERROR -m "$2" "$prompt" </dev/null >"$3" 2>"$4"
       ;;
     pi)
-      timeout -k 1m "$TIMEOUT" pi -p --no-session --model "$(pi_model "$2")" \
+      timeout -k 1m "$TIMEOUT" pi -p --no-session --model "$2" \
         "$prompt" </dev/null >"$3" 2>"$4"
       ;;
   esac

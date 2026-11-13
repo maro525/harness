@@ -67,7 +67,7 @@ $ARGUMENTS を受け取ったら最初にモードを決め、判定結果（モ
 - (b) で該当ファイルが複数あれば「質問の中継」で選ばせる（phase 名 `mode`）
 - 追加修正モードは、`/orchestrate` が PR / MR を出したタスクに追加の変更（レビュー指摘への対応、仕様の追加など）を加えるときに使う。既存 PR への追加変更は必ずこのモードを通し、orchestrator が直接編集して push しない（`AGENTS.md` の「GIT RULES」の「`/orchestrate` で作った PR への追加変更」）
 - 呼び出し形: `/orchestrate "{追加の依頼} --task-file={TASK_FILE}"`（または `/orchestrate "{LINEAR_ID} {追加の依頼}"`）
-- フェーズ指定モードは、既存 TASK_FILE の 1 フェーズだけを **別の CLI / モデル**（`--runner=claude:opus` / `pi:ollama-cloud/deepseek-v4.1-flash` / `opencode2:opencode-go/deepseek-v4-pro` など）で 1 回実行し、結果を次の回・次の候補として TASK_FILE に追記するときに使う。起動は `~/.claude/scripts/phase-run.sh`（契約は harness の `docs/phase-contract.md`）。呼び出し形: `/orchestrate "--task-file={TASK_FILE} --phase={phase} --runner={spec}"`、候補の採用は `--adopt=案 {k}`
+- フェーズ指定モードは、既存 TASK_FILE の 1 フェーズだけを **別の CLI / モデル**（`--runner=claude:opus` / `pi:ollama-cloud/deepseek-v4.1-flash` / `codex:gpt-6-sol` など）で 1 回実行し、結果を次の回・次の候補として TASK_FILE に追記するときに使う。起動は `~/.claude/scripts/phase-run.sh`（契約は harness の `docs/phase-contract.md`）。呼び出し形: `/orchestrate "--task-file={TASK_FILE} --phase={phase} --runner={spec}"`、候補の採用は `--adopt=案 {k}`
 
 ---
 

@@ -1,8 +1,7 @@
 ---
 description: Review subagent — parallel reviewers by tier (S: self / M: +Second Opinion, Security / L: +Simplify), browser/test verification. Outputs PASS / FAIL to TASK_FILE.
 mode: subagent
-model: github-copilot/gpt-6-astra
-variant: xhigh
+model: ollama-cloud/deepseek-v4.1-flash
 permission:
   edit:
     "*": deny

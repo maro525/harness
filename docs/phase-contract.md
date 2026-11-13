@@ -93,7 +93,7 @@ linear: posted|skipped|unavailable
 | 事象 | 扱い |
 |---|---|
 | フェーズが exit ≠ 0 / 空出力 / タイムアウト | **runner 連鎖**（`phase-run.sh --fallback`）で同じフェーズを別 CLI に再試行。落とした runner は `利用AI:` に残さない（実際に走ったものだけ書く） |
-| モデルが 429 / 認証エラー | `ai-fallback.sh` のモデル連鎖（`codex` → `github-copilot/gpt-6-astra` → `opencode-go/deepseek-v4-pro` → `ollama-cloud/deepseek-v4.1-flash`）に任せる |
+| モデルが 429 / 認証エラー | `ai-fallback.sh` のモデル連鎖（`codex` → `ollama-cloud/deepseek-v4.1-flash`）に任せる |
 | 全 runner 失敗 | orchestrator が報告して停止する。TASK_FILE には書き足さない（失敗の記録は報告側） |
 | team-review が FAIL | orchestrator が team-implement に差し戻す。`{m}`（回数）を進める |
 
@@ -105,7 +105,7 @@ linear: posted|skipped|unavailable
 
 # フェーズごとに別 CLI / 別モデル
 ~/.claude/scripts/phase-run.sh --phase=team-implement --task-file=~/.local/share/harness/tasks/{repo}/task-X.md \
-  --phase-map="startproject=claude:opus,team-implement=pi:ollama-cloud/deepseek-v4.1-flash,team-review=opencode2:opencode-go/deepseek-v4-pro,deploy=claude:haiku"
+  --phase-map="startproject=claude:opus,team-implement=pi:ollama-cloud/deepseek-v4.1-flash,team-review=codex:gpt-6-sol,deploy=claude:haiku"
 
 # モデル/エンジン連鎖に任せる
 ~/.claude/scripts/phase-run.sh --phase=startproject --task-file=… --runner=auto
