@@ -45,6 +45,7 @@ Herdr の上限は 32 文字。`orchestrate-<id>-<feature>` が超えるとき�
 - ブランチ名は `orchestrate-parallel.sh` が `feature/` ＋ ID ＋ slug で自動生成する。変えたいときは `--prefix`
 - worktree のパスは Herdr が `~/.herdr/worktrees/<repo>/<branch の / を - にしたもの>` に作る（名前は決め打ちできない）
 - **`herdr/` と `cursor/` の接頭辞は使わない。** `herdr/` は Herdr 自身の worktree 既定（`worktree/<ランダム>`）と混同しやすく、`cursor/` は実行者ごとに増えてしまう。スクリプトは `--branch` にこの 2 つが来たら警告する
+- **既存の `herdr/*` は移行しない（決定）。** `nanco-next` の `herdr/help-*-3140`（32 本、うち 29 本は push 済み）はそのまま残し、**新規だけ `feature/*`** にする。worktree がチェックアウト中だと `git branch -m` できず、push 済みブランチの改名は MR の参照も張り替える必要があるため
 
 ## 4. その他の記録物
 
