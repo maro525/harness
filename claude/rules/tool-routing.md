@@ -181,6 +181,8 @@ timeout -k 1m 20m opencode run --agent plan --print-logs --log-level ERROR -m {m
 
 スキルの内外を問わず、Linear MCP ツールをメインセッションで直接呼ぶ。issue 作成前は重複を検索する。
 
+**起票・コメントの文面は下書きを別モデルに任せてよい。** タイトル・本文・コメントを書くときは `~/.claude/scripts/consult.sh --to pi -m google/gemini-4-carbon` に下書きさせ、内容を確かめてから MCP で作成・投稿する（作成・投稿の主体は自分。モデルに MCP を渡さない）。依頼したら `利用AI:` / `runner:` の記録に「文面: pi/{model}」を添える。
+
 ## Operational Commands
 
 依存管理（`uv`）・Lint/Format（`ruff`）・Docker・環境セットアップ・ファイル整理・シェルスクリプト作成・changelog 生成は、メインセッションで直接実行する。長い出力のコマンドは `tail` / `grep` で絞るか、`run_in_background: true` で実行してログファイルから必要な部分だけ読む。

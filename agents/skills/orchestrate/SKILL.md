@@ -131,7 +131,7 @@ TASK_FILE はブランチ単位で別ファイルになるため、それだけ�
 
 ## STEP 1: LINEAR タスク確認
 
-引数から `XXX-123` 形式を探す。見つかれば `LINEAR_ID` にし、MCP があれば `get_issue` で説明を補完する。見つからず、ユーザーに聞けないなら `LINEAR_ID=NOLINEAR` として進む（勝手に issue を作らない）。
+引数から `XXX-123` 形式を探す。見つかれば `LINEAR_ID` にし、MCP があれば `get_issue` で説明を補完する。見つからず、ユーザーに聞けないなら `LINEAR_ID=NOLINEAR` として進む（勝手に issue を作らない）。ユーザーが「起票して」と言った場合は MCP で作成してよいが、**タイトル・本文の下書きは `consult.sh --to pi -m google/gemini-4-carbon` に任せ、作成は自分で行う**。
 
 ## STEP 2: TASK_FILE 作成
 

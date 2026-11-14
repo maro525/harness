@@ -137,7 +137,7 @@ Do not use the Agent tool; do all the work yourself. End your final message with
 引数から Linear ID（例: `PROJ-573`）を検出する。
 
 - **検出できた場合:** LINEAR_ID として使用（確認不要）。`mcp__linear-server__get_issue` でタスク詳細を取得してタスク説明を補完し、即 STEP 2 へ
-- **検出できなかった場合:** ユーザーに Linear タスク ID または URL を質問する。既存タスクがあれば ID を取得、なければ `mcp__linear-server__save_issue` で新規作成し、即 STEP 2 へ
+- **検出できなかった場合:** ユーザーに Linear タスク ID または URL を質問する。既存タスクがあれば ID を取得、なければ `mcp__linear-server__save_issue` で新規作成し、即 STEP 2 へ。**起票のタイトル・本文は `~/.claude/scripts/consult.sh --to pi -m google/gemini-4-carbon` に下書きさせてよい**（作成は自分が MCP で行う）
 
 ```
 LINEAR_ID = "XXX-123"
