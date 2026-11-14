@@ -87,13 +87,16 @@ Usage: consult.sh [OPTIONS] <prompt-file> | -
                 into the cwd, the answer lands under $TMPDIR/harness-consult/out)
   --text TEXT    pass the question as an argument (same output location as -);
                 handy for a one-liner, and the shortest thing to type
-  --context      prepend the repository, branch, recent commits and the number
-                of changed files (default: on for --text / stdin, off for a file)
+  --context      insert the repository, branch, recent commits and the number of
+                changed files into the question
+                (default: on for --text / stdin, off for a file)
   --no-context   never prepend it
   --append FILE append a previous answer to the question (also -)
 
 Target:
-  --to TARGET        claude (default) | codex
+  --to TARGET        claude (default) | codex | pi
+                     pi is for drafting text: one-shot only (no tab/session),
+                     consult / review roles, default model google/gemini-4-carbon
                      claude-consult.sh / codex-consult.sh pass this for you
 
 Roles (pick the pane the question goes to):
@@ -173,10 +176,11 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# Target = the CLI binary to drive.
+# Target = the CLI binary to drive. `pi` is for drafting text (one-shot only).
 case "$TARGET" in
   claude) AGENT_KIND=claude ;;
   codex)  AGENT_KIND=codex ;;
+  pi)     AGENT_KIND=pi ;;
   *) usage >&2; exit 2 ;;
 esac
 
@@ -256,7 +260,13 @@ herdr_reachable() {
   command -v herdr >/dev/null 2>&1 || return 1
   herdr workspace list >/dev/null 2>&1
 }
-if [[ "$BACKEND" == "auto" ]]; then
+if [[ "$TARGET" == "pi" ]]; then
+  # pi is a drafting target: one `pi -p` call, never a Herdr session.
+  if [[ "$BACKEND" == "herdr" ]]; then
+    echo "note: the pi target is one-shot; using the print backend" >&2
+  fi
+  BACKEND=print
+elif [[ "$BACKEND" == "auto" ]]; then
   if herdr_reachable; then
     BACKEND=herdr
   else
@@ -325,6 +335,20 @@ role_settings() {
   fi
 
   ROLE_ANSWER=0
+  if [[ "$TARGET" == "pi" ]]; then
+    # pi is a drafting target: a single `pi -p` call, no Herdr session, and only
+    # for the roles that just produce text (implement needs a review trail).
+    if [[ "$role" == "implement" ]]; then
+      die "the pi target is for drafting (consult / review); use claude or codex for implement" 2
+    fi
+    ROLE_MODE=""
+    ROLE_TOOLS=""
+    ROLE_ALLOWED=""
+    ROLE_SANDBOX=""
+    [[ -n "$ROLE_MODEL" ]] || ROLE_MODEL=google/gemini-4-carbon
+    return 0
+  fi
+
   if [[ "$TARGET" == "codex" ]]; then
     ROLE_MODE=""
     ROLE_TOOLS=""
@@ -382,6 +406,10 @@ role_agent_name() {
 target_model_label() {
   if [[ "$TARGET" == "claude" ]]; then
     printf 'claude/%s' "$ROLE_MODEL"
+    return 0
+  fi
+  if [[ "$TARGET" == "pi" ]]; then
+    printf 'pi/%s' "$ROLE_MODEL"
     return 0
   fi
   if [[ -n "$ROLE_MODEL" ]]; then
@@ -992,12 +1020,38 @@ codex_print_consult() {
   echo "AI_MODEL=$(target_model_label)" >&2
 }
 
-print_backend() {
-  if [[ "$TARGET" == "codex" ]]; then
-    codex_print_consult "$@"
-  else
-    claude_print_consult "$@"
+# One-shot pi for drafting text (`pi -p --no-session`). pi prints the answer on
+# stdout and its extension chatter on stderr, so the two are captured separately.
+pi_print_consult() {
+  local base=$1 prompt=$2
+  local answer_file="${base}.answer.md" raw_file="${base}.json"
+  local -a args=(-p --no-session)
+  if [[ -n "$ROLE_MODEL" ]]; then
+    args+=(--model "$ROLE_MODEL")
   fi
+  local rc=0
+  timeout -k 1m "${TIMEOUT_S}s" pi "${args[@]}" -- "$prompt" \
+    < /dev/null > "$answer_file" 2> "$raw_file" || rc=$?
+  if (( rc != 0 )); then
+    echo "error: pi exited with $rc (see $raw_file)" >&2
+    return 1
+  fi
+  if [[ ! -s "$answer_file" ]]; then
+    echo "error: pi returned nothing (see $raw_file)" >&2
+    return 1
+  fi
+  [[ -n "$(tail -c 1 "$answer_file")" ]] && echo >>"$answer_file"
+  cat "$answer_file"
+  echo "ANSWER_FILE=$answer_file" >&2
+  echo "AI_MODEL=$(target_model_label)" >&2
+}
+
+print_backend() {
+  case "$TARGET" in
+    codex) codex_print_consult "$@" ;;
+    pi)    pi_print_consult "$@" ;;
+    *)     claude_print_consult "$@" ;;
+  esac
 }
 
 # ─── main ────────────────────────────────────────────────────────────────────

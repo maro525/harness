@@ -131,7 +131,7 @@ TASK_FILE はブランチ単位で別ファイルになるため、それだけ�
 
 ## STEP 1: LINEAR タスク確認
 
-引数から `XXX-123` 形式を探す。見つかれば `LINEAR_ID` にし、MCP があれば `get_issue` で説明を補完する。見つからず、ユーザーに聞けないなら `LINEAR_ID=NOLINEAR` として進む（勝手に issue を作らない）。
+引数から `XXX-123` 形式を探す。見つかれば `LINEAR_ID` にし、MCP があれば `get_issue` で説明を補完する。見つからず、ユーザーに聞けないなら `LINEAR_ID=NOLINEAR` として進む（勝手に issue を作らない）。ユーザーが「起票して」と言った場合は MCP で作成してよいが、**タイトル・本文の下書きは `consult.sh --to pi -m google/gemini-4-carbon` に任せ、作成は自分で行う**。
 
 ## STEP 2: TASK_FILE 作成
 
@@ -253,6 +253,7 @@ deploy フェーズはコードだけをコミットし、**作業ブランチ�
 ### 6b: TASK_FILE の記録と status
 
 - `## deploy` を書く（`written: no` なら `### SECTION` から代筆。追加修正モードでは上書きせず末尾に追記）
+- **文章の下書きは別モデルに任せてもよい**: Linear に投稿するコメントや `## deploy` の要約を `consult.sh --to pi -m google/gemini-4-carbon` に下書きさせ、内容を確かめてから自分で書く（投稿・記録の主体はあくまで orchestrator）
 - `## Meta` の `status:` を **`in-review`** にする（ここで書く）
 - Linear が使えるなら: ステータスを "In Review" にし、「状態管理」の規則で description を更新する。`save_comment` は **deploy がまだ投稿していないときだけ**（汎用 / OpenCode の deploy は自分でコメントする）。MCP が無ければスキップして「Linear: unavailable」と報告
 

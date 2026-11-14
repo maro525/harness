@@ -128,6 +128,15 @@ Related to #34
 
 作業ブランチ上の未コミット変更（team-implement の実装。レビュー通過済み）をコミットする。メッセージは `## team-implement` の内容から作る（追加 push なら `#### 追加依頼 {n}` の「扱い」行に書いた開始回から最新回まで全回の内容。`追加依頼 {n}` を本文に書く）。TASK_FILE のスコープ外の変更が作業ツリーにあれば巻き込まない。**TASK_FILE はリポジトリ外にあるので、そもそもコミット対象に入らない**（`git add -A` は使わずファイルを指定する）。
 
+**任意: コミットメッセージの下書きを別モデルに依頼してよい。** 文章の質を上げたいときは、`## team-implement` の要約を渡して書かせ、内容を確かめてから使う（モデル名を記憶しない）。依頼した場合は報告の `利用AI:` に「メッセージ: pi/{model}」のように併記する。
+
+```bash
+~/.claude/scripts/consult.sh --to pi -m google/gemini-4-carbon - <<'EOF'
+次の変更の git コミットメッセージを conventional commit で 1 つ書いて。件名 72 文字以内、本文は変更点を 2〜4 行。
+{## team-implement の要約}
+EOF
+```
+
 ### STEP 2: PUSH
 
 `branch:` のブランチを `origin` に push する。

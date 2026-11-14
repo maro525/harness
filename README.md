@@ -114,6 +114,8 @@ watcher（委任ごとに 1 本）: 報告なしで blocked / idle が続いた�
 ```bash
 herdr agent rename "$HERDR_PANE_ID" boss-myrepo
 ~/.claude/scripts/herdr-agent.sh ensure child-a --kind claude --topology worktree --branch feature/child-a -- --model sonnet --permission-mode auto
+# 文章作成・推敲・動画/画像の分析は pi + preset（google/gemini-4-carbon）
+~/.claude/scripts/herdr-agent.sh ensure child-b --kind pi --preset writing
 ~/.claude/scripts/herdr-agent.sh delegate child-a /tmp/req.md --boss boss-myrepo    # 数秒で戻る
 # …「報告あり（child-a）: <path>」が届いたら
 ~/.claude/scripts/herdr-agent.sh inbox boss-myrepo read child-a

@@ -41,6 +41,8 @@ Bash ツールの呼び出しごとにシェルが変わる環境では、`--bos
 
 ```bash
 ~/.claude/scripts/herdr-agent.sh ensure child-a --kind claude --topology worktree --branch feature/child-a -- --model sonnet --permission-mode auto
+# 文章作成・推敲・動画/画像の分析は pi + preset（google/gemini-4-carbon）
+~/.claude/scripts/herdr-agent.sh ensure child-b --kind pi --preset writing
 ~/.claude/scripts/herdr-agent.sh ensure child-b --kind pi
 ```
 
