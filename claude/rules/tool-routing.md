@@ -1,7 +1,7 @@
 # Tool Routing Rules
 
 **どの操作をどのツール・エージェントに委譲するかを定める。**
-外部リサーチは firecrawl MCP + OpenCode の二系統、設計相談は OpenCode に振り分ける。使うかどうか自体は tier で決まる（`$HOME/.claude/rules/adaptive-execution.md` の「External Research」「OpenCode Design Consultation」）。本ファイルは「使う」となった場合の委譲先を定める。
+外部リサーチは **自分（firecrawl MCP）+ gemini** の二系統、設計相談は ai-fallback（フォールバック連鎖）に振り分ける。使うかどうか自体は tier で決まる（`$HOME/.claude/rules/adaptive-execution.md` の「External Research」「OpenCode Design Consultation」）。本ファイルは「使う」となった場合の委譲先を定める。
 
 **単発の作業はサブエージェント（Agent ツール）に振らず、メインセッションで直接実行する。** リサーチ・OpenCode・Linear・docker/uv/ruff・スクリプト作成などすべて対象。サブエージェントを使うのは `/orchestrate` 系（startproject / team-implement / team-review / deploy）と、それらの command が自分で定めている場合だけ。
 
@@ -17,11 +17,11 @@
 
 | Operation | Delegate To | Method |
 |-----------|-------------|--------|
-| External research | **firecrawl MCP + OpenCode** | 二系統を並列実行し Claude が統合（下記） |
+| External research | **firecrawl MCP（自分）+ gemini** | 二系統を並列実行し Claude が統合（下記） |
 | 記事 (URL 1 本) | **WebFetch** | 読めないページは firecrawl（`firecrawl_scrape`） |
 | PDF (URL) / 複数ページ | **firecrawl MCP** | `firecrawl_parse` / `firecrawl_scrape` |
 | 音声・動画 | **未対応** | 委託先なし。ユーザーに扱い方を確認する |
-| Library research | **firecrawl MCP + OpenCode** | `firecrawl_search` で一次情報 + OpenCode で実装知見 |
+| Library research | **firecrawl MCP（自分）+ gemini** | `firecrawl_search` で一次情報 + `consult.sh --to pi` で実装知見 |
 | Design decisions | **OpenCode（モデルはフォールバック連鎖）** | バックグラウンド Bash で直接（`~/.claude/scripts/ai-fallback.sh {prompt_file}`、下記「OpenCode リサーチの実行」） |
 | git（書き込み系） | **`/deploy` skill** | Ad-hoc Git モード。読み取り系は Claude が直接 |
 | `/orchestrate` で作った PR への追加変更 | **`/orchestrate` 追加修正モード** | `/orchestrate "{追加の依頼} --task-file={TASK_FILE}"`。直接編集して Ad-hoc push しない（下記「Git Operations」） |
@@ -29,20 +29,36 @@
 | Linear MCP | **Direct** | Linear MCP ツールを直接呼ぶ |
 | GitHub 操作 | **`gh` CLI** | GitHub MCP は不安定なため使わない |
 
-## External Research via firecrawl MCP + OpenCode
+## External Research: 自分 + gemini
 
-二系統を **並列実行**し、Claude が突き合わせて統合する。
+リサーチは **2 人でやる**: 自分（Cursor / Claude）が一次情報を取り、**gemini** が解釈する。突き合わせて統合する。
 
-| 系統 | ツール | 得意分野 |
+| 系統 | 担当 | 得意分野 |
 |------|-------|---------|
-| **一次情報** | firecrawl MCP | 公式ドキュメント・リリースノートの実文面。出典 URL が取れるが解釈はしない |
-| **実装知見** | OpenCode CLI | 設計上の勘所・落とし穴・比較。解釈は出せるが出典を持たない |
+| **一次情報** | **自分**（firecrawl MCP / `curl`） | 公式ドキュメント・リリースノートの実文面。出典 URL が取れるが解釈はしない |
+| **実装知見** | **gemini**（`consult --to pi`） | 設計上の勘所・落とし穴・比較。解釈は出せるが出典を持たない |
 
-食い違ったら **firecrawl の一次情報を優先**し、相違点と採用した方を成果物に記録する（`/startproject` では OUTPUT の `DESIGN`）。
+食い違ったら **一次情報を優先**し、相違点と採用した方を成果物に記録する（`/startproject` では OUTPUT の `DESIGN`）。
 
-### OpenCode リサーチの実行
+### リサーチの呼び出し形
 
-**これが唯一動く呼び出し形。他のファイルはこの節を参照する。**
+```bash
+~/.claude/scripts/consult.sh --to pi -m google/gemini-4-carbon - <<'EOF'
+{リサーチ質問}
+---
+## こちらの一次情報（firecrawl / curl で取ったもの）
+- {出典 URL と要点}
+EOF
+```
+
+- **自分は `firecrawl` MCP（または `curl`）で一次情報を取る。** gemini には「何を調べたいか」と「こちらが取った材料」を渡す
+- gemini 側は `bash` と `curl` を持っているので、足りない裏取りは自分で取りにいける（`pi -p --no-session` の 1 回だけ、MCP は渡さない）
+- 並列にしたいときは **材料を待たずに質問だけ先に投げる**（gemini は同期なので、材料を渡すなら自分が取ってから）
+- 記録は `利用AI:` に両方書く（例: `利用AI: claude/opus + pi/google/gemini-4-carbon`）
+
+### OpenCode リサーチの実行（ai-fallback・設計相談と代替用）
+
+ふだんのリサーチは上の gemini 経由。ここから下は **gemini が 429 / 認証エラー / 無出力のときの代替**と、**設計相談（startproject）・セカンドオピニオン（team-review）** のためのもの（各ドキュメントからの「OpenCode リサーチの実行」参照はこの節を指す）。
 
 ```bash
 ~/.claude/scripts/ai-fallback.sh {prompt_file}
@@ -129,9 +145,9 @@ timeout -k 1m 20m opencode run --agent plan --print-logs --log-level ERROR -m {m
 
 サブエージェントは使わず、メインセッションで二系統を同時に進める。
 
-1. **系統 2（実装知見）を先に起動**: `~/.claude/scripts/ai-fallback.sh {prompt_file}` を Bash の `run_in_background: true` で起動し、出力を `~/.local/share/harness/tasks/{repo}/research/{topic}-opencode.md` に落とす（`{repo}` の求め方は「調べものの記録の置き場所」。10 分超かかることがある。stderr の `AI_MODEL` を `利用AI:` として記録する）
+1. **系統 2（実装知見）を先に起動**: `~/.claude/scripts/consult.sh --to pi -m google/gemini-4-carbon -` を Bash の `run_in_background: true` で起動し、出力を `~/.local/share/harness/tasks/{repo}/research/{topic}-gemini.md` に落とす（`{repo}` の求め方は「調べものの記録の置き場所」。stderr の `AI_MODEL` を `利用AI:` として記録する）
 2. **系統 1（一次情報）をその間に実行**: `firecrawl_search` → 公式ドキュメント／リリースノートを `firecrawl_scrape`。主張ごとに出典 URL を控える
-3. ai-fallback.sh の完了通知を待ち、出力ファイルを読んで firecrawl の結果と突き合わせて統合する（食い違いは firecrawl 優先）
+3. gemini の完了通知を待ち、出力ファイルを読んで firecrawl の結果と突き合わせて統合する（食い違いは firecrawl 優先）
 
 ### Triggers
 

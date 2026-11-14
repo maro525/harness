@@ -67,7 +67,7 @@ Claude Code 版と完全に一致しない点:
 
 ## モデルのフォールバック（Claude 版）
 
-Claude 版のリサーチ・設計相談は `~/.claude/scripts/ai-fallback.sh`（`sync-claude.sh` が配布）で次の連鎖を順に試す。詳細は `../claude/rules/tool-routing.md`「OpenCode リサーチの実行」。
+Claude 版のリサーチは **自分（firecrawl）+ gemini（`consult.sh --to pi -m google/gemini-4-carbon`）**。設計相談・セカンドオピニオン、および gemini が使えないときの代替は `~/.claude/scripts/ai-fallback.sh`（`sync-claude.sh` が配布）で次の連鎖を順に試す。詳細は `../claude/rules/tool-routing.md`「External Research」/「OpenCode リサーチの実行」。
 
 **Codex**: 連鎖の先頭は Codex CLI（`codex exec -s read-only`）。エンジン切替なしの単発候補で、失敗・未インストールなら下の OpenCode 連鎖に落ちる。
 

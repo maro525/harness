@@ -77,7 +77,7 @@ kanban は `uv tool install --editable ~/src/harness/kanban`（詳細は `kanban
 
 ## 外部 AI のフォールバック
 
-リサーチ・設計相談・セカンドオピニオンのモデルは quota（429）で止まらず、次の候補に落ちる。呼び出しは `~/.claude/scripts/ai-fallback.sh`（`sync-claude.sh` が実行ビット付きで配布）に一本化し、連鎖は `claude/rules/tool-routing.md`「OpenCode リサーチの実行」が唯一の定義。
+リサーチは **自分（firecrawl / curl）＋ gemini（`consult.sh --to pi`）** の 2 人でやる（`claude/rules/tool-routing.md`「External Research」）。設計相談・セカンドオピニオン、および gemini が使えないときの代替は `ai-fallback.sh`（`sync-claude.sh` が実行ビット付きで配布）に任せ、連鎖は `claude/rules/tool-routing.md`「OpenCode リサーチの実行」が唯一の定義。
 
 | 順 | モデル | 提供元 |
 |---|---|---|

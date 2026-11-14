@@ -48,11 +48,11 @@ Phases and models per tier (how each phase is launched: `orchestrate.md` "tier �
 | **M** | best | opus | opus | haiku |
 | **L** | best | best | opus | haiku |
 
-Both tables below use the same invocation: `~/.claude/scripts/ai-fallback.sh {prompt_file}` (model chain and fallback rules: `$HOME/.claude/rules/tool-routing.md`「OpenCode リサーチの実行」). Always run it directly with background Bash (no subagent).
+Both tables below use their own invocation: research uses `~/.claude/scripts/consult.sh --to pi -m google/gemini-4-carbon -` (gemini for the implementation-know-how stream), while the design consultation and second opinion use `~/.claude/scripts/ai-fallback.sh {prompt_file}` (model chain and fallback rules: `$HOME/.claude/rules/tool-routing.md`「OpenCode リサーチの実行」). Always run them directly with background Bash (no subagent).
 
-### External Research (firecrawl MCP + OpenCode)
+### External Research (firecrawl MCP + gemini)
 
-firecrawl MCP (sourced facts) and OpenCode (implementation know-how) run in parallel.
+firecrawl MCP (sourced facts, run by the session itself) and gemini (implementation know-how) run in parallel.
 
 | Tier | Usage |
 |------|-------------|
