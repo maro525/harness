@@ -66,7 +66,7 @@ orchestrate のフェーズ指定モードは探索に頼らず、プロンプ�
 | 4 フェーズを回す | `phase-run.sh`（orchestrate 経由） | consult / delegate の直呼び |
 | 外部リサーチ（Web・単発の別モデル調査） | `ai-fallback.sh` | consult |
 | 文章作成・推敲、動画や画像の分析を pi に任せる | `herdr-agent.sh ensure --kind pi --preset writing`（動画は `--preset video`）→ `google/gemini-4-carbon` | 既定の pi（deepseek）で文章を書かせる |
-| 文章の下書き（コミットメッセージ / Linear コメント / issue のタイトル・本文 / TASK_FILE の節） | `consult.sh --to pi -m google/gemini-4-carbon`（同期・1 回だけ） | 書き込みまでそのモデルに任せる（作成・投稿は orchestrator / フェーズ） |
+| 文章の下書き（コミットメッセージ / Linear や **Notion** の文面 / PR・MR 本文 / TASK_FILE の節） | `consult.sh --to pi -m google/gemini-4-carbon`（同期・1 回だけ） | 書き込みまでそのモデルに任せない（作成・投稿は MCP を持つ自分が行う） |
 
 - `pi` の既定は `ollama-cloud/deepseek-v4.1-flash:1017`（コード向け）。**文章作成・推敲・動画/画像の分析**は `--preset writing` / `--preset video` で `google/gemini-4-carbon`（1M context・images 対応）を使う。`--` の後ろに `--model` を書けばそちらが優先
 - `--preset` は `--kind pi` 専用。claude は consult / 4 フェーズが自分の既定を持つ

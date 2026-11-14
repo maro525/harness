@@ -177,11 +177,24 @@ timeout -k 1m 20m opencode run --agent plan --print-logs --log-level ERROR -m {m
 
 `origin` のリモート URL で判定し、GitLab（セルフホスト含む）は `glab`、GitHub は `gh` を使う。GitHub MCP は不安定なため使わない。
 
+## 対外文書の下書き（別モデルを使う）
+
+**外に残る文章は、下書きを `google/gemini-4-carbon` に任せてよい。** 対象は Linear（issue のタイトル・本文・コメント・description）、**Notion（ページ本文）**、GitHub / GitLab（PR / MR の本文・コメント・レビュー返信）、コミットメッセージ、TASK_FILE の節。
+
+```bash
+~/.claude/scripts/consult.sh --to pi -m google/gemini-4-carbon - <<'EOF'
+{何を書くか + 材料}
+EOF
+```
+
+- **作成・投稿は自分（メインセッション）が行う。** 下書きモデルには MCP もツールも渡さない（`pi -p --no-session` の 1 回だけ）
+- 帰ってきた文面を**確かめてから**使う（事実・数値・固有名詞は自分で照合する）
+- 依頼したら記録に「文面: pi/google/gemini-4-carbon」を添える（`利用AI:` / `### RESULT` / PR 本文）
+- 短い一言（ラベル、1 行の要約、定型文）は自分で書いてよい。往復のコストのほうが高い
+
 ## Linear MCP Operations
 
-スキルの内外を問わず、Linear MCP ツールをメインセッションで直接呼ぶ。issue 作成前は重複を検索する。
-
-**起票・コメントの文面は下書きを別モデルに任せてよい。** タイトル・本文・コメントを書くときは `~/.claude/scripts/consult.sh --to pi -m google/gemini-4-carbon` に下書きさせ、内容を確かめてから MCP で作成・投稿する（作成・投稿の主体は自分。モデルに MCP を渡さない）。依頼したら `利用AI:` / `runner:` の記録に「文面: pi/{model}」を添える。
+スキルの内外を問わず、Linear MCP ツールをメインセッションで直接呼ぶ。issue 作成前は重複を検索する。文面の下書きは上の「対外文書の下書き」に従う。
 
 ## Operational Commands
 
