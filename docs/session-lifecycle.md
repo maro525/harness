@@ -26,6 +26,8 @@ Herdr 上のエージェント・セッションは、**閉じるまで残る**�
 
 Herdr の構造は workspace → tab → pane。セッションをどこに作るかは `herdr-agent.sh ensure` の `--topology` で選ぶ（`claude-consult.sh` / `codex-consult.sh` は常に `tab`）。
 
+**エージェントを動かすセッションは必ず Herdr の中で立てる。** `tmux` / `screen` / `nohup` / `claude --bg` などの Herdr 外の手段は使わない — 記録が残らず、`--status` / `close` / `herdr-cleanup.sh` の対象外になる。Herdr が使えないときは止まって確認し、一回きりの文章作成だけ `consult.sh --to pi` を使う。
+
 相談先は 2 つで、実装は同じ `consult.sh`（`--to claude|codex`）。以下の `claude-consult.sh` は、Codex を相談先にするとき `codex-consult.sh` に読み替えればそのまま使える。Herdr の agent 名は claude が `consult` / `consult-<role>`、codex が `consult-codex` / `consult-codex-<role>` なので、両方を並べて残せる（引数なしの `--close` は両方閉じる）。
 
 | topology | 何ができる | 向いている場面 |
