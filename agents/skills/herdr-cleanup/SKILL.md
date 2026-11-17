@@ -56,7 +56,8 @@ harness が起動したセッションは `~/.cache/harness/` に記録を残す
 
 - `owner` が空の古い記録、他の pane/agent が作った記録は**触らない**
 - 全体を見るなら `--all-owners`、特定の実行者だけなら `--owner agent:NAME` / `--owner pane:ID`
-- 実行ロックも同じで、lease には acquire した pane が `owner` として入る
+- 実行ロックも同じで、lease には acquire した pane が `owner` として入る。**このセッションが立ち上げた子の pane / agent が取った lease も自分の分として扱う**（`orchestrate` を子セッションで回しても、そのロックが漏れない）
+- worktree も同じ: `herdr-agent.sh` が作成時に `~/.cache/harness/herdr-worktrees/` へ owner を記録し、cleanup はその owner で絞る
 
 ## やらないこと
 

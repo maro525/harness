@@ -232,10 +232,29 @@ run_cleanup() {
     report_header "task locks ($LOCK_DIR)"
     local found=0 file key runner upd ttl_s age now lock_owner
     now=$(date +%s)
+    # Leases taken by a child this session started belong to this session too:
+    # the child's own pane id is the owner, and our record for that child says so.
+    local -a mine=()
+    [[ -n "$OWNER" ]] && mine+=("$OWNER")
+    if [[ -n "$OWNER" ]]; then
+      local sf sp sa
+      for sf in "$CONSULT_STATE"/*.json "$AGENT_STATE"/*.json; do
+        [[ -f "$sf" ]] || continue
+        [[ "$(field "$sf" owner "")" == "$OWNER" ]] || continue
+        sp=$(field "$sf" pane "")
+        sa=$(field "$sf" agent "")
+        [[ -n "$sp" ]] && mine+=("pane:$sp")
+        [[ -n "$sa" ]] && mine+=("agent:$sa")
+      done
+    fi
     for file in "$LOCK_DIR"/*.lock; do
       [[ -f "$file" ]] || continue
       lock_owner=$(sed -n 's/^owner=//p' "$file" | head -1)
-      [[ -z "$OWNER" || "$lock_owner" == "$OWNER" ]] || continue
+      if [[ -n "$OWNER" ]]; then
+        local in_mine=0 mo
+        for mo in "${mine[@]}"; do [[ "$lock_owner" == "$mo" ]] && in_mine=1 && break; done
+        (( in_mine )) || continue
+      fi
       found=1
       key=$(sed -n 's/^key=//p' "$file" | head -1)
       runner=$(sed -n 's/^runner=//p' "$file" | head -1)
