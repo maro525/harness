@@ -11,6 +11,11 @@
 # and tells you to add --yes. Pass --yes only after the list has been shown and
 # accepted.
 #
+# The default scope is **the sessions the caller itself started**: every record
+# carries the owner (the calling pane's agent name, or the pane id) at start time,
+# and anything else is left alone. Use --all-owners to tidy records from other
+# sessions, or --owner ID to pick one.
+#
 # Usage:
 #   herdr-cleanup.sh [OPTIONS]
 #
@@ -19,6 +24,8 @@
 #   --apply          close/release, after asking (a terminal) or with --yes
 #   --yes            confirm without asking (only after the list was accepted)
 #   --include-live   also close recorded sessions that are still alive but idle
+#   --owner ID       scope to one owner (agent:NAME | pane:ID); default: this session
+#   --all-owners     ignore the owner scope (every recorded session / lease)
 #   --only WHAT      consult | agents | locks   (repeatable; default: all)
 #   --name NAME      limit to one session name
 #   --worktrees      also list worktrees whose session is gone (never removes them)
@@ -44,10 +51,12 @@ APPLY=0
 YES=0
 INCLUDE_LIVE=0
 LIST_WORKTREES=0
+OWNER=""
+ALL_OWNERS=0
 NAME_FILTER=""
 ONLY=()
 
-usage() { sed -n '20,44p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
+usage() { sed -n '24,52p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -55,12 +64,42 @@ while [[ $# -gt 0 ]]; do
     --yes)          YES=1; shift ;;
     --include-live) INCLUDE_LIVE=1; shift ;;
     --worktrees)    LIST_WORKTREES=1; shift ;;
+    --owner)        OWNER=$2; shift 2 ;;
+    --all-owners)   ALL_OWNERS=1; shift ;;
     --only)         ONLY+=("$2"); shift 2 ;;
     --name)         NAME_FILTER=$2; shift 2 ;;
     -h|--help)      usage ;;
     *) echo "herdr-cleanup: unknown option '$1'" >&2; exit 2 ;;
   esac
 done
+
+# The owner stamped on records at start time: the calling pane's agent name when
+# the pane runs a named agent, otherwise the pane id (same rule as herdr-agent.sh
+# and consult.sh).
+current_owner() {
+  if [[ -n "${HERDR_AGENT_NAME:-}" ]]; then
+    printf 'agent:%s' "$HERDR_AGENT_NAME"
+  elif [[ -n "${HERDR_PANE_ID:-}" ]]; then
+    printf 'pane:%s' "$HERDR_PANE_ID"
+  fi
+}
+
+if (( ALL_OWNERS == 1 )); then
+  OWNER=""
+elif [[ -z "$OWNER" ]]; then
+  OWNER=$(current_owner)
+  if [[ -z "$OWNER" ]]; then
+    echo "herdr-cleanup: cannot tell which session this is (no HERDR_AGENT_NAME / HERDR_PANE_ID)." >&2
+    echo "               Pass --owner agent:NAME | pane:ID, or --all-owners for every record." >&2
+    exit 2
+  fi
+fi
+
+# in_scope <record file>: does this record belong to the owner we are tidying?
+in_scope() {
+  [[ -z "$OWNER" ]] && return 0
+  [[ "$(field "$1" owner "")" == "$OWNER" ]]
+}
 
 want() { # category
   (( ${#ONLY[@]} == 0 )) && return 0
@@ -109,6 +148,12 @@ run_cleanup() {
   changed=0
   failed=0
 
+  if [[ -n "$OWNER" ]]; then
+    printf 'Scope: %s (this session — use --all-owners to include others)\n' "$OWNER"
+  else
+    printf 'Scope: every recorded session (--all-owners)\n'
+  fi
+
   # --- consult sessions ------------------------------------------------------
   if want consult && [[ -d "$CONSULT_STATE" ]]; then
     report_header "consult sessions ($CONSULT_STATE)"
@@ -118,6 +163,7 @@ run_cleanup() {
       name=$(field "$file" agent "")
       [[ -n "$name" ]] || { rm -f "$file"; continue; }
       [[ -n "$NAME_FILTER" && "$name" != "$NAME_FILTER" ]] && continue
+      in_scope "$file" || continue
       found=1
       tab=$(field "$file" tab "")
       pane=$(field "$file" pane "")
@@ -144,6 +190,7 @@ run_cleanup() {
       name=$(field "$file" agent "")
       [[ -n "$name" ]] || { rm -f "$file"; continue; }
       [[ -n "$NAME_FILTER" && "$name" != "$NAME_FILTER" ]] && continue
+      in_scope "$file" || continue
       found=1
       if alive "$name"; then
         st=$(agent_state "$name")
@@ -180,10 +227,12 @@ run_cleanup() {
   # --- expired task locks ----------------------------------------------------
   if want locks && [[ -d "$LOCK_DIR" ]]; then
     report_header "task locks ($LOCK_DIR)"
-    local found=0 file key runner upd ttl_s age now
+    local found=0 file key runner upd ttl_s age now lock_owner
     now=$(date +%s)
     for file in "$LOCK_DIR"/*.lock; do
       [[ -f "$file" ]] || continue
+      lock_owner=$(sed -n 's/^owner=//p' "$file" | head -1)
+      [[ -z "$OWNER" || "$lock_owner" == "$OWNER" ]] || continue
       found=1
       key=$(sed -n 's/^key=//p' "$file" | head -1)
       runner=$(sed -n 's/^runner=//p' "$file" | head -1)

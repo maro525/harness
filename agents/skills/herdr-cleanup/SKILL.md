@@ -16,7 +16,8 @@ harness が起動したセッションは `~/.cache/harness/` に記録を残す
 
 | ユーザーの言い方 | 実行 |
 |---|---|
-| 「herdr のセッション整理して」「溜まってない？」 | `~/.claude/scripts/herdr-cleanup.sh`（レポートだけ。結果を見せて、何を消すか伝える） |
+| 「herdr のセッション整理して」「溜まってない？」 | `~/.claude/scripts/herdr-cleanup.sh`（レポートだけ。既定は**このセッションが立ち上げたものだけ**） |
+| 「全部まとめて整理して」「他のセッションのも」 | `herdr-cleanup.sh --all-owners`（他人のセッションも対象）
 | 「終わったやつは消して」 | まず `herdr-cleanup.sh` で一覧を出す → **一覧を見せて了承を得る** → `herdr-cleanup.sh --apply --yes` |
 | 「動いてないのも消していい」 | 上と同じ手順で `--include-live` を足す（了承を得てから `--apply --yes --include-live`） |
 | 「worktree も見て」 | 上に `--worktrees` を足す（**一覧のみ**。削除はしない） |
@@ -49,9 +50,18 @@ harness が起動したセッションは `~/.cache/harness/` に記録を残す
 - `--only consult|agents|locks` は複数指定できる
 - 記録はあるが Herdr に実体が無いものは、`close`（Herdr が知っていれば）→ だめなら記録だけ削除
 
+## 対象の範囲（既定は自分の分だけ）
+
+セッションの記録には **start 時の実行者**（呼び出した pane の agent 名、無ければ pane id）が `owner` として書き込まれる。`herdr-cleanup.sh` は**既定でその owner が自分と一致するものだけ**を対象にする。
+
+- `owner` が空の古い記録、他の pane/agent が作った記録は**触らない**
+- 全体を見るなら `--all-owners`、特定の実行者だけなら `--owner agent:NAME` / `--owner pane:ID`
+- 実行ロックも同じで、lease には acquire した pane が `owner` として入る
+
 ## やらないこと
 
 - **了承なしに `--apply --yes` を付けない**（`--yes` は一覧を見せてユーザーが OK した後だけ）
+- **自分が立ち上げていないセッションを消さない**（`--all-owners` / `--owner` を付けない限り対象外。付けろと言われたときも一覧を見せる）
 - **`herdr-agent.sh reap` を無条件に使わない**（記録済みの全部を閉じる。他の作業を巻き込む）
 - 生きているセッションを勝手に閉じない（`--include-live` はユーザーが明示したときだけ）
 - worktree を勝手に消さない（`--worktrees` は一覧のみ）

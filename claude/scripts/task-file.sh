@@ -320,6 +320,16 @@ lock_key() {
   fi
 }
 
+# Who holds the lease, as the caller sees itself (agent name, else pane id).
+# herdr-cleanup.sh uses it to keep a tidy-up to the caller's own leases.
+lock_owner_id() {
+  if [[ -n "${HERDR_AGENT_NAME:-}" ]]; then
+    printf 'agent:%s' "$HERDR_AGENT_NAME"
+  elif [[ -n "${HERDR_PANE_ID:-}" ]]; then
+    printf 'pane:%s' "$HERDR_PANE_ID"
+  fi
+}
+
 lease_field() { # file key
   [[ -f "$1" ]] || return 0
   sed -n "s/^$2=//p" "$1" | head -1
@@ -377,6 +387,7 @@ cmd_lock() {
       {
         printf 'key=%s\n' "$key"
         printf 'runner=%s\n' "$runner"
+        printf 'owner=%s\n' "$(lock_owner_id)"
         printf 'pid=%s\n' "$$"
         printf 'cwd=%s\n' "$PWD"
         printf 'task_file=%s\n' "$LOCK_TASK_FILE"
