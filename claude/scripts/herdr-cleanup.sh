@@ -47,6 +47,7 @@ CONSULT_STATE="${XDG_CACHE_HOME:-$HOME/.cache}/harness/herdr-consult"
 AGENT_STATE="${XDG_CACHE_HOME:-$HOME/.cache}/harness/herdr-agents"
 LOCK_DIR="${HARNESS_LOCKS_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/harness/locks}"
 WORKTREE_ROOT="${HERDR_WORKTREE_ROOT:-$HOME/.herdr/worktrees}"
+WORKTREE_REGISTRY="${XDG_CACHE_HOME:-$HOME/.cache}/harness/herdr-worktrees"
 HERDR_AGENT="$SCRIPT_DIR/herdr-agent.sh"
 
 APPLY=0
@@ -111,20 +112,6 @@ want() { # category
 }
 
 alive() { herdr agent get "$1" >/dev/null 2>&1; }
-
-# Bucket name of the repository this session is in, matching Herdr's
-# ~/.herdr/worktrees/<repo>/ layout (and task-file.sh's repo_key).
-current_repo_key() {
-  local common base
-  common=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || return 0
-  base=$(basename "$common")
-  if [[ "$base" == ".git" ]]; then
-    base=$(basename "$(dirname "$common")")
-  elif [[ "$base" == *.git ]]; then
-    base=${base%.git}
-  fi
-  printf '%s' "$base" | LC_ALL=C sed 's/[^A-Za-z0-9._-]/-/g'
-}
 
 agent_state() { # name -> idle|working|blocked|done|unknown
   herdr agent get "$1" 2>/dev/null |
@@ -278,33 +265,36 @@ run_cleanup() {
     (( found )) || echo "  (no locks)"
   fi
 
-  # --- worktrees with no session ---------------------------------------------
   # --- worktrees left behind --------------------------------------------------
   # `herdr worktree list` only knows the current repository, so walk Herdr's own
   # layout instead: ~/.herdr/worktrees/<repo>/<branch>. A worktree that no record
   # points at is an orphan: close removed its workspace but not (for a dirty one)
-  # the checkout. Clean ones are removed here; dirty ones are reported and kept.
+  # the checkout. Ownership comes from the registry herdr-agent.sh writes next to
+  # each worktree it creates, so the default stays "the worktrees this session
+  # made" - an unregistered one is left alone unless --all-owners.
   if (( LIST_WORKTREES == 1 )); then
     report_header "worktrees with no recorded session ($WORKTREE_ROOT)"
-    local wt_dir wt_path wt_repo wt_key dirty found=0
-    wt_key=$(current_repo_key)
+    local wt_dir wt_path wt_repo wt_key wt_owner dirty found=0
     if [[ ! -d "$WORKTREE_ROOT" ]]; then
       echo "  (none)"
     else
-      # Default: this session's repository only. --all-owners: every repository.
-      if [[ -n "$wt_key" ]]; then
-        local -a wt_globs=("$WORKTREE_ROOT/$wt_key"/*/)
-      else
-        local -a wt_globs=()
-      fi
-      (( ALL_OWNERS == 1 )) && wt_globs=("$WORKTREE_ROOT"/*/*/)
-      for wt_dir in ${wt_globs[@]+"${wt_globs[@]}"}; do
+      for wt_dir in "$WORKTREE_ROOT"/*/*/; do
         wt_path=${wt_dir%/}
         [[ -d "$wt_path" ]] || continue
         found=1
         # In use by any recorded session (any owner)?
         if grep -rqsF "\"repo\": \"$wt_path\"" "$CONSULT_STATE" "$AGENT_STATE" 2>/dev/null; then
           printf '  in use  %s\n' "$wt_path"
+          continue
+        fi
+        wt_key=$(printf '%s--%s' "$(basename "$(dirname "$wt_path")")" "$(basename "$wt_path")" |
+          LC_ALL=C sed 's/[^A-Za-z0-9._-]/-/g')
+        wt_owner=""
+        if [[ -f "$WORKTREE_REGISTRY/$wt_key.json" ]]; then
+          wt_owner=$(jq -r '.owner // empty' "$WORKTREE_REGISTRY/$wt_key.json" 2>/dev/null)
+        fi
+        if (( ALL_OWNERS == 0 )) && [[ "$wt_owner" != "$OWNER" ]]; then
+          printf '  skip    %-52s (other session: %s)\n' "$wt_path" "${wt_owner:-unregistered}"
           continue
         fi
         dirty=$(git -C "$wt_path" status --short 2>/dev/null | wc -l | tr -d ' ')
@@ -316,6 +306,7 @@ run_cleanup() {
           wt_repo=$(git -C "$wt_path" rev-parse --path-format=absolute --git-common-dir 2>/dev/null | xargs -r dirname 2>/dev/null)
           if [[ -n "$wt_repo" ]] && git -C "$wt_repo" worktree remove "$wt_path" >/dev/null 2>&1; then
             printf '  removed %-52s (branch kept)\n' "$wt_path"
+            rm -f "$WORKTREE_REGISTRY/$wt_key.json"
           else
             printf '  failed  %-52s (remove by hand)\n' "$wt_path"
             failed=1
