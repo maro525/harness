@@ -268,7 +268,38 @@ if [[ $DRY_RUN -eq 0 ]]; then
   printf '%s\n' ${managed[@]+"${managed[@]}"} >"$DEST/$MANIFEST_NAME"
 fi
 
-# --- 4. summary ------------------------------------------------------------
+# --- 4. Cursor user rules (always-on guidance, not a skill) ------------------
+# docs/cursor-rules/*.mdc carries the "parent is the PM, children execute" rule.
+# Cursor reads ~/.cursor/rules/*.mdc with alwaysApply, and Claude does not read
+# that directory - which is exactly the scope we want.
+RULES_SRC="$SCRIPT_DIR/docs/cursor-rules"
+RULES_DIRS=("$(dirname "$DEST")/rules")
+# The WSL-side Cursor keeps its own rules (that is where the hand-written ones
+# live); install there too when it exists, so both Cursors see the same rule.
+if [[ -d "$HOME/.cursor" && "$(dirname "$DEST")" != "$HOME/.cursor" ]]; then
+  RULES_DIRS+=("$HOME/.cursor/rules")
+fi
+if [[ -d "$RULES_SRC" ]]; then
+  for rules_dir in "${RULES_DIRS[@]}"; do
+    for rule in "$RULES_SRC"/*.mdc; do
+      [[ -f "$rule" ]] || continue
+      name=$(basename "$rule")
+      if [[ $DRY_RUN -eq 1 ]]; then
+        echo "  rule  $name -> $rules_dir (dry-run)"
+        continue
+      fi
+      mkdir -p "$rules_dir"
+      if cmp -s "$rule" "$rules_dir/$name"; then
+        echo "  same  $rules_dir/$name"
+      else
+        cp -f "$rule" "$rules_dir/$name"
+        echo "  rule  $rules_dir/$name"
+      fi
+    done
+  done
+fi
+
+# --- 5. summary ------------------------------------------------------------
 echo ""
 echo "Copied: $copied  Unchanged: $same  Skipped: $skipped  Pruned: $pruned"
 echo "Managed skills are listed in $DEST/$MANIFEST_NAME"
