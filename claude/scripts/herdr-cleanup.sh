@@ -28,7 +28,8 @@
 #   --all-owners     ignore the owner scope (every recorded session / lease)
 #   --only WHAT      consult | agents | locks   (repeatable; default: all)
 #   --name NAME      limit to one session name
-#   --worktrees      also list worktrees whose session is gone (never removes them)
+#   --worktrees      also handle worktrees with no recorded session (clean ones
+#                    are removed with --apply; dirty ones are only reported)
 #   -h, --help       this help
 #
 # What each category means:
@@ -45,6 +46,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CONSULT_STATE="${XDG_CACHE_HOME:-$HOME/.cache}/harness/herdr-consult"
 AGENT_STATE="${XDG_CACHE_HOME:-$HOME/.cache}/harness/herdr-agents"
 LOCK_DIR="${HARNESS_LOCKS_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/harness/locks}"
+WORKTREE_ROOT="${HERDR_WORKTREE_ROOT:-$HOME/.herdr/worktrees}"
 HERDR_AGENT="$SCRIPT_DIR/herdr-agent.sh"
 
 APPLY=0
@@ -109,6 +111,20 @@ want() { # category
 }
 
 alive() { herdr agent get "$1" >/dev/null 2>&1; }
+
+# Bucket name of the repository this session is in, matching Herdr's
+# ~/.herdr/worktrees/<repo>/ layout (and task-file.sh's repo_key).
+current_repo_key() {
+  local common base
+  common=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || return 0
+  base=$(basename "$common")
+  if [[ "$base" == ".git" ]]; then
+    base=$(basename "$(dirname "$common")")
+  elif [[ "$base" == *.git ]]; then
+    base=${base%.git}
+  fi
+  printf '%s' "$base" | LC_ALL=C sed 's/[^A-Za-z0-9._-]/-/g'
+}
 
 agent_state() { # name -> idle|working|blocked|done|unknown
   herdr agent get "$1" 2>/dev/null |
@@ -263,20 +279,54 @@ run_cleanup() {
   fi
 
   # --- worktrees with no session ---------------------------------------------
+  # --- worktrees left behind --------------------------------------------------
+  # `herdr worktree list` only knows the current repository, so walk Herdr's own
+  # layout instead: ~/.herdr/worktrees/<repo>/<branch>. A worktree that no record
+  # points at is an orphan: close removed its workspace but not (for a dirty one)
+  # the checkout. Clean ones are removed here; dirty ones are reported and kept.
   if (( LIST_WORKTREES == 1 )); then
-    report_header "worktrees without a recorded session"
-    local row branch path wt
-    mapfile -t wt < <(herdr worktree list 2>/dev/null |
-      jq -r '.result.worktrees[]? | "\(.branch)\t\(.path)"' 2>/dev/null)
-    if (( ${#wt[@]} == 0 )); then
+    report_header "worktrees with no recorded session ($WORKTREE_ROOT)"
+    local wt_dir wt_path wt_repo wt_key dirty found=0
+    wt_key=$(current_repo_key)
+    if [[ ! -d "$WORKTREE_ROOT" ]]; then
       echo "  (none)"
     else
-      for row in "${wt[@]}"; do
-        branch=${row%%$'\t'*}
-        path=${row#*$'\t'}
-        printf '  %-40s %s\n' "$branch" "$path"
-        printf '      remove: git worktree remove %s   (only if nothing is running there)\n' "$path"
+      # Default: this session's repository only. --all-owners: every repository.
+      if [[ -n "$wt_key" ]]; then
+        local -a wt_globs=("$WORKTREE_ROOT/$wt_key"/*/)
+      else
+        local -a wt_globs=()
+      fi
+      (( ALL_OWNERS == 1 )) && wt_globs=("$WORKTREE_ROOT"/*/*/)
+      for wt_dir in ${wt_globs[@]+"${wt_globs[@]}"}; do
+        wt_path=${wt_dir%/}
+        [[ -d "$wt_path" ]] || continue
+        found=1
+        # In use by any recorded session (any owner)?
+        if grep -rqsF "\"repo\": \"$wt_path\"" "$CONSULT_STATE" "$AGENT_STATE" 2>/dev/null; then
+          printf '  in use  %s\n' "$wt_path"
+          continue
+        fi
+        dirty=$(git -C "$wt_path" status --short 2>/dev/null | wc -l | tr -d ' ')
+        if (( dirty > 0 )); then
+          printf '  keep    %-52s (%s uncommitted)\n' "$wt_path" "$dirty"
+          continue
+        fi
+        if (( APPLY == 1 )); then
+          wt_repo=$(git -C "$wt_path" rev-parse --path-format=absolute --git-common-dir 2>/dev/null | xargs -r dirname 2>/dev/null)
+          if [[ -n "$wt_repo" ]] && git -C "$wt_repo" worktree remove "$wt_path" >/dev/null 2>&1; then
+            printf '  removed %-52s (branch kept)\n' "$wt_path"
+          else
+            printf '  failed  %-52s (remove by hand)\n' "$wt_path"
+            failed=1
+          fi
+          changed=1
+        else
+          printf '  remove  %-52s (clean; branch is kept)\n' "$wt_path"
+          changed=1
+        fi
       done
+      (( found )) || echo "  (none)"
     fi
   fi
 }
