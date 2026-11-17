@@ -27,6 +27,12 @@ PI_SKILLS="$HOME/.pi/agent/skills"
 
 AGENT_SKILLS=(startproject team-implement team-review deploy orchestrate claude-consult codex-consult herdr-boss herdr-cleanup)
 
+# Claude Code does not read ~/.agents/skills, and these are the ones a Claude
+# session also needs (housekeeping). consult/phase skills stay out: Claude Code
+# has its own commands and the consult skills are for *other* agents.
+CLAUDE_SKILLS=(herdr-cleanup)
+CLAUDE_SKILLS_DIR="$HOME/.claude/skills"
+
 # shellcheck source=lib/sync-common.sh
 source "$SCRIPT_DIR/lib/sync-common.sh"
 
@@ -72,7 +78,31 @@ for name in "${AGENT_SKILLS[@]}"; do
   echo "  link  $name -> $target"
 done
 
-# --- 3. pi shadow check -------------------------------------------------------
+# --- 3. Claude symlinks (only the ones Claude Code needs) --------------------
+echo ""
+echo "Claude symlinks ($CLAUDE_SKILLS_DIR):"
+for name in "${CLAUDE_SKILLS[@]}"; do
+  target="$SOURCE/$name"
+  link="$CLAUDE_SKILLS_DIR/$name"
+
+  if [[ ! -d "$target" ]]; then
+    echo "  skip  $name (no $target yet)"
+    continue
+  fi
+  if [[ -L "$link" ]]; then
+    echo "  ok    $name -> $(readlink "$link")"
+    continue
+  fi
+  if [[ -e "$link" ]]; then
+    echo "  warn  $link exists and is not a symlink — left alone (remove it to link $target)" >&2
+    continue
+  fi
+  mkdir -p "$CLAUDE_SKILLS_DIR"
+  ln -s "$target" "$link"
+  echo "  link  $name -> $target"
+done
+
+# --- 4. pi shadow check -------------------------------------------------------
 for name in "${AGENT_SKILLS[@]}"; do
   if [[ -e "$PI_SKILLS/$name" && ! -L "$PI_SKILLS/$name" ]]; then
     echo "Warning: $PI_SKILLS/$name shadows $SOURCE/$name for pi (first match wins)." >&2
