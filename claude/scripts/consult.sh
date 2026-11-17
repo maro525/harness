@@ -549,6 +549,17 @@ EOF2
 
 # ─── herdr backend ───────────────────────────────────────────────────────────
 
+# Who started this session (same rule as herdr-agent.sh): the calling pane's
+# agent name when the pane runs a named agent, otherwise the pane id. Used by
+# herdr-cleanup.sh to keep a cleanup to the caller's own sessions.
+consult_owner_id() {
+  if [[ -n "${HERDR_AGENT_NAME:-}" ]]; then
+    printf 'agent:%s' "$HERDR_AGENT_NAME"
+  elif [[ -n "${HERDR_PANE_ID:-}" ]]; then
+    printf 'pane:%s' "$HERDR_PANE_ID"
+  fi
+}
+
 herdr_state_file() { printf '%s/%s.json' "$STATE_DIR" "$1"; }
 
 # Agent status as herdr reports it: idle | working | blocked | done | unknown.
@@ -710,8 +721,10 @@ herdr_ensure_session() {
   jq -n --arg agent "$name" --arg pane "$pane" --arg tab "$tab" --arg cwd "$PWD" \
         --arg role "$role" --arg model "$ROLE_MODEL" --arg mode "${ROLE_MODE:-$ROLE_SANDBOX}" \
         --arg target "$TARGET" --arg created "$(date -Iseconds)" \
+        --arg owner "$(consult_owner_id)" \
     '{agent:$agent, pane:$pane, tab:$tab, tab_owned:true, cwd:$cwd,
-      role:$role, model:$model, mode:$mode, target:$target, created:$created}' > "$state"
+      role:$role, model:$model, mode:$mode, target:$target, created:$created,
+      owner:$owner}' > "$state"
 
   if ! herdr agent start "$name" --kind "$AGENT_KIND" --pane "$pane" -- "${args[@]}" >&2; then
     echo "error: could not start $TARGET in $pane (startup dialog?)" >&2

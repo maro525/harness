@@ -158,6 +158,17 @@ done
 
 [[ -n "$CMD" ]] || { usage >&2; exit 2; }
 
+# Who started this session: the calling pane's agent name when the pane runs a
+# named agent, otherwise the pane id. herdr-cleanup.sh uses it to keep a cleanup
+# to the sessions that the caller itself launched.
+owner_id() {
+  if [[ -n "${HERDR_AGENT_NAME:-}" ]]; then
+    printf 'agent:%s' "$HERDR_AGENT_NAME"
+  elif [[ -n "${HERDR_PANE_ID:-}" ]]; then
+    printf 'pane:%s' "$HERDR_PANE_ID"
+  fi
+}
+
 # A preset names the intent, not a model id, so a caller (Cursor, or claude via
 # this script) does not have to know pi's provider/model strings. --model after
 # `--` still wins.
@@ -348,10 +359,10 @@ cmd_ensure() {
   mkdir -p "$STATE_DIR"
   jq -n --arg agent "$NAME" --arg pane "$pane" --arg tab "$tab" --arg kind "$KIND" \
     --arg workspace "$workspace" --arg topology "$TOPOLOGY" --argjson ws_owned "$ws_owned" \
-    --arg repo "$REPO" --arg created "$(date -Iseconds)" \
+    --arg repo "$REPO" --arg created "$(date -Iseconds)" --arg owner "$(owner_id)" \
     '{agent:$agent, pane:$pane, tab:$tab, tab_owned:true, workspace:$workspace,
       workspace_owned:$ws_owned, topology:$topology, kind:$kind, repo:$repo,
-      created:$created}' >"$state"
+      created:$created, owner:$owner}' >"$state"
 
   herdr agent start "$NAME" --kind "$KIND" --pane "$pane" -- "${NATIVE_ARGS[@]}" >&2 ||
     die "could not start $KIND in $pane — $NAME is recorded, so \`herdr-agent.sh close $NAME\` cleans it up"
