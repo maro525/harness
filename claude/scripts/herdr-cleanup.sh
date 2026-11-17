@@ -28,7 +28,8 @@
 #   --all-owners     ignore the owner scope (every recorded session / lease)
 #   --only WHAT      consult | agents | locks   (repeatable; default: all)
 #   --name NAME      limit to one session name
-#   --worktrees      also list worktrees whose session is gone (never removes them)
+#   --worktrees      also handle worktrees with no recorded session (clean ones
+#                    are removed with --apply; dirty ones are only reported)
 #   -h, --help       this help
 #
 # What each category means:
@@ -45,6 +46,8 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CONSULT_STATE="${XDG_CACHE_HOME:-$HOME/.cache}/harness/herdr-consult"
 AGENT_STATE="${XDG_CACHE_HOME:-$HOME/.cache}/harness/herdr-agents"
 LOCK_DIR="${HARNESS_LOCKS_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/harness/locks}"
+WORKTREE_ROOT="${HERDR_WORKTREE_ROOT:-$HOME/.herdr/worktrees}"
+WORKTREE_REGISTRY="${XDG_CACHE_HOME:-$HOME/.cache}/harness/herdr-worktrees"
 HERDR_AGENT="$SCRIPT_DIR/herdr-agent.sh"
 
 APPLY=0
@@ -229,10 +232,29 @@ run_cleanup() {
     report_header "task locks ($LOCK_DIR)"
     local found=0 file key runner upd ttl_s age now lock_owner
     now=$(date +%s)
+    # Leases taken by a child this session started belong to this session too:
+    # the child's own pane id is the owner, and our record for that child says so.
+    local -a mine=()
+    [[ -n "$OWNER" ]] && mine+=("$OWNER")
+    if [[ -n "$OWNER" ]]; then
+      local sf sp sa
+      for sf in "$CONSULT_STATE"/*.json "$AGENT_STATE"/*.json; do
+        [[ -f "$sf" ]] || continue
+        [[ "$(field "$sf" owner "")" == "$OWNER" ]] || continue
+        sp=$(field "$sf" pane "")
+        sa=$(field "$sf" agent "")
+        [[ -n "$sp" ]] && mine+=("pane:$sp")
+        [[ -n "$sa" ]] && mine+=("agent:$sa")
+      done
+    fi
     for file in "$LOCK_DIR"/*.lock; do
       [[ -f "$file" ]] || continue
       lock_owner=$(sed -n 's/^owner=//p' "$file" | head -1)
-      [[ -z "$OWNER" || "$lock_owner" == "$OWNER" ]] || continue
+      if [[ -n "$OWNER" ]]; then
+        local in_mine=0 mo
+        for mo in "${mine[@]}"; do [[ "$lock_owner" == "$mo" ]] && in_mine=1 && break; done
+        (( in_mine )) || continue
+      fi
       found=1
       key=$(sed -n 's/^key=//p' "$file" | head -1)
       runner=$(sed -n 's/^runner=//p' "$file" | head -1)
@@ -262,21 +284,59 @@ run_cleanup() {
     (( found )) || echo "  (no locks)"
   fi
 
-  # --- worktrees with no session ---------------------------------------------
+  # --- worktrees left behind --------------------------------------------------
+  # `herdr worktree list` only knows the current repository, so walk Herdr's own
+  # layout instead: ~/.herdr/worktrees/<repo>/<branch>. A worktree that no record
+  # points at is an orphan: close removed its workspace but not (for a dirty one)
+  # the checkout. Ownership comes from the registry herdr-agent.sh writes next to
+  # each worktree it creates, so the default stays "the worktrees this session
+  # made" - an unregistered one is left alone unless --all-owners.
   if (( LIST_WORKTREES == 1 )); then
-    report_header "worktrees without a recorded session"
-    local row branch path wt
-    mapfile -t wt < <(herdr worktree list 2>/dev/null |
-      jq -r '.result.worktrees[]? | "\(.branch)\t\(.path)"' 2>/dev/null)
-    if (( ${#wt[@]} == 0 )); then
+    report_header "worktrees with no recorded session ($WORKTREE_ROOT)"
+    local wt_dir wt_path wt_repo wt_key wt_owner dirty found=0
+    if [[ ! -d "$WORKTREE_ROOT" ]]; then
       echo "  (none)"
     else
-      for row in "${wt[@]}"; do
-        branch=${row%%$'\t'*}
-        path=${row#*$'\t'}
-        printf '  %-40s %s\n' "$branch" "$path"
-        printf '      remove: git worktree remove %s   (only if nothing is running there)\n' "$path"
+      for wt_dir in "$WORKTREE_ROOT"/*/*/; do
+        wt_path=${wt_dir%/}
+        [[ -d "$wt_path" ]] || continue
+        found=1
+        # In use by any recorded session (any owner)?
+        if grep -rqsF "\"repo\": \"$wt_path\"" "$CONSULT_STATE" "$AGENT_STATE" 2>/dev/null; then
+          printf '  in use  %s\n' "$wt_path"
+          continue
+        fi
+        wt_key=$(printf '%s--%s' "$(basename "$(dirname "$wt_path")")" "$(basename "$wt_path")" |
+          LC_ALL=C sed 's/[^A-Za-z0-9._-]/-/g')
+        wt_owner=""
+        if [[ -f "$WORKTREE_REGISTRY/$wt_key.json" ]]; then
+          wt_owner=$(jq -r '.owner // empty' "$WORKTREE_REGISTRY/$wt_key.json" 2>/dev/null)
+        fi
+        if (( ALL_OWNERS == 0 )) && [[ "$wt_owner" != "$OWNER" ]]; then
+          printf '  skip    %-52s (other session: %s)\n' "$wt_path" "${wt_owner:-unregistered}"
+          continue
+        fi
+        dirty=$(git -C "$wt_path" status --short 2>/dev/null | wc -l | tr -d ' ')
+        if (( dirty > 0 )); then
+          printf '  keep    %-52s (%s uncommitted)\n' "$wt_path" "$dirty"
+          continue
+        fi
+        if (( APPLY == 1 )); then
+          wt_repo=$(git -C "$wt_path" rev-parse --path-format=absolute --git-common-dir 2>/dev/null | xargs -r dirname 2>/dev/null)
+          if [[ -n "$wt_repo" ]] && git -C "$wt_repo" worktree remove "$wt_path" >/dev/null 2>&1; then
+            printf '  removed %-52s (branch kept)\n' "$wt_path"
+            rm -f "$WORKTREE_REGISTRY/$wt_key.json"
+          else
+            printf '  failed  %-52s (remove by hand)\n' "$wt_path"
+            failed=1
+          fi
+          changed=1
+        else
+          printf '  remove  %-52s (clean; branch is kept)\n' "$wt_path"
+          changed=1
+        fi
       done
+      (( found )) || echo "  (none)"
     fi
   fi
 }

@@ -79,6 +79,9 @@
 set -uo pipefail
 
 STATE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/harness/herdr-agents"
+# One file per worktree this script created, so a later cleanup can tell which
+# session made it (a worktree has no other owner marker).
+WORKTREE_REGISTRY="${XDG_CACHE_HOME:-$HOME/.cache}/harness/herdr-worktrees"
 
 die() {
   printf 'herdr-agent: %s\n' "$1" >&2
@@ -342,6 +345,17 @@ cmd_ensure() {
     local wt_path
     wt_path=$(jq -r '.result.workspace.identity_cwd // .result.worktree.path // empty' <<<"$created" 2>/dev/null || true)
     [[ -n "$wt_path" ]] && REPO=$wt_path
+    # Record who this worktree belongs to (herdr-cleanup.sh reads it).
+    if [[ -n "$wt_path" ]]; then
+      local wt_key
+      wt_key=$(printf '%s--%s' "$(basename "$(dirname "$wt_path")")" "$(basename "$wt_path")" |
+        LC_ALL=C sed 's/[^A-Za-z0-9._-]/-/g')
+      mkdir -p "$WORKTREE_REGISTRY"
+      jq -n --arg path "$wt_path" --arg branch "$BRANCH" --arg owner "$(owner_id)" \
+            --arg agent "$NAME" --arg created "$(date -Iseconds)" \
+        '{path:$path, branch:$branch, owner:$owner, agent:$agent, created:$created}' \
+        >"$WORKTREE_REGISTRY/$wt_key.json"
+    fi
   fi
 
   # config.toml may set [terminal] new_cwd = "follow", which sends the new pane
@@ -580,14 +594,27 @@ close_named() {
   # created, else just the pane: never a workspace/tab we did not create.
   # A worktree workspace also owns a git worktree on disk: remove it too (no
   # --force — a dirty worktree is left alone and reported).
-  local workspace ws_owned topology
+  local workspace ws_owned topology repo_path wt_key
   workspace=$(state_field "$state" workspace)
   ws_owned=$(state_field "$state" workspace_owned)
   topology=$(state_field "$state" topology)
+  repo_path=$(state_field "$state" repo)
+  wt_key=""
+  if [[ "$topology" == "worktree" && -n "$repo_path" ]]; then
+    wt_key=$(printf '%s--%s' "$(basename "$(dirname "$repo_path")")" "$(basename "$repo_path")" |
+      LC_ALL=C sed 's/[^A-Za-z0-9._-]/-/g')
+  fi
+  # Drop the worktree registry entry once the checkout is gone; a checkout that
+  # could not be removed keeps its entry so a later cleanup still sees it.
+  drop_worktree_registry() {
+    [[ -n "$wt_key" && ! -d "$repo_path" ]] && rm -f "$WORKTREE_REGISTRY/$wt_key.json"
+    return 0
+  }
   if [[ "$ws_owned" == "true" && -n "$workspace" ]]; then
     if [[ "$topology" == "worktree" ]]; then
       if herdr worktree remove --workspace "$workspace" >/dev/null 2>&1; then
         rm -f "$state"
+        drop_worktree_registry
         echo "closed worktree workspace $workspace ($name)" >&2
         return 0
       fi
