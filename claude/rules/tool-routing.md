@@ -29,6 +29,24 @@
 | Linear MCP | **Direct** | Linear MCP ツールを直接呼ぶ |
 | GitHub 操作 | **`gh` CLI** | GitHub MCP は不安定なため使わない |
 
+## 外部エージェントは Herdr の中でだけ動かす
+
+**セッションを立てて何かをさせるのは、必ず Herdr 経由。**
+
+| 目的 | 使う | 使わない |
+|---|---|---|
+| 別エージェントに相談 | `claude-consult.sh` / `codex-consult.sh`／草案は `consult.sh --to pi` | `tmux new-session` で `claude`/`codex` を起動 |
+| 子に仕事を配る | `herdr-agent.sh ensure` ＋ `delegate` | `tmux` / `screen` / `nohup` / `claude --bg` |
+| 並列に回す | `orchestrate-parallel.sh`（worktree 分け） | ターミナルを手で並べる |
+| フェーズ実行 | `phase-run.sh`（tab を作らない設計） | 手で `claude -p` を並べる |
+
+理由: 名前・状態・報告（inbox）・後始末（`close` / `reap` / `herdr-cleanup.sh`）が **Herdr の記録に一本化**されているため。tmux 等で立てると記録が残らず、片付けの対象外になる。
+
+- Herdr が使えないときは**止まって確認する**（黙って tmux に落ちない）。一回きりの文章作成なら `consult.sh --to pi`（`pi -p`）
+- `tmux` を Claude の状態表示（hooks）以外の目的で使わない
+
+## External Research: 自分 + gemini
+
 ## External Research: 自分 + gemini
 
 リサーチは **2 人でやる**: 自分（Cursor / Claude）が一次情報を取り、**gemini** が解釈する。突き合わせて統合する。

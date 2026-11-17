@@ -64,6 +64,7 @@ orchestrate のフェーズ指定モードは探索に頼らず、プロンプ�
 | 実装を同じブランチでやらせて結果を受け取る | `claude-consult.sh --role implement` | delegate（worktree が分かれる） |
 | 実装を別ブランチ / worktree で並行、報告を inbox で受ける | `herdr-agent.sh ensure --topology worktree --branch feature/<name>` + `delegate`（`herdr-boss`） | consult |
 | 4 フェーズを回す | `phase-run.sh`（orchestrate 経由） | consult / delegate の直呼び |
+| セッションを立てて何かをさせる（すべて Herdr 経由） | **Herdr 経由**: `herdr-agent.sh ensure` / `consult.sh` / `orchestrate-parallel.sh` | **`tmux` / `screen` / `nohup` / `claude --bg` で立てる**（記録が残らず、片付けの対象外になる） |
 | 外部リサーチ（Web・別モデルの解釈） | 自分（firecrawl / `curl`）＋ **gemini**（`consult.sh --to pi -m google/gemini-4-carbon`） | consult だけ（自分が調べない） |
 | 文章作成・推敲、動画や画像の分析を pi に任せる | `herdr-agent.sh ensure --kind pi --preset writing`（動画は `--preset video`）→ `google/gemini-4-carbon` | 既定の pi（deepseek）で文章を書かせる |
 | 文章の下書き（コミットメッセージ / Linear や **Notion** の文面 / PR・MR 本文 / TASK_FILE の節） | `consult.sh --to pi -m google/gemini-4-carbon`（同期・1 回だけ） | 書き込みまでそのモデルに任せない（作成・投稿は MCP を持つ自分が行う） |

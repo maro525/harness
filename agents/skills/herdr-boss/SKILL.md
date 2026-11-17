@@ -31,6 +31,7 @@ metadata:
 6. 報告は意見であって事実ではない。重要な主張（「テストが通った」など）は、別の子に確認させるか、報告にあるコマンドと結果で判断する
 7. **相談は consult。** 設計相談・レビューは `claude-consult.sh` / `codex-consult.sh`（同期。回答を全部読める）。`delegate` は「待たずに配る」ときだけ使う
 8. **後始末。** 委任した tab は閉じるまで残る。フローの最後に `herdr-agent.sh close {name}` / `reap`
+9. **セッションは Herdr の中でだけ立てる。** 子は `ensure` で作る。`tmux` / `screen` / `nohup` / `claude --bg` で代用しない（Herdr の記録に乗らず、`herdr-cleanup.sh` の対象外になる）
 
 ## 手順
 
