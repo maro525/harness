@@ -47,8 +47,6 @@
 
 ## External Research: 自分 + gemini
 
-## External Research: 自分 + gemini
-
 リサーチは **2 人でやる**: 自分（Cursor / Claude）が一次情報を取り、**gemini** が解釈する。突き合わせて統合する。
 
 | 系統 | 担当 | 得意分野 |

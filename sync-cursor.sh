@@ -270,32 +270,25 @@ fi
 
 # --- 4. Cursor user rules (always-on guidance, not a skill) ------------------
 # docs/cursor-rules/*.mdc carries the "parent is the PM, children execute" rule.
-# Cursor reads ~/.cursor/rules/*.mdc with alwaysApply, and Claude does not read
-# that directory - which is exactly the scope we want.
+# It goes to the WSL-side ~/.cursor/rules only: that is where Cursor's own
+# hand-written rules live, and the Windows profile is not wanted for this.
 RULES_SRC="$SCRIPT_DIR/docs/cursor-rules"
-RULES_DIRS=("$(dirname "$DEST")/rules")
-# The WSL-side Cursor keeps its own rules (that is where the hand-written ones
-# live); install there too when it exists, so both Cursors see the same rule.
-if [[ -d "$HOME/.cursor" && "$(dirname "$DEST")" != "$HOME/.cursor" ]]; then
-  RULES_DIRS+=("$HOME/.cursor/rules")
-fi
+RULES_DIR="$HOME/.cursor/rules"
 if [[ -d "$RULES_SRC" ]]; then
-  for rules_dir in "${RULES_DIRS[@]}"; do
-    for rule in "$RULES_SRC"/*.mdc; do
-      [[ -f "$rule" ]] || continue
-      name=$(basename "$rule")
-      if [[ $DRY_RUN -eq 1 ]]; then
-        echo "  rule  $name -> $rules_dir (dry-run)"
-        continue
-      fi
-      mkdir -p "$rules_dir"
-      if cmp -s "$rule" "$rules_dir/$name"; then
-        echo "  same  $rules_dir/$name"
-      else
-        cp -f "$rule" "$rules_dir/$name"
-        echo "  rule  $rules_dir/$name"
-      fi
-    done
+  for rule in "$RULES_SRC"/*.mdc; do
+    [[ -f "$rule" ]] || continue
+    name=$(basename "$rule")
+    if [[ $DRY_RUN -eq 1 ]]; then
+      echo "  rule  $name -> $RULES_DIR (dry-run)"
+      continue
+    fi
+    mkdir -p "$RULES_DIR"
+    if cmp -s "$rule" "$RULES_DIR/$name"; then
+      echo "  same  $RULES_DIR/$name"
+    else
+      cp -f "$rule" "$RULES_DIR/$name"
+      echo "  rule  $RULES_DIR/$name"
+    fi
   done
 fi
 
