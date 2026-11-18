@@ -23,6 +23,7 @@
 # Boss pattern (a boss delegates and never waits; children report back):
 #   herdr-agent.sh delegate <child> <request-file|-> [--boss B] [--no-watch] [--watch-timeout T]
 #                                                       hand work over and return at once
+#                                                       (on success the child's record gets boss)
 #   herdr-agent.sh report <boss> <report-file|-> [--from CHILD] [--kind report|question]
 #                                                       run by the child: inbox file + notify
 #   herdr-agent.sh inbox  [<boss>] [list|read|ack|clear] [<child>|<file>]
@@ -161,14 +162,40 @@ done
 
 [[ -n "$CMD" ]] || { usage >&2; exit 2; }
 
-# Who started this session: the calling pane's agent name when the pane runs a
-# named agent, otherwise the pane id. herdr-cleanup.sh uses it to keep a cleanup
-# to the sessions that the caller itself launched.
+# Who started this session, as a name that outlives the pane: $HERDR_AGENT_NAME,
+# else the agent name Herdr has for the calling pane, else the pane id (also when
+# Herdr cannot be asked). herdr-cleanup.sh uses it to keep a cleanup to the
+# sessions that the caller itself launched (same rule as consult.sh).
 owner_id() {
-  if [[ -n "${HERDR_AGENT_NAME:-}" ]]; then
-    printf 'agent:%s' "$HERDR_AGENT_NAME"
+  local name=${HERDR_AGENT_NAME:-}
+  [[ -n "$name" ]] || name=$(pane_agent_name "${HERDR_PANE_ID:-}")
+  if [[ -n "$name" ]]; then
+    printf 'agent:%s' "$name"
   elif [[ -n "${HERDR_PANE_ID:-}" ]]; then
     printf 'pane:%s' "$HERDR_PANE_ID"
+  fi
+}
+
+# The registry file of a worktree path (herdr-cleanup.sh computes the same key).
+worktree_registry_file() {
+  printf '%s/%s.json' "$WORKTREE_REGISTRY" \
+    "$(printf '%s--%s' "$(basename "$(dirname "$1")")" "$(basename "$1")" |
+      LC_ALL=C sed 's/[^A-Za-z0-9._-]/-/g')"
+}
+
+# set_record_field <json file> <key> <value>: add / replace one field, keeping
+# the rest of the record (written to a temp file, then moved into place).
+set_record_field() {
+  local file=$1 tmp
+  [[ -f "$file" ]] || return 0
+  tmp=$(mktemp "$file.XXXXXX") || return 1
+  if jq --arg k "$2" --arg v "$3" '.[$k] = $v' "$file" >"$tmp" 2>/dev/null; then
+    # mktemp makes the file 0600: keep the record's own mode.
+    chmod --reference="$file" "$tmp" 2>/dev/null || chmod 600 "$tmp"
+    mv -f -- "$tmp" "$file"
+  else
+    rm -f -- "$tmp"
+    return 1
   fi
 }
 
@@ -318,6 +345,11 @@ cmd_ensure() {
     cmd_close >/dev/null 2>&1 || true
   fi
 
+  # Resolved once, before any tab exists: owner is the stable name, owner_pane
+  # the raw pane id it was resolved from.
+  local owner
+  owner=$(owner_id)
+
   # Topology: a tab in the caller's workspace (default), a workspace of its own,
   # or a git worktree plus its workspace. All three answers carry
   # .result.{workspace,tab,root_pane}.
@@ -371,14 +403,11 @@ cmd_ensure() {
     [[ -n "$wt_path" ]] && REPO=$wt_path
     # Record who this worktree belongs to (herdr-cleanup.sh reads it).
     if [[ -n "$wt_path" ]]; then
-      local wt_key
-      wt_key=$(printf '%s--%s' "$(basename "$(dirname "$wt_path")")" "$(basename "$wt_path")" |
-        LC_ALL=C sed 's/[^A-Za-z0-9._-]/-/g')
       mkdir -p "$WORKTREE_REGISTRY"
-      jq -n --arg path "$wt_path" --arg branch "$BRANCH" --arg owner "$(owner_id)" \
-            --arg agent "$NAME" --arg created "$(date -Iseconds)" \
-        '{path:$path, branch:$branch, owner:$owner, agent:$agent, created:$created}' \
-        >"$WORKTREE_REGISTRY/$wt_key.json"
+      jq -n --arg path "$wt_path" --arg branch "$BRANCH" --arg owner "$owner" \
+            --arg owner_pane "${HERDR_PANE_ID:-}" --arg agent "$NAME" --arg created "$(date -Iseconds)" \
+        '{path:$path, branch:$branch, owner:$owner, owner_pane:$owner_pane, agent:$agent, created:$created}' \
+        >"$(worktree_registry_file "$wt_path")"
     fi
   fi
 
@@ -397,10 +426,11 @@ cmd_ensure() {
   mkdir -p "$STATE_DIR"
   jq -n --arg agent "$NAME" --arg pane "$pane" --arg tab "$tab" --arg kind "$KIND" \
     --arg workspace "$workspace" --arg topology "$TOPOLOGY" --argjson ws_owned "$ws_owned" \
-    --arg repo "$REPO" --arg created "$(date -Iseconds)" --arg owner "$(owner_id)" \
+    --arg repo "$REPO" --arg created "$(date -Iseconds)" --arg owner "$owner" \
+    --arg owner_pane "${HERDR_PANE_ID:-}" \
     '{agent:$agent, pane:$pane, tab:$tab, tab_owned:true, workspace:$workspace,
       workspace_owned:$ws_owned, topology:$topology, kind:$kind, repo:$repo,
-      created:$created, owner:$owner}' >"$state"
+      created:$created, owner:$owner, owner_pane:$owner_pane}' >"$state"
 
   herdr agent start "$NAME" --kind "$KIND" --pane "$pane" -- "${NATIVE_ARGS[@]}" >&2 ||
     die "could not start $KIND in $pane — $NAME is recorded, so \`herdr-agent.sh close $NAME\` cleans it up"
@@ -984,6 +1014,17 @@ cmd_delegate() {
   # The submit went through: this delegation supersedes the previous one.
   replace_watcher "$boss" "$NAME"
   mv -f -- "$since_new" "$wdir/$child_safe.since"
+
+  # Who the child works for, on its record and its worktree's: herdr-cleanup.sh
+  # can then follow the session by the boss name after the boss pane is gone.
+  local state_path wt_reg
+  state_path=$(state_file "$NAME")
+  set_record_field "$state_path" boss "$boss" ||
+    echo "herdr-agent: warning: could not record boss $boss on $NAME" >&2
+  if [[ "$(state_field "$state_path" topology)" == "worktree" ]]; then
+    wt_reg=$(worktree_registry_file "$(state_field "$state_path" repo)")
+    set_record_field "$wt_reg" boss "$boss" || true
+  fi
 
   local watch_pid="none" log="$wdir/$child_safe.log"
   if ((WATCH)); then

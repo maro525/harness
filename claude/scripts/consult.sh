@@ -549,14 +549,30 @@ EOF2
 
 # ─── herdr backend ───────────────────────────────────────────────────────────
 
-# Who started this session (same rule as herdr-agent.sh): the calling pane's
-# agent name when the pane runs a named agent, otherwise the pane id. Used by
-# herdr-cleanup.sh to keep a cleanup to the caller's own sessions.
+# Who started this session, as a name that outlives the pane (same rule as
+# herdr-agent.sh): $HERDR_AGENT_NAME, else the agent name Herdr has for the
+# calling pane, else the pane id. Used by herdr-cleanup.sh to keep a cleanup to
+# the caller's own sessions.
 consult_owner_id() {
-  if [[ -n "${HERDR_AGENT_NAME:-}" ]]; then
-    printf 'agent:%s' "$HERDR_AGENT_NAME"
+  local name=${HERDR_AGENT_NAME:-}
+  if [[ -z "$name" && -n "${HERDR_PANE_ID:-}" ]]; then
+    name=$(herdr agent get "$HERDR_PANE_ID" 2>/dev/null |
+      jq -r '.result.agent.name // empty' 2>/dev/null || true)
+  fi
+  if [[ -n "$name" ]]; then
+    printf 'agent:%s' "$name"
   elif [[ -n "${HERDR_PANE_ID:-}" ]]; then
     printf 'pane:%s' "$HERDR_PANE_ID"
+  fi
+}
+
+# The boss the caller works for: $HERDR_BOSS, else the caller's own stable name.
+# Empty when only a pane id is known (the owner already carries it).
+consult_boss() { # owner
+  if [[ -n "${HERDR_BOSS:-}" ]]; then
+    printf '%s' "$HERDR_BOSS"
+  elif [[ "$1" == agent:* ]]; then
+    printf '%s' "${1#agent:}"
   fi
 }
 
@@ -718,13 +734,16 @@ herdr_ensure_session() {
   # (codex's update notice / folder trust, claude's approval), the tab is already
   # there, and `--close` must be able to close it.
   mkdir -p "$STATE_DIR"
+  local owner
+  owner=$(consult_owner_id)
   jq -n --arg agent "$name" --arg pane "$pane" --arg tab "$tab" --arg cwd "$PWD" \
         --arg role "$role" --arg model "$ROLE_MODEL" --arg mode "${ROLE_MODE:-$ROLE_SANDBOX}" \
         --arg target "$TARGET" --arg created "$(date -Iseconds)" \
-        --arg owner "$(consult_owner_id)" \
+        --arg owner "$owner" --arg owner_pane "${HERDR_PANE_ID:-}" --arg boss "$(consult_boss "$owner")" \
     '{agent:$agent, pane:$pane, tab:$tab, tab_owned:true, cwd:$cwd,
       role:$role, model:$model, mode:$mode, target:$target, created:$created,
-      owner:$owner}' > "$state"
+      owner:$owner, owner_pane:$owner_pane}
+     + (if $boss == "" then {} else {boss:$boss} end)' > "$state"
 
   if ! herdr agent start "$name" --kind "$AGENT_KIND" --pane "$pane" -- "${args[@]}" >&2; then
     echo "error: could not start $TARGET in $pane (startup dialog?)" >&2

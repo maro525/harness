@@ -77,6 +77,42 @@ Herdr の構造は workspace → tab → pane。セッションをどこに作�
 ~/.claude/scripts/herdr-agent.sh inbox boss-<repo> clear    # 既読と watcher の残骸を消す
 ```
 
+## 記録の帰属（owner と boss）
+
+`herdr-cleanup.sh` は「誰が立ち上げた記録か」で片付ける範囲を決める。pane id は pane を閉じたり作り直したりすると引けなくなるので、記録には**後から名前で追える値**を残す。
+
+| フィールド | 書くもの | 書く場所 |
+|---|---|---|
+| `owner` | 起動元の**安定名** `agent:<name>`。名前が取れないときだけ `pane:<id>` | `herdr-agent.sh ensure`（状態ファイル・worktree レジストリ）/ `consult.sh`（状態ファイル） |
+| `owner_pane` | `owner` を解決したときの生の pane id（照合・調査用） | 同上 |
+| `boss` | 子が報告する司令塔の名前 | `herdr-agent.sh delegate`（子の状態ファイルと worktree レジストリに追記）/ `consult.sh`（`$HERDR_BOSS`、無ければ起動元の安定名。どちらも無ければ書かない） |
+
+`boss` はどちらの記録でも**結果の受け取り手**を指す。`herdr-agent.sh` では delegate した司令塔（報告の宛先）、`consult.sh` では回答を受け取る起動元で、意味は同じ「報告先」。
+
+- 安定名の解決順: `$HERDR_AGENT_NAME` → `herdr agent get "$HERDR_PANE_ID"` の agent 名 → `pane:$HERDR_PANE_ID`。Herdr に繋がらないときは pane id に落ちる（`report` / `inbox` / cleanup のレポートは Herdr 無しでも動く）
+- フィールドは追加だけ。`boss` の無い記録や、`owner` が `pane:<id>` の古い記録もそのまま読める
+
+`herdr-cleanup.sh --owner` は `agent:NAME` / `pane:ID` / 素の `NAME`（= `agent:NAME`）を受け、次のどれかに当たる記録を自分の分とみなす（省略時はこのセッションの安定名）。
+
+1. 記録の `owner` が一致する
+2. 記録の `owner` が `pane:P` で、pane `P` の今の agent 名が `NAME`（名前が無かった頃の記録を拾う）
+3. 記録の `boss` が `NAME`
+
+司令塔の pane が消えた後に残りを追うときは、別の pane から `--owner boss-a` で引く（3 で拾える）。
+
+2 で拾った記録は、pane id が使い回されると他人のものに当たりうるので、**閉じない**。行末に `via:pane-name` が付き、生きている記録はレポートだけ（`--include-live` でも閉じない）、実体の無い記録は記録ファイルだけ消して tab / pane には触らない。閉じたいときは `--owner pane:ID` を明示して 1 で拾わせる。3 で拾った記録には `via:boss` が付く。
+
+行末の `via:pane-name(owner:pane:w1:p2)` は「記録の owner が `pane:w1:p2` で、その pane の今の名前で拾った」という意味。中身を確かめてから `--owner pane:w1:p2` に渡せば、owner 一致として閉じられる。
+
+```bash
+~/.claude/scripts/herdr-cleanup.sh --owner boss-a              # boss-a の記録（pane が消えていても boss で追える）
+~/.claude/scripts/herdr-cleanup.sh --only inbox --boss boss-a  # boss-a の未読と .watch/ の残骸（読むだけ）
+```
+
+レポートの先頭行は `Scope: agent:boss-a (this session; pane w1:p2, boss boss-a — …)` の形で、解決した安定名・pane id・inbox を見る boss を出す。各記録の行末には `boss:<name>`（無ければ `boss:-`）が付く。
+
+`inbox (<boss>)` の節は未読ファイル名と件数、`.watch/` のロック・`.since`・ログを並べるだけで、**ack も削除もしない**。片付けは従来どおり `herdr-agent.sh inbox <boss> read` → `ack` → `clear`。boss は `--boss`、`$HERDR_BOSS`、`--owner` の名前（省略時は自分の安定名）の順で決まる。
+
 ## タスク境界のルール
 
 セッション名・ブランチ名・workspace 名は [`naming.md`](naming.md) の規則に従う（`<種類>-<対象>[-<補足>]`、英小文字とハイフン）。以下のコマンドはその名前で対象を選ぶので、命名が揃っていないと**閉じ間違い・閉じ忘れ**が起きる。
@@ -130,6 +166,8 @@ Herdr の構造は workspace → tab → pane。セッションをどこに作�
 | 複数ロールを閉じる | `claude-consult.sh --close --roles implement,review` |
 | 全部閉じる | `claude-consult.sh --close` / `herdr-agent.sh reap` |
 | 記録を突き合わせて整理（推奨） | `herdr-cleanup.sh`（既定はレポート）/ `--apply`（確認）/ `--apply --yes`（了承後）/ `--apply --yes --include-live` |
+| pane が消えた司令塔の記録を追う | `herdr-cleanup.sh --owner BOSS`（`boss` 一致でも拾う） |
+| 未読の報告が溜まっていないか（読むだけ） | `herdr-cleanup.sh --only inbox [--boss BOSS]` |
 | 種類で絞って閉じる | `herdr-agent.sh reap --kind pi` |
 | 作り直す（文脈リセット） | `claude-consult.sh --new --role ROLE` / `herdr-agent.sh restart NAME` |
 | ターミナルの末尾を見る | `claude-consult.sh --show ROLE` / `herdr-agent.sh read NAME` |
