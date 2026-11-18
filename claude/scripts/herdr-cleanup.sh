@@ -12,9 +12,17 @@
 # accepted.
 #
 # The default scope is **the sessions the caller itself started**: every record
-# carries the owner (the calling pane's agent name, or the pane id) at start time,
-# and anything else is left alone. Use --all-owners to tidy records from other
-# sessions, or --owner ID to pick one.
+# carries the owner (the caller's agent name, or the pane id when it had none) at
+# start time, and the boss it works for once it was delegated to; anything else
+# is left alone. Use --all-owners to tidy records from other sessions, or
+# --owner to pick one.
+#
+# A record is in scope when (any of):
+#   - its owner is the owner being tidied
+#   - its owner is pane:P (an older record) and Herdr's agent in pane P now
+#     carries the owner's name
+#   - its boss is the owner's name (so a session stays traceable after its
+#     boss pane is gone)
 #
 # Usage:
 #   herdr-cleanup.sh [OPTIONS]
@@ -24,9 +32,12 @@
 #   --apply          close/release, after asking (a terminal) or with --yes
 #   --yes            confirm without asking (only after the list was accepted)
 #   --include-live   also close recorded sessions that are still alive but idle
-#   --owner ID       scope to one owner (agent:NAME | pane:ID); default: this session
+#   --owner ID       scope to one owner (agent:NAME | pane:ID | NAME, which means
+#                    agent:NAME); default: this session's stable name
 #   --all-owners     ignore the owner scope (every recorded session / lease)
-#   --only WHAT      consult | agents | locks   (repeatable; default: all)
+#   --boss NAME      whose inbox to report (default: $HERDR_BOSS, else the owner's
+#                    name, else this pane's id)
+#   --only WHAT      consult | agents | locks | inbox   (repeatable; default: all)
 #   --name NAME      limit to one session name
 #   --worktrees      also handle worktrees with no recorded session (clean ones
 #                    are removed with --apply; dirty ones are only reported)
@@ -36,6 +47,8 @@
 #   consult  ~/.cache/harness/herdr-consult/*.json  (consult.sh sessions)
 #   agents   ~/.cache/harness/herdr-agents/*.json   (herdr-agent.sh sessions)
 #   locks    ~/.local/share/harness/locks/*.lock    (task-file.sh leases, expired)
+#   inbox    ~/.cache/harness/inbox/<boss>/         (unread reports and watcher
+#            leftovers; read-only here - nothing is acked or deleted)
 #
 # exit: 0 = nothing left to do or everything done, 1 = something could not be done,
 #       2 = usage error / confirmation missing
@@ -48,6 +61,7 @@ AGENT_STATE="${XDG_CACHE_HOME:-$HOME/.cache}/harness/herdr-agents"
 LOCK_DIR="${HARNESS_LOCKS_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/harness/locks}"
 WORKTREE_ROOT="${HERDR_WORKTREE_ROOT:-$HOME/.herdr/worktrees}"
 WORKTREE_REGISTRY="${XDG_CACHE_HOME:-$HOME/.cache}/harness/herdr-worktrees"
+INBOX_ROOT="${XDG_CACHE_HOME:-$HOME/.cache}/harness/inbox"
 HERDR_AGENT="$SCRIPT_DIR/herdr-agent.sh"
 
 APPLY=0
@@ -56,10 +70,18 @@ INCLUDE_LIVE=0
 LIST_WORKTREES=0
 OWNER=""
 ALL_OWNERS=0
+BOSS=""
 NAME_FILTER=""
 ONLY=()
 
-usage() { sed -n '24,52p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
+usage() { sed -n '/^# Usage:/,/^#  *2 = usage/p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
+
+# need_value <option> <args left>: a value-taking option at the end is a usage error.
+need_value() {
+  (( $2 >= 2 )) && return 0
+  echo "herdr-cleanup: $1 needs a value" >&2
+  exit 2
+}
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -67,41 +89,109 @@ while [[ $# -gt 0 ]]; do
     --yes)          YES=1; shift ;;
     --include-live) INCLUDE_LIVE=1; shift ;;
     --worktrees)    LIST_WORKTREES=1; shift ;;
-    --owner)        OWNER=$2; shift 2 ;;
+    --owner)        need_value "$1" $#; OWNER=$2; shift 2 ;;
     --all-owners)   ALL_OWNERS=1; shift ;;
-    --only)         ONLY+=("$2"); shift 2 ;;
-    --name)         NAME_FILTER=$2; shift 2 ;;
+    --boss)         need_value "$1" $#; BOSS=$2; shift 2 ;;
+    --only)         need_value "$1" $#; ONLY+=("$2"); shift 2 ;;
+    --name)         need_value "$1" $#; NAME_FILTER=$2; shift 2 ;;
     -h|--help)      usage ;;
     *) echo "herdr-cleanup: unknown option '$1'" >&2; exit 2 ;;
   esac
 done
 
-# The owner stamped on records at start time: the calling pane's agent name when
-# the pane runs a named agent, otherwise the pane id (same rule as herdr-agent.sh
-# and consult.sh).
+for c in ${ONLY[@]+"${ONLY[@]}"}; do
+  case "$c" in
+    consult|agents|locks|inbox) ;;
+    *) echo "herdr-cleanup: unknown --only '$c' (consult | agents | locks | inbox)" >&2; exit 2 ;;
+  esac
+done
+
+# The agent name Herdr has for a pane, empty when it has none or Herdr cannot be
+# asked (the report must still work without a server). lookup_pane fills the
+# cache in the calling shell; pane_agent_name reads it.
+declare -A PANE_NAMES=()
+lookup_pane() {
+  [[ -n "$1" && -z "${PANE_NAMES[$1]+set}" ]] || return 0
+  PANE_NAMES[$1]=$(herdr agent get "$1" 2>/dev/null |
+    jq -r '.result.agent.name // empty' 2>/dev/null || true)
+}
+pane_agent_name() {
+  [[ -n "$1" ]] || return 0
+  lookup_pane "$1"
+  printf '%s' "${PANE_NAMES[$1]}"
+}
+
+# The owner stamped on records at start time, as a name that outlives the pane:
+# $HERDR_AGENT_NAME, else the agent name Herdr has for this pane, else the pane
+# id (same rule as herdr-agent.sh and consult.sh).
 current_owner() {
-  if [[ -n "${HERDR_AGENT_NAME:-}" ]]; then
-    printf 'agent:%s' "$HERDR_AGENT_NAME"
+  local name=${HERDR_AGENT_NAME:-}
+  [[ -n "$name" ]] || name=$(pane_agent_name "${HERDR_PANE_ID:-}")
+  if [[ -n "$name" ]]; then
+    printf 'agent:%s' "$name"
   elif [[ -n "${HERDR_PANE_ID:-}" ]]; then
     printf 'pane:%s' "$HERDR_PANE_ID"
   fi
 }
 
+SELF_OWNER=$(current_owner)
 if (( ALL_OWNERS == 1 )); then
   OWNER=""
 elif [[ -z "$OWNER" ]]; then
-  OWNER=$(current_owner)
+  OWNER=$SELF_OWNER
   if [[ -z "$OWNER" ]]; then
     echo "herdr-cleanup: cannot tell which session this is (no HERDR_AGENT_NAME / HERDR_PANE_ID)." >&2
-    echo "               Pass --owner agent:NAME | pane:ID, or --all-owners for every record." >&2
+    echo "               Pass --owner agent:NAME | pane:ID | NAME, or --all-owners for every record." >&2
     exit 2
   fi
 fi
+case "$OWNER" in
+  ""|agent:*|pane:*) ;;
+  *) OWNER="agent:$OWNER" ;;
+esac
+# The bare name / pane id of the owner: what a record's boss holds.
+OWNER_BARE=${OWNER#agent:}
+OWNER_BARE=${OWNER_BARE#pane:}
+
+# Whose inbox to report: --boss, $HERDR_BOSS, the owner's name, this pane's id.
+if [[ -z "$BOSS" ]]; then
+  BOSS=${HERDR_BOSS:-}
+  [[ -n "$BOSS" ]] || BOSS=${OWNER_BARE:-${SELF_OWNER#agent:}}
+  BOSS=${BOSS#pane:}
+fi
+
+# owns <record owner> <record boss>: is this ours? See the header for the rules.
+# OWN_MATCH keeps the rule that matched (all | owner | pane-name | boss), so the
+# report can show why a record was picked before anyone runs --apply;
+# OWN_MATCH_OWNER keeps the record's owner (what --owner takes to close it).
+OWN_MATCH=""
+OWN_MATCH_OWNER=""
+owns() {
+  OWN_MATCH=""
+  OWN_MATCH_OWNER=$1
+  [[ -z "$OWNER" ]] && { OWN_MATCH=all; return 0; }
+  [[ "$1" == "$OWNER" ]] && { OWN_MATCH=owner; return 0; }
+  if [[ "$OWNER" == agent:* && "$1" == pane:* ]]; then
+    lookup_pane "${1#pane:}"
+    [[ "${PANE_NAMES[${1#pane:}]}" == "$OWNER_BARE" ]] && { OWN_MATCH="pane-name"; return 0; }
+  fi
+  [[ -n "$2" && "$2" == "$OWNER_BARE" ]] && { OWN_MATCH=boss; return 0; }
+  return 1
+}
+
+# " via:<rule>" when the last in_scope matched on something weaker than the
+# owner itself (a reused pane id can make pane-name wrong); empty otherwise.
+via_note() {
+  case "$OWN_MATCH" in
+    pane-name) printf ' via:pane-name(owner:%s)' "$OWN_MATCH_OWNER" ;;
+    boss) printf ' via:boss' ;;
+  esac
+}
 
 # in_scope <record file>: does this record belong to the owner we are tidying?
 in_scope() {
-  [[ -z "$OWNER" ]] && return 0
-  [[ "$(field "$1" owner "")" == "$OWNER" ]]
+  [[ -z "$OWNER" ]] && { OWN_MATCH=all; return 0; }
+  owns "$(field "$1" owner "")" "$(field "$1" boss "")"
 }
 
 want() { # category
@@ -126,10 +216,10 @@ field() { # file key default
   printf '%s' "${v:-$3}"
 }
 
-close_record() { # file name tab pane
-  local file=$1 name=$2 tab=$3 pane=$4
+close_record() { # file name tab pane boss
+  local file=$1 name=$2 tab=$3 pane=$4 boss=${5:--}
   if (( APPLY == 0 )); then
-    printf '  close  %-28s %s\n' "$name" "tab ${tab:-none} pane ${pane:-none}"
+    printf '  close  %-28s %s boss:%s\n' "$name" "tab ${tab:-none} pane ${pane:-none}" "$boss"
     return 0
   fi
   if [[ -n "$tab" ]]; then
@@ -138,29 +228,52 @@ close_record() { # file name tab pane
     herdr pane close "$pane" >/dev/null 2>&1
   fi
   rm -f "$file"
-  printf '  closed %-28s %s\n' "$name" "tab ${tab:-none} pane ${pane:-none}"
+  printf '  closed %-28s %s boss:%s\n' "$name" "tab ${tab:-none} pane ${pane:-none}" "$boss"
+}
+
+# A record picked only by its pane's current name (an old pane:P owner) may
+# belong to someone else if Herdr reused the pane id, so it is never closed:
+# a live one is only reported, a stale one loses its record but no tab/pane.
+pane_name_hold() { # agent state
+  if (( INCLUDE_LIVE == 1 )) && [[ "$1" == "idle" || "$1" == "done" ]]; then
+    printf ' (not closed: pane id may be reused; use --owner pane:ID)'
+  fi
+}
+
+drop_record() { # file name
+  if (( APPLY == 0 )); then
+    printf '  remove %-28s stale record (via:pane-name(owner:%s); tab left open)\n' "$2" "$OWN_MATCH_OWNER"
+    return 0
+  fi
+  rm -f "$1"
+  printf '  removed %-27s stale record (via:pane-name(owner:%s); tab left open)\n' "$2" "$OWN_MATCH_OWNER"
 }
 
 report_header() { printf '\n%s\n' "$1"; }
 
 changed=0
 failed=0
+unread=0
 
 # ─── the report / apply pass ─────────────────────────────────────────────────
 run_cleanup() {
   changed=0
   failed=0
+  unread=0
 
-  if [[ -n "$OWNER" ]]; then
-    printf 'Scope: %s (this session — use --all-owners to include others)\n' "$OWNER"
+  local who="pane ${HERDR_PANE_ID:--}, boss ${BOSS:--}"
+  if [[ -z "$OWNER" ]]; then
+    printf 'Scope: every recorded session (--all-owners; self %s, %s)\n' "${SELF_OWNER:--}" "$who"
+  elif [[ "$OWNER" == "$SELF_OWNER" ]]; then
+    printf 'Scope: %s (this session; %s — use --all-owners to include others)\n' "$OWNER" "$who"
   else
-    printf 'Scope: every recorded session (--all-owners)\n'
+    printf 'Scope: %s (--owner; self %s, %s)\n' "$OWNER" "${SELF_OWNER:--}" "$who"
   fi
 
   # --- consult sessions ------------------------------------------------------
   if want consult && [[ -d "$CONSULT_STATE" ]]; then
     report_header "consult sessions ($CONSULT_STATE)"
-    local found=0 file name tab pane st
+    local found=0 file name tab pane st rboss match
     for file in "$CONSULT_STATE"/*.json; do
       [[ -f "$file" ]] || continue
       name=$(field "$file" agent "")
@@ -170,15 +283,21 @@ run_cleanup() {
       found=1
       tab=$(field "$file" tab "")
       pane=$(field "$file" pane "")
+      rboss="$(field "$file" boss "-")$(via_note)"
+      match=$OWN_MATCH
       if alive "$name"; then
         st=$(agent_state "$name")
-        if (( INCLUDE_LIVE == 1 )) && [[ "$st" == "idle" || "$st" == "done" ]]; then
-          close_record "$file" "$name" "$tab" "$pane"; changed=1
+        if [[ "$match" == "pane-name" ]]; then
+          printf '  live   %-28s %s (%s) boss:%s%s\n' "$name" "${tab:-?}" "$st" "$rboss" "$(pane_name_hold "$st")"
+        elif (( INCLUDE_LIVE == 1 )) && [[ "$st" == "idle" || "$st" == "done" ]]; then
+          close_record "$file" "$name" "$tab" "$pane" "$rboss"; changed=1
         else
-          printf '  live   %-28s %s (%s)\n' "$name" "${tab:-?}" "$st"
+          printf '  live   %-28s %s (%s) boss:%s\n' "$name" "${tab:-?}" "$st" "$rboss"
         fi
+      elif [[ "$match" == "pane-name" ]]; then
+        drop_record "$file" "$name"; changed=1
       else
-        close_record "$file" "$name" "$tab" "$pane"; changed=1
+        close_record "$file" "$name" "$tab" "$pane" "$rboss"; changed=1
       fi
     done
     (( found )) || echo "  (no records)"
@@ -187,7 +306,7 @@ run_cleanup() {
   # --- herdr-agent sessions --------------------------------------------------
   if want agents && [[ -d "$AGENT_STATE" ]]; then
     report_header "herdr-agent sessions ($AGENT_STATE)"
-    local found=0 file name st
+    local found=0 file name st rboss match
     for file in "$AGENT_STATE"/*.json; do
       [[ -f "$file" ]] || continue
       name=$(field "$file" agent "")
@@ -195,31 +314,37 @@ run_cleanup() {
       [[ -n "$NAME_FILTER" && "$name" != "$NAME_FILTER" ]] && continue
       in_scope "$file" || continue
       found=1
+      rboss="$(field "$file" boss "-")$(via_note)"
+      match=$OWN_MATCH
       if alive "$name"; then
         st=$(agent_state "$name")
-        if (( INCLUDE_LIVE == 1 )) && [[ "$st" == "idle" || "$st" == "done" ]]; then
+        if [[ "$match" == "pane-name" ]]; then
+          printf '  live   %-28s %s (%s) boss:%s%s\n' "$name" "$(field "$file" topology tab)" "$st" "$rboss" "$(pane_name_hold "$st")"
+        elif (( INCLUDE_LIVE == 1 )) && [[ "$st" == "idle" || "$st" == "done" ]]; then
           if (( APPLY == 1 )); then
             "$HERDR_AGENT" close "$name" >/dev/null 2>&1 || failed=1
-            printf '  closed %-28s (%s)\n' "$name" "$st"
+            printf '  closed %-28s (%s) boss:%s\n' "$name" "$st" "$rboss"
           else
-            printf '  close  %-28s alive, %s\n' "$name" "$st"
+            printf '  close  %-28s alive, %s boss:%s\n' "$name" "$st" "$rboss"
           fi
           changed=1
         else
-          printf '  live   %-28s %s (%s)\n' "$name" "$(field "$file" topology tab)" "$st"
+          printf '  live   %-28s %s (%s) boss:%s\n' "$name" "$(field "$file" topology tab)" "$st" "$rboss"
         fi
+      elif [[ "$match" == "pane-name" ]]; then
+        drop_record "$file" "$name"; changed=1
       else
         # `herdr-agent.sh close` also removes the worktree it owns; fall back to
         # dropping the record when Herdr no longer knows the session.
         if (( APPLY == 1 )); then
           if "$HERDR_AGENT" close "$name" >/dev/null 2>&1; then
-            printf '  closed %-28s stale record\n' "$name"
+            printf '  closed %-28s stale record boss:%s\n' "$name" "$rboss"
           else
             rm -f "$file"
-            printf '  removed %-27s stale record (nothing left in herdr)\n' "$name"
+            printf '  removed %-27s stale record (nothing left in herdr) boss:%s\n' "$name" "$rboss"
           fi
         else
-          printf '  close  %-28s stale record\n' "$name"
+          printf '  close  %-28s stale record boss:%s\n' "$name" "$rboss"
         fi
         changed=1
       fi
@@ -240,7 +365,7 @@ run_cleanup() {
       local sf sp sa
       for sf in "$CONSULT_STATE"/*.json "$AGENT_STATE"/*.json; do
         [[ -f "$sf" ]] || continue
-        [[ "$(field "$sf" owner "")" == "$OWNER" ]] || continue
+        in_scope "$sf" || continue
         sp=$(field "$sf" pane "")
         sa=$(field "$sf" agent "")
         [[ -n "$sp" ]] && mine+=("pane:$sp")
@@ -284,6 +409,42 @@ run_cleanup() {
     (( found )) || echo "  (no locks)"
   fi
 
+  # --- the boss's inbox (read-only) -------------------------------------------
+  # Unread reports and what watchers left in .watch/. Nothing here is acked or
+  # deleted: that stays with `herdr-agent.sh inbox`, after someone has read them.
+  if want inbox && [[ -n "$BOSS" ]]; then
+    local ibox ibox_name f n=0 pid
+    ibox_name=$(printf '%s' "$BOSS" | tr -c 'A-Za-z0-9._-' '_')
+    [[ "$ibox_name" == .* ]] && ibox_name="_$ibox_name"
+    ibox="$INBOX_ROOT/$ibox_name"
+    report_header "inbox ($BOSS) ($ibox)"
+    if [[ ! -d "$ibox" ]]; then
+      echo "  (no inbox)"
+    else
+      while IFS= read -r f; do
+        [[ -f "$f" ]] || continue
+        n=$((n + 1))
+        printf '  unread  %s\n' "${f##*/}"
+      done < <(ls -1tr -- "$ibox"/*.md 2>/dev/null)
+      printf '  %s unread\n' "$n"
+      unread=$((unread + n))
+      for f in "$ibox"/.watch/*.lock "$ibox"/.watch/*.since "$ibox"/.watch/*.log; do
+        [[ -e "$f" ]] || continue
+        if [[ -d "$f" ]]; then
+          pid=$(cat "$f/pid" 2>/dev/null || true)
+          if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+            printf '  watch   %-40s (watcher alive, pid %s)\n' "${f##*/}" "$pid"
+            continue
+          fi
+          printf '  watch   %-40s (watcher gone)\n' "${f##*/}"
+        else
+          printf '  watch   %s\n' "${f##*/}"
+        fi
+      done
+      printf '  (read-only: herdr-agent.sh inbox %s read -> ack -> clear)\n' "$BOSS"
+    fi
+  fi
+
   # --- worktrees left behind --------------------------------------------------
   # `herdr worktree list` only knows the current repository, so walk Herdr's own
   # layout instead: ~/.herdr/worktrees/<repo>/<branch>. A worktree that no record
@@ -293,7 +454,7 @@ run_cleanup() {
   # made" - an unregistered one is left alone unless --all-owners.
   if (( LIST_WORKTREES == 1 )); then
     report_header "worktrees with no recorded session ($WORKTREE_ROOT)"
-    local wt_dir wt_path wt_repo wt_key wt_owner dirty found=0
+    local wt_dir wt_path wt_repo wt_key wt_owner wt_boss dirty found=0
     if [[ ! -d "$WORKTREE_ROOT" ]]; then
       echo "  (none)"
     else
@@ -309,11 +470,19 @@ run_cleanup() {
         wt_key=$(printf '%s--%s' "$(basename "$(dirname "$wt_path")")" "$(basename "$wt_path")" |
           LC_ALL=C sed 's/[^A-Za-z0-9._-]/-/g')
         wt_owner=""
+        wt_boss=""
         if [[ -f "$WORKTREE_REGISTRY/$wt_key.json" ]]; then
           wt_owner=$(jq -r '.owner // empty' "$WORKTREE_REGISTRY/$wt_key.json" 2>/dev/null)
+          wt_boss=$(jq -r '.boss // empty' "$WORKTREE_REGISTRY/$wt_key.json" 2>/dev/null)
         fi
-        if (( ALL_OWNERS == 0 )) && [[ "$wt_owner" != "$OWNER" ]]; then
+        if (( ALL_OWNERS == 0 )) && { [[ -z "$wt_owner" ]] || ! owns "$wt_owner" "$wt_boss"; }; then
           printf '  skip    %-52s (other session: %s)\n' "$wt_path" "${wt_owner:-unregistered}"
+          continue
+        fi
+        # Matched only by the pane's current name: never removed (as with sessions).
+        if [[ "$OWN_MATCH" == "pane-name" ]] && (( ALL_OWNERS == 0 )); then
+          printf '  skip    %-52s (via:pane-name(owner:%s); use --owner %s)\n' \
+            "$wt_path" "$wt_owner" "$wt_owner"
           continue
         fi
         dirty=$(git -C "$wt_path" status --short 2>/dev/null | wc -l | tr -d ' ')
@@ -341,6 +510,16 @@ run_cleanup() {
   fi
 }
 
+# The last line when nothing is to be closed: unread reports are not closed or
+# released (they stay with `herdr-agent.sh inbox`), but they are not "nothing".
+nothing_left() {
+  if (( unread > 0 )); then
+    echo "Nothing to close or release. $unread unread report(s) in the inbox above."
+  else
+    echo "Nothing to clean up."
+  fi
+}
+
 # ─── apply gate: show, confirm, then act ─────────────────────────────────────
 if (( APPLY == 1 && YES == 0 )); then
   # Report first so the person (or the agent that will ask them) sees exactly
@@ -349,14 +528,15 @@ if (( APPLY == 1 && YES == 0 )); then
   run_cleanup
   if (( changed == 0 )); then
     echo ""
-    echo "Nothing to clean up."
+    nothing_left
     exit 0
   fi
   echo ""
   answer=""
   if [[ -r /dev/tty ]]; then
     printf 'Close/release the items above? [y/N] ' >&2
-    read -r answer </dev/tty || answer=""
+    # A group, so a failed open of /dev/tty (no controlling terminal) stays quiet.
+    { read -r answer </dev/tty; } 2>/dev/null || answer=""
   fi
   case "$answer" in
     y|Y|yes|YES) ;;
@@ -383,7 +563,7 @@ if (( APPLY == 0 )) && (( changed == 1 )); then
 elif (( changed == 1 )); then
   echo "Cleanup applied."
 else
-  echo "Nothing to clean up."
+  nothing_left
 fi
 (( failed )) && exit 1
 exit 0
