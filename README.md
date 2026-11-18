@@ -21,6 +21,7 @@ harness/
 │       ├── codex-consult.sh   # 同じことを Codex セッションで（agents/skills/codex-consult。codex は read-only なのでマーカーで回答）
 │       ├── orchestrate-parallel.sh  # 複数タスクを worktree 分けで並列に orchestrate（1 タスク 1 ラン）
 │       ├── herdr-cleanup.sh   # 記録済みセッション・期限切れロックを突き合わせて整理（既定はレポートのみ）
+│       ├── harness-daily.py   # その日のセッション・コマンド・失敗・役割逸脱・残骸を突き合わせて出す
 │       ├── herdr-agent.sh  # Herdr の tab / workspace / worktree で任意のエージェント (pi / codex 等) を起動して依頼する。司令塔用の delegate / report / inbox も持つ
 │       ├── task-file.sh    # TASK_FILE の置き場所を解決（dir / new / find / resolve。リポジトリ外）
 │       └── phase-run.sh    # フェーズを任意の CLI / モデルで実行するディスパッチャ
