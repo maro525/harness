@@ -2,6 +2,7 @@
 # draft.sh — 対外文書の下書きを gemini に 1 回だけ投げる薄いラッパー。
 #
 #   draft.sh --kind=pr|comment|commit|section|reply [--material FILE] [--out FILE]
+#   （どのオプションも `--opt VALUE` と `--opt=VALUE` の両方を受ける）
 #   cat notes.md | draft.sh --kind=commit
 #
 # 目的: `consult.sh --to pi -m google/gemini-4-carbon - <<'EOF' ... EOF` を毎回
@@ -27,26 +28,38 @@ die() {
 
 usage() {
   cat <<'EOF'
-usage: draft.sh --kind=KIND [--material FILE] [--out FILE] [--model MODEL]
+usage: draft.sh --kind KIND [--material FILE] [--out FILE] [--model MODEL]
 
-  --kind       pr | comment | commit | section | reply（必須）
-  --material   材料。省略すると標準入力から読む（空なら exit 2）
-  --out        下書きの置き場所（既定: $TMPDIR/draft-KIND-<日時>.md）
-  --model      既定 google/gemini-4-carbon
+  --kind KIND      pr | comment | commit | section | reply（必須）
+  --material FILE  材料。省略すると標準入力から読む（空なら exit 2）
+  --out FILE       下書きの置き場所（既定: $TMPDIR/draft-KIND-<日時>.md）
+  --model MODEL    既定 google/gemini-4-carbon
+
+  どのオプションも `--opt VALUE` と `--opt=VALUE` の両方を受ける。
 
   stdout に本文、stderr に ANSWER_FILE と「文面: pi/<model>」を出す。
 EOF
 }
 
+# need_value <option> <args left>: a value-taking option at the end is a usage error.
+need_value() {
+  (( $2 >= 2 )) && return 0
+  die "$1 needs a value"
+}
+
 kind="" material="" out="" model="$MODEL_DEFAULT"
-for arg in "$@"; do
-  case "$arg" in
-    --kind=*) kind=${arg#*=} ;;
-    --material=*) material=${arg#*=} ;;
-    --out=*) out=${arg#*=} ;;
-    --model=*) model=${arg#*=} ;;
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --kind=*) kind=${1#*=}; shift ;;
+    --material=*) material=${1#*=}; shift ;;
+    --out=*) out=${1#*=}; shift ;;
+    --model=*) model=${1#*=}; shift ;;
+    --kind) need_value "$1" $#; kind=$2; shift 2 ;;
+    --material) need_value "$1" $#; material=$2; shift 2 ;;
+    --out) need_value "$1" $#; out=$2; shift 2 ;;
+    --model) need_value "$1" $#; model=$2; shift 2 ;;
     -h | --help) usage; exit 0 ;;
-    *) die "unknown argument: $arg（--help を見る）" ;;
+    *) die "unknown argument: $1（--help を見る）" ;;
   esac
 done
 
