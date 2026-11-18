@@ -68,7 +68,7 @@ EOF
 ```
 
 - **自分は `firecrawl` MCP（または `curl`）で一次情報を取る。** gemini には「何を調べたいか」と「こちらが取った材料」を渡す
-- gemini 側は `bash` と `curl` を持っているので、足りない裏取りは自分で取りにいける（`pi -p --no-session` の 1 回だけ、MCP は渡さない）
+- gemini 側は既定で**ツールを持たない**（`pi -p --no-session --no-tools`。呼び出し元の AGENTS.md / skills / MCP も読ませない。実測 232s → 66s）。不足の裏取りをさせたいときだけ `CONSULT_PI_TOOLS=1` を付ける
 - 並列にしたいときは **材料を待たずに質問だけ先に投げる**（gemini は同期なので、材料を渡すなら自分が取ってから）
 - 記録は `利用AI:` に両方書く（例: `利用AI: claude/opus + pi/google/gemini-4-carbon`）
 
@@ -181,20 +181,27 @@ EOF
 
 `origin` のリモート URL で判定し、GitLab（セルフホスト含む）は `glab`、GitHub は `gh` を使う。GitHub MCP は不安定なため使わない。
 
-## 対外文書の下書き（別モデルを使う）
+## 対外文書の下書き（`draft.sh`）
 
-**外に残る文章は、下書きを `google/gemini-4-carbon` に任せてよい。** 対象は Linear（issue のタイトル・本文・コメント・description）、**Notion（ページ本文）**、GitHub / GitLab（PR / MR の本文・コメント・レビュー返信）、コミットメッセージ、TASK_FILE の節。
+**外に残る文章は、下書きを `draft.sh`（gemini）に任せる。** 対象:
+
+- Linear: issue の本文・description、コメント（3 行以上になるもの）
+- Notion / GitHub / GitLab: PR・MR の本文、レビュー返信
+- コミットメッセージ（**本文**が 3 行以上になるとき。件名だけなら自分で書く）
+- TASK_FILE の `## deploy` などの節
 
 ```bash
-~/.claude/scripts/consult.sh --to pi -m google/gemini-4-carbon - <<'EOF'
-{何を書くか + 材料}
-EOF
+~/.claude/scripts/draft.sh --kind=pr --material /tmp/notes.md > /tmp/draft.md
+~/.claude/scripts/draft.sh --kind=comment < /tmp/notes.md   # stdout に本文
 ```
 
-- **作成・投稿は自分（メインセッション）が行う。** 下書きモデルには MCP もツールも渡さない（`pi -p --no-session` の 1 回だけ）
+- kind は `pr` / `comment` / `commit` / `section` / `reply`。stdout が本文、stderr に `ANSWER_FILE=` と `文面: pi/<model>`
+- **作成・投稿は自分（メインセッション）が行う。** 下書きモデルには MCP もツールも渡さない（`draft.sh` が固定する）
 - 帰ってきた文面を**確かめてから**使う（事実・数値・固有名詞は自分で照合する）
 - 依頼したら記録に「文面: pi/google/gemini-4-carbon」を添える（`利用AI:` / `### RESULT` / PR 本文）
-- 短い一言（ラベル、1 行の要約、定型文）は自分で書いてよい。往復のコストのほうが高い
+- **往復は 1〜4 分**（実測 66〜232 秒）。1 行の要約・ラベル・定型文は自分で書く（往復のほうが高い）
+- 失敗したら `draft.sh` は exit 1 で止まる。代わりに `ai-fallback.sh` を使い、`利用AI:` に codex/… と書く（黙って別モデルに書かせない）
+- 使わなかったときは理由を 1 行残す（例: 「件名だけなので自分で書いた」）
 
 ## Linear MCP Operations
 

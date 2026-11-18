@@ -137,7 +137,7 @@ Do not use the Agent tool; do all the work yourself. End your final message with
 引数から Linear ID（例: `PROJ-573`）を検出する。
 
 - **検出できた場合:** LINEAR_ID として使用（確認不要）。`mcp__linear-server__get_issue` でタスク詳細を取得してタスク説明を補完し、即 STEP 2 へ
-- **検出できなかった場合:** ユーザーに Linear タスク ID または URL を質問する。既存タスクがあれば ID を取得、なければ `mcp__linear-server__save_issue` で新規作成し、即 STEP 2 へ。**起票のタイトル・本文は `~/.claude/scripts/consult.sh --to pi -m google/gemini-4-carbon` に下書きさせてよい**（作成は自分が MCP で行う）
+- **検出できなかった場合:** ユーザーに Linear タスク ID または URL を質問する。既存タスクがあれば ID を取得、なければ `mcp__linear-server__save_issue` で新規作成し、即 STEP 2 へ。**起票のタイトル・本文は `~/.claude/scripts/draft.sh --kind=comment`（gemini）に下書きさせ、作成は自分が MCP で行う**
 
 ```
 LINEAR_ID = "XXX-123"
@@ -548,7 +548,7 @@ deploy はコミット・push・PR / MR 作成（既存の PR / MR があれば�
 
 ### 6b: TASK_FILE への記録と Linear（作業ブランチ上）
 
-**文章の下書きは別モデルに任せてもよい**: Linear へのコメントや `## deploy` の要約を `~/.claude/scripts/consult.sh --to pi -m google/gemini-4-carbon` に下書きさせ、内容を確かめてから自分で書く（フェーズを越えない。投稿・記録の主体は orchestrator）
+**文章の下書きは `draft.sh` に任せる**: Linear へのコメントや `## deploy` の要約は `~/.claude/scripts/draft.sh --kind=comment`（または `--kind=section`）に下書きさせ、内容を確かめてから自分で書く（フェーズを越えない。投稿・記録の主体は orchestrator）。往復は 1〜4 分なので、1 行の要約は自分で書く
 
 **[MUST]** 返却内容を TASK_FILE に書き込む:
 
