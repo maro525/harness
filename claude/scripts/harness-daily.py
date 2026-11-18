@@ -77,6 +77,18 @@ CHILD_WORK = [
     (re.compile(r'\b(docker|docker-compose|make)\b'), '重いビルド'),
 ]
 EDIT_TOOLS = {'Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'edit', 'write', 'apply_patch'}
+
+# 文章の下書き（draft.sh）と、外に残る文書を書く操作。下書きを使ったかを測るため。
+DRAFT_OPS = [(re.compile(r'draft\.sh\s+--kind='), 'gemini 下書き')]
+RESEARCH_OPS = [(re.compile(r'consult\.sh[^\n]*--to\s+pi'), 'gemini 研究')]
+OUTWARD_OPS = [
+    (re.compile(r'^\[mcp__\w+__save_comment\]'), 'Linear コメント'),
+    (re.compile(r'^\[mcp__\w+__(save_issue|create_issue)\]'), 'Linear issue'),
+    (re.compile(r'^\[mcp__\w+__(save_document|update_page)\]'), 'Notion'),
+    (re.compile(r'\bglab\s+mr\s+(create|note|update)'), 'MR 本文/コメント'),
+    (re.compile(r'\bgh\s+pr\s+(create|comment|edit)'), 'PR 本文/コメント'),
+    (re.compile(r'\bgit\s+commit\b'), 'コミットメッセージ'),
+]
 DELEGATE_CMDS = [
     ('herdr-agent.sh ensure', 'ensure'),
     ('herdr-agent.sh delegate', 'delegate'),
@@ -410,6 +422,18 @@ def leftovers() -> dict:
     return res
 
 
+def text_stats(sessions: list[Session]) -> Counter:
+    """下書き（gemini）と、外に残る文書を書く操作の回数。"""
+    counts: Counter = Counter()
+    for s in sessions:
+        for c in s.cmds:
+            for rx, name in DRAFT_OPS + RESEARCH_OPS + OUTWARD_OPS:
+                if rx.search(c['cmd']):
+                    counts[name] += 1
+                    break
+    return counts
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description='その日のセッション・コマンド・残骸をまとめる')
     ap.add_argument('--date', help='対象日（JST, YYYY-MM-DD）。既定は今日')
@@ -524,6 +548,19 @@ def main() -> int:
     if children:
         per = sorted(len(s.cmds) for s in children)
         print(f'  子 1 セッションあたりのコマンド数: 中央 {per[len(per) // 2]} / 最大 {per[-1]}')
+
+    tstats = text_stats(sessions)
+    if tstats:
+        drafts = tstats.get('gemini 下書き', 0)
+        research = tstats.get('gemini 研究', 0)
+        outward = sum(tstats.get(name, 0) for _, name in OUTWARD_OPS)
+        print('\n■ 文章（下書き）')
+        print(f'  gemini 下書き {drafts} 件（研究 {research} 件）/ 対外文書の操作 {outward} 件')
+        detail = ' / '.join(f'{name} {tstats[name]}' for _, name in OUTWARD_OPS if tstats.get(name))
+        if detail:
+            print(f'  内訳: {detail}')
+        if outward and not drafts:
+            print('  → 下書きは `draft.sh --kind=…` に任せる（tool-routing.md「対外文書の下書き」）')
 
     res = leftovers()
     print('\n■ 残骸')

@@ -37,6 +37,7 @@ HARNESS_FILES=(
   scripts/orchestrate-parallel.sh
   scripts/herdr-cleanup.sh
   scripts/preflight.sh
+  scripts/draft.sh
   skills/herdr-boss/SKILL.md
 )
 

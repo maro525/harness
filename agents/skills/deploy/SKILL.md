@@ -133,7 +133,7 @@ Related to #34
 - **TASK_FILE のスコープ外の変更は巻き込まない**（Brief の対象外のファイル・別タスクの持ち越し変更は `git add` しない。`git add -A` は使わずファイルを指定する）
 - **TASK_FILE 自体はコミットしない**（そもそもリポジトリ外にある。`## deploy` はこの後 STEP 4 で書く）
 - メッセージは `## team-implement` の内容から作る。追加 push なら本文に `追加依頼 {n}` を書く
-- **下書きは別モデルに依頼してもよい**（文章の質を上げたいとき）。`consult.sh --to pi -m google/gemini-4-carbon` に `## team-implement` の要約を渡し、帰ってきた文面を確かめてから使う。依頼したときは報告の `利用AI:` に「メッセージ: pi/{model}」を併記する
+- **下書きは `draft.sh` に任せる**（本文が 3 行以上になるとき）。`~/.claude/scripts/draft.sh --kind=commit` に `## team-implement` の要約を渡し、帰ってきた文面を確かめてから使う。使ったときは報告の `利用AI:` に「メッセージ: pi/{model}」を併記する（件名だけなら自分で書いてよい）
 
 ```bash
 git status --porcelain                       # 対象ファイルを確認

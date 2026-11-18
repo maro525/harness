@@ -1035,10 +1035,17 @@ codex_print_consult() {
 
 # One-shot pi for drafting text (`pi -p --no-session`). pi prints the answer on
 # stdout and its extension chatter on stderr, so the two are captured separately.
+#
+# 呼び出し元の AGENTS.md・skills・MCP は読ませない（下書きに要らないし、読むと
+# 応答が遅く、挙動も読めなくなる。実測: 同じ依頼で 232s → 66s）。ツール
+# （bash / curl）も既定では外す。裏取りをさせたいときだけ CONSULT_PI_TOOLS=1。
 pi_print_consult() {
   local base=$1 prompt=$2
   local answer_file="${base}.answer.md" raw_file="${base}.json"
-  local -a args=(-p --no-session)
+  local -a args=(-p --no-session --no-mcp --no-extensions --no-skills --no-context-files)
+  if [[ "${CONSULT_PI_TOOLS:-0}" != "1" ]]; then
+    args+=(--no-tools)
+  fi
   if [[ -n "$ROLE_MODEL" ]]; then
     args+=(--model "$ROLE_MODEL")
   fi
