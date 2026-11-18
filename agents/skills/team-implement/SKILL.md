@@ -106,6 +106,16 @@ $ARGUMENTS: "{task description} --task-file={TASK_FILE} [--tier=S|M|L] [--linear
 
 Plan のタスクがすべて完了し、テストがすべて通過したら書き込みへ進む。**変更はコミットしない。**
 
+書き込みの前に、作業ツリーが片付いていることを確かめる。
+
+```bash
+git status --short   # 意図した変更だけか。`.tmp-*` や一時 config が残っていないか
+```
+
+- 一時ファイル（検証用の config・スクリプト・スクリーンショット）は**リポジトリ内に作らない**。作る必要があるときは `/tmp/$(basename "$PWD").$$/` に置き、`trap 'rm -rf ...' EXIT` で消す
+- 消し損ねたときは `rm -f`（`rm` は既に無いと exit 1 になる。同じパスを何度も消しに行かない）
+- `node_modules/.bin` や `tsc` の有無は冒頭の `preflight.sh` で見ているので、`command -v` / `ls node_modules/.bin` を何度も叩き直さない
+
 ## 書き込み
 
 **[MUST]** `## team-implement` の末尾に今回の回を追記し、`## Meta` の `branch:` に作業ブランチ、`base:` に分岐元を記入する（差し戻し・追加修正では既存の `base:` をそのまま残す）。
