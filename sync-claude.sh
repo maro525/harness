@@ -36,6 +36,7 @@ HARNESS_FILES=(
   scripts/consult.sh
   scripts/orchestrate-parallel.sh
   scripts/herdr-cleanup.sh
+  scripts/preflight.sh
   skills/herdr-boss/SKILL.md
 )
 
@@ -74,6 +75,10 @@ fi
 if [[ -f "$SCRIPT_DIR/checks/phases.sh" ]]; then
   bash "$SCRIPT_DIR/checks/phases.sh" ||
     echo "Warning: フェーズ整合性チェックに失敗（docs/phase-contract.md と 3 系統の定義を揃える）" >&2
+fi
+if [[ -f "$SCRIPT_DIR/checks/worktrees.sh" ]]; then
+  bash "$SCRIPT_DIR/checks/worktrees.sh" ||
+    echo "Warning: worktree パスチェックに失敗（~/.herdr/worktrees/{repo}/{branch} に固定する）" >&2
 fi
 
 echo ""

@@ -53,6 +53,16 @@ $ARGUMENTS: "{task description} --task-file={TASK_FILE} [--tier=S|M|L] [--linear
 
 `### Brief` / `### Design` / `### Plan` が無く `### 案 {k}` だけがある場合は、候補が未採用なので中止して報告する（採用は呼び出し元が行う）。
 
+`## 再開ブリーフ`（orchestrator が置く 3 行）があれば、全文より先にそれを読む。
+
+### 最初に 1 回だけ回すもの
+
+```bash
+~/.claude/scripts/preflight.sh "$PWD"
+```
+
+`tsc` / `vitest` / `node_modules` / `.env*` の有無を 1 回で出す。`command -v tsc` や `ls node_modules/.bin/vitest` を個別に叩き直さない（足りない物は最初に分かる）。結果は今回の回の `#### 前提（推定）` に残す。
+
 ## ブランチ
 
 | `## Meta` の `branch:` | 動作 |
@@ -95,6 +105,16 @@ $ARGUMENTS: "{task description} --task-file={TASK_FILE} [--tier=S|M|L] [--linear
 ### 完了条件
 
 Plan のタスクがすべて完了し、テストがすべて通過したら書き込みへ進む。**変更はコミットしない。**
+
+書き込みの前に、作業ツリーが片付いていることを確かめる。
+
+```bash
+git status --short   # 意図した変更だけか。`.tmp-*` や一時 config が残っていないか
+```
+
+- 一時ファイル（検証用の config・スクリプト・スクリーンショット）は**リポジトリ内に作らない**。作る必要があるときは `/tmp/$(basename "$PWD").$$/` に置き、`trap 'rm -rf ...' EXIT` で消す
+- 消し損ねたときは `rm -f`（`rm` は既に無いと exit 1 になる。同じパスを何度も消しに行かない）
+- `node_modules/.bin` や `tsc` の有無は冒頭の `preflight.sh` で見ているので、`command -v` / `ls node_modules/.bin` を何度も叩き直さない
 
 ## 書き込み
 

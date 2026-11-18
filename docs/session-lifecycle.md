@@ -40,6 +40,7 @@ Herdr の構造は workspace → tab → pane。セッションをどこに作�
 - `workspace` / `worktree` で作った workspace は**このツールが所有**するので、`close` で workspace ごと閉じる
 - `worktree` のセッションは `close` で **worktree も削除**する（`herdr worktree remove`。`--force` は使わないので、未コミットの変更があれば workspace だけ閉じて警告する）。**ブランチは残る**（成果物なので意図的）
 - 手で作った workspace / tab / worktree は絶対に閉じない（所有フラグで判定）
+- **手で `git worktree add` するときも置き場所は同じ**（`$HOME/.herdr/worktrees/{repo}/{branch}`）。`../<repo>-<task>` のような相対パスで切ると、`herdr-cleanup.sh` の対象外になって残骸が溜まる（`checks/worktrees.sh` が警告する）
 
 ## inbox と watcher のライフサイクル（司令塔パターン）
 

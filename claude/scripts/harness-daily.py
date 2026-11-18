@@ -40,6 +40,33 @@ JST = timezone(timedelta(hours=9))
 HOME = Path.home()
 WORKTREE_MARK = '/.herdr/worktrees/'
 
+# worktree は ~/.herdr/worktrees の下だけにあるとは限らない（~/src/<repo>-<task> に
+# 作られたものもある）。パスの文字列ではなく git の印で判定する: linked worktree は
+# .git が「ファイル」、通常の clone は「ディレクトリ」。
+_WORKTREE_MEMO: dict[str, bool] = {}
+
+
+def is_linked_worktree(path: str) -> bool:
+    if not path:
+        return False
+    start = os.path.abspath(path)
+    if start in _WORKTREE_MEMO:
+        return _WORKTREE_MEMO[start]
+    cur, verdict = start, False
+    while True:
+        git = os.path.join(cur, '.git')
+        if os.path.isfile(git):
+            verdict = True
+            break
+        if os.path.isdir(git):
+            break
+        parent = os.path.dirname(cur)
+        if parent == cur:
+            break
+        cur = parent
+    _WORKTREE_MEMO[start] = verdict
+    return verdict
+
 # 親が自分でやってはいけない（子に渡すべき）コマンドの目安
 CHILD_WORK = [
     (re.compile(r'\b(pnpm|npm|yarn|bun)\s+(run\s+)?(test|build|lint|type-?check)\b'), 'テスト/ビルド/lint'),
@@ -71,14 +98,17 @@ class Session:
 
     @property
     def child(self) -> bool:
-        return WORKTREE_MARK in self.cwd
+        return WORKTREE_MARK in self.cwd or is_linked_worktree(self.cwd)
 
     @property
     def label(self) -> str:
         if not self.cwd:
             return '(cwd 不明)'
-        if self.child:
+        if WORKTREE_MARK in self.cwd:
             return str(Path(self.cwd).relative_to(self.cwd.split(WORKTREE_MARK)[0])).strip()
+        if is_linked_worktree(self.cwd):
+            # ~/src/<repo>-<task> のように herdr の外に切られた worktree
+            return self.short_cwd
         return self.cwd
 
     @property
@@ -345,16 +375,32 @@ def load_cursor(since: datetime, until: datetime) -> list[Session]:
 
 
 # ─── 残骸 ────────────────────────────────────────────────────────────────────
+def unmanaged_worktrees() -> list[str]:
+    """~/.herdr/worktrees の外に切られた linked worktree（herdr-cleanup が拾えない）。"""
+    root = str(HOME / '.herdr/worktrees')
+    found = set()
+    for pattern in ('src/*/.git', 'src/*/*/.git', 'test/*/.git'):
+        for gitfile in glob.glob(str(HOME / pattern)):
+            if not os.path.isfile(gitfile):
+                continue
+            path = os.path.dirname(gitfile)
+            if path.startswith(root + os.sep):
+                continue
+            found.add(path)
+    return sorted(found)
+
+
 def leftovers() -> dict:
     state = HOME / '.cache/harness'
     locks = HOME / '.local/share/harness/locks'
-    res = {'sessions': 0, 'worktrees': 0, 'locks': 0}
+    res = {'sessions': 0, 'worktrees': 0, 'locks': 0, 'unmanaged': []}
     for d in ('herdr-agents', 'herdr-consult'):
         res['sessions'] += len(glob.glob(str(state / d / '*.json')))
     res['locks'] = len(glob.glob(str(locks / '*.lock')))
     root = HOME / '.herdr/worktrees'
     for wt in glob.glob(str(root / '*' / '*')):
         res['worktrees'] += 1
+    res['unmanaged'] = unmanaged_worktrees()
     return res
 
 
@@ -475,7 +521,22 @@ def main() -> int:
 
     res = leftovers()
     print('\n■ 残骸')
-    print(f"  セッション記録 {res['sessions']} / worktree {res['worktrees']} / ロック {res['locks']}")
+    line = f"  セッション記録 {res['sessions']} / worktree {res['worktrees']} / ロック {res['locks']}"
+    if res['unmanaged']:
+        line += f"（ほかに管理外 worktree {len(res['unmanaged'])}）"
+    print(line)
+    used = [
+        p
+        for p in res['unmanaged']
+        if any(s.cwd == p or s.cwd.startswith(p + os.sep) for s in sessions)
+    ]
+    if used:
+        print('  この日のセッションが使った管理外 worktree（~/.herdr/worktrees の外。cleanup の対象外）:')
+        for path in used[:6]:
+            print(f"    {path.replace(str(HOME), '~')}")
+        if len(used) > 6:
+            print(f"    … ほか {len(used) - 6} 本")
+        print('  → 次は `git worktree add ~/.herdr/worktrees/{repo}/{branch}` に作る')
     print('  確認: ~/.claude/scripts/herdr-cleanup.sh --worktrees --all-owners')
     return 0
 

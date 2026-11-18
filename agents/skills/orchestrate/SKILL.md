@@ -101,6 +101,16 @@ TASK_FILE はブランチ単位で別ファイルになるため、それだけ�
 - `acquire` が exit 1 のときは**開始しない**。保持者（runner / started / cwd / task_file）と経過時間を報告して止まる。生きているリースを奪うのは `--takeover` を明示したときだけ
 - 追加修正・フェーズ指定モードでも同じ（TASK_FILE を触る前に acquire、終了時に release）。ロックはリポジトリ外なので commit しない
 
+### worktree の場所
+
+作業ツリーは **`~/.herdr/worktrees/{repo}/{branch}` に固定**する。手で切るときも絶対パスで:
+
+```bash
+git worktree add "$HOME/.herdr/worktrees/$(basename "$REPO")/$FEATURE" -b "$BRANCH" "origin/$BASE"
+```
+
+`../nanco-next-audit` のような相対パスで切らない。`herdr-cleanup.sh` は `~/.herdr/worktrees` の下しか掃除しないので、外に切ると残骸として拾えず、同じリポジトリの worktree が 2 箇所に散る（`checks/worktrees.sh` が警告する）。
+
 `## Meta` の `status:` と `updated:` を更新するタイミングと、Linear に反映する内容。`LINEAR_ID` が `NOLINEAR` なら Linear 側は何もしない。Claude 版（`claude/commands/orchestrate.md`「状態管理」）と同じ表で、**ステータスを変えるのは orchestrator だけ**。
 
 | タイミング | TASK_FILE `status` | Linear ステータス | description 更新 |
@@ -117,6 +127,43 @@ TASK_FILE はブランチ単位で別ファイルになるため、それだけ�
 - `done` は自分では書かない（PR マージ後に人が変える）
 - **description の規則**（Claude 版と同じ）: `get_issue` で現状を取り、行頭が `## 🤖 Orchestrate` の行から末尾だけを TASK_FILE から作り直して置換する（人の記述は一字も変えない）。`save_issue` には description だけを渡す（タイトル・ステータスは渡さない）
 - コメントと description は別物: コメントは履歴、description はつねに最新の要約
+
+### 人待ち（Gate 1 / Gate 2）
+
+人の返信を待つあいだ**プロセスを寝かせない**（`sleep 600` を回してポーリングしない）。投稿して抜け、返信が来たら再開する。
+
+```bash
+# 質問を投稿して終了（comment_id を TASK_FILE の Meta に残す）
+out=$(~/.claude/scripts/linear-ask.sh --issue "$LINEAR_ID" --body-file /tmp/q.md --post-only)
+
+# 返信が来たら拾う（既に返信があれば即 exit 0）
+~/.claude/scripts/linear-ask.sh --issue "$LINEAR_ID" --body-file /tmp/q.md \
+  --comment-id "$COMMENT_ID" --timeout 1 --interval 1
+```
+
+- 投稿したら `status: waiting-gate1`（Gate 2 は `waiting-gate2`）にしてロックを release し、そのターンを終える
+- Linear が使えないときは `AskUserQuestion` で直接聞く
+- 返信が無いまま進むなら、前提を `#### 前提（推定）` に書いて続行する
+
+### ジョブ待ち（バックグラウンドのビルド・デプロイ・CI）
+
+**`sleep` + `cat` で待たない**（`sleep 60; cat /tmp/x.log` を繰り返す形は、待ち時間だけ消費して何も学ばない）。
+
+- 自分で起動したジョブなら、**そのコマンドの中で待つ**: `timeout 600 pnpm run build; echo "exit=$?"`。結果は標準出力から読む
+- どうしても後追いになるなら、`sleep` は **1 回だけ**。ループにしない（`for i in $(seq ...); do sleep 10; curl ...; done` も同じ）
+- CI / MR のパイプラインは待たずに、次に進む直前の 1 回だけ `glab mr view` / `gh pr view` で見る。待つ必要があるなら人の番（上の「人待ち」）に倒す
+- 子は自分のジョブを待ちきってから報告して終わる。待ち続けるのは呼び出し元の仕事ではない
+
+### 再開ブリーフ（TASK_FILE の先頭に 3 行）
+
+フェーズが終わるたびに `## Meta` の直下の `## 再開ブリーフ` を書き換える。子はまずこれだけ読む（TASK_FILE はすぐ数十 KB になるので、全文を読み直させない）。
+
+```markdown
+## 再開ブリーフ
+- いま: {終わったこと（テストの状態まで）}
+- 次: {次にやること}
+- 触ってよい: {パス}
+```
 
 ## STEP 0: CLASSIFY
 
