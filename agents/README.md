@@ -18,6 +18,8 @@ agents/
     ├── herdr-boss/SKILL.md      # フェーズではない。Herdr の司令塔: 名前付きの子に delegate して待たずに戻り、inbox の報告を読んで要約する（~/.claude/scripts/herdr-agent.sh delegate / report / inbox）
     ├── claude-consult/SKILL.md  # フェーズではない。Claude 以外のエージェントから Claude セッションに相談 / レビュー / 実装を投げる（~/.claude/scripts/claude-consult.sh。Herdr 内は pane 常駐セッション、外は claude -p）
     ├── codex-consult/SKILL.md   # 同上を Codex セッションで（consult.sh --to codex。read-only なのでマーカーで回答）
+    ├── herdr-cleanup/SKILL.md  # フェーズではない。記録済みセッション・期限切れロック・孤児 worktree を整理する（既定はレポートのみ）
+    ├── harness-daily/SKILL.md  # フェーズではない。1 日の振り返り（セッション・失敗・役割の逸脱・委譲比率・残骸）
     └── deploy/SKILL.md          # commit → push → PR/MR（gh / glab）、#### PR / MR + 利用AI 行 + 紐づけ行。作業ブランチに留まる（TASK_FILE のコミットと分岐元への復帰は呼び出し元）
 ```
 
