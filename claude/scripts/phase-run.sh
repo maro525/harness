@@ -282,6 +282,11 @@ for i in "${!attempts[@]}"; do
     printf 'MODEL=%s\n' "${used_model:-default}" >&2
     printf 'LABEL=%s\n' "$label" >&2
     printf 'EXIT=0\n' >&2
+    # 誰が書いたかを TASK_FILE の隣に残す（親の報告・harness-daily が拾う）
+    "$(cd "$(dirname "$0")" && pwd)/task-file.sh" ai add \
+      --task-file="$TASK_FILE" --phase="$PHASE" --label="$label" \
+      --runner="$(spec_cli "$spec")" --model="${used_model:-default}" \
+      > /dev/null 2>&1 || true
     exit 0
   fi
 

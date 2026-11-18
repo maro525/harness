@@ -63,6 +63,9 @@ Usage: task-file.sh <command> [options]
   resolve  <path-or-name> [--repo=DIR]   absolute path of an existing TASK_FILE
   lock     acquire|refresh|release|show   one runner per task (lease file)
                                          [--runner=NAME] [--ttl=45m] [--takeover]
+  ai       add|show                       which AI ran each phase (TASK_FILE.ai.log)
+                                         add: [--phase=P] [--label=L] [--runner=R] [--model=M]
+                                         show: "startproject=claude/opus / team-implement=…"
   legacy   [--repo=DIR]                  <repo>/.claude/docs/decisions, if any
   root                                   the tasks root
 
@@ -74,7 +77,7 @@ Options:
   --runner=NAME   who holds the lock (claude / cursor / pi ...)
   --ttl=45m       lock: lease lifetime (45m / 90s / 2h); older leases may be taken
   --takeover      lock: steal a lease that is still fresh
-  --task-file=P   lock: TASK_FILE recorded in the lease
+  --task-file=P   lock / ai: TASK_FILE the command works on
   -h, --help      this help
 
 TASK_FILEs live in ${HARNESS_TASKS_DIR:-~/.local/share/harness/tasks}/<repo>/,
@@ -94,6 +97,9 @@ RUNNER=""
 TTL="45m"
 TAKEOVER=0
 LOCK_TASK_FILE=""
+AI_PHASE=""
+AI_LABEL=""
+AI_MODEL=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -104,6 +110,9 @@ while [[ $# -gt 0 ]]; do
     --runner=*) RUNNER=${1#*=} ;;
     --ttl=*) TTL=${1#*=} ;;
     --task-file=*) LOCK_TASK_FILE=${1#*=} ;;
+    --phase=*) AI_PHASE=${1#*=} ;;
+    --label=*) AI_LABEL=${1#*=} ;;
+    --model=*) AI_MODEL=${1#*=} ;;
     --takeover) TAKEOVER=1 ;;
     -h|--help) usage; exit 0 ;;
     --*) die "unknown option: $1" ;;
@@ -426,6 +435,55 @@ cmd_lock() {
   ) 9>"$path.guard"
 }
 
+# ─── ai: which model ran each phase ──────────────────────────────────
+# phase-run.sh が成功のたびに 1 行追記する（TASK_FILE の隣の .ai.log）。
+# ログが無い古いタスクは TASK_FILE の `利用AI:` 行から拾う。
+cmd_ai() {
+  local action=$1
+  local file=$LOCK_TASK_FILE
+  if [[ -z "$file" ]]; then
+    file=$(cmd_find 2> /dev/null | head -n 1) || true
+  fi
+  [[ -n "$file" && -f "$file" ]] || die "TASK_FILE が見つからない（--task-file=P を渡す）"
+  local log="$file.ai.log"
+
+  case "$action" in
+    add)
+      [[ -n "$AI_PHASE" ]] || die "ai add needs --phase=PHASE"
+      mkdir -p "$(dirname "$log")"
+      printf '%s\tphase=%s\tlabel=%s\trunner=%s\tmodel=%s\n' \
+        "$(date -Iseconds)" "$AI_PHASE" "${AI_LABEL:--}" "${RUNNER:--}" "${AI_MODEL:--}" >> "$log"
+      ;;
+    show)
+      if [[ ! -s "$log" ]]; then
+        local fallback
+        fallback=$(grep -m1 '^利用AI:' "$file" | sed 's/^利用AI:[[:space:]]*//') || true
+        printf '%s\n' "${fallback:-（記録なし）}"
+        return 0
+      fi
+      awk -F'\t' '
+        {
+          p = ""; l = ""
+          for (i = 2; i <= NF; i++) {
+            if ($i ~ /^phase=/) p = substr($i, 7)
+            else if ($i ~ /^label=/) l = substr($i, 7)
+          }
+          if (p != "") v[p] = l
+        }
+        END {
+          n = split("startproject team-implement team-review deploy", order, " ")
+          out = ""
+          for (i = 1; i <= n; i++) {
+            if (order[i] in v) out = out (out == "" ? "" : " / ") order[i] "=" v[order[i]]
+          }
+          print (out == "" ? "（記録なし）" : out)
+        }
+      ' "$log"
+      ;;
+    *) die "ai needs add|show" ;;
+  esac
+}
+
 case "$CMD" in
   root) cmd_root ;;
   dir) cmd_dir ;;
@@ -434,5 +492,6 @@ case "$CMD" in
   find) cmd_find ;;
   resolve) cmd_resolve ;;
   lock) cmd_lock ;;
+  ai) cmd_ai "$ARG" ;;
   *) usage >&2; exit 2 ;;
 esac

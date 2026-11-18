@@ -337,7 +337,12 @@ git switch {base}
 - {なし | phase: 要旨 → 回答の要旨}
 ```
 
-`利用AI:` の値は `phase-run.sh` が stderr に出す `LABEL=` を使う（推測で書かない）。
+`利用AI:` の値は `~/.claude/scripts/task-file.sh ai show --task-file={TASK_FILE}` の 1 行を使う（`phase-run.sh` が成功のたびに `{TASK_FILE}.ai.log` に書く。stderr の `LABEL=` を拾い損ねてもここから取れる）。`consult.sh` を使ったら stderr の `AI_MODEL=`、herdr の子に移譲したら `delegate` の `MODEL=` を併記する（`tool-routing.md`「移譲したら「誰がやったか」を書く」）。取れないときは `（不明）` と書く。
+
+```bash
+~/.claude/scripts/task-file.sh ai show --task-file={TASK_FILE}
+# startproject=claude/opus / team-implement=auto/pi/google/gemini-4-carbon
+```
 
 報告の最後に **[MUST]** 実行ロックを離す:
 
