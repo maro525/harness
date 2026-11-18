@@ -31,6 +31,7 @@ HARNESS_FILES=(
   scripts/task-file.sh
   scripts/herdr-agent.sh
   scripts/claude-consult.sh
+  scripts/harness-daily.py
   scripts/codex-consult.sh
   scripts/consult.sh
   scripts/orchestrate-parallel.sh
@@ -55,7 +56,7 @@ done
 # Keep scripts executable on both sides however they got there (a checkout
 # with core.fileMode=false, a copy from a non-executable source, ...).
 for rel in "${HARNESS_FILES[@]}"; do
-  if [[ "$rel" == scripts/*.sh ]]; then
+  if [[ "$rel" == scripts/*.sh || "$rel" == scripts/*.py ]]; then
     for path in "$SOURCE/$rel" "$DEST/$rel"; do
       if [[ -f "$path" ]]; then
         chmod 755 "$path"
