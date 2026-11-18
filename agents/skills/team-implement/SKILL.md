@@ -53,6 +53,16 @@ $ARGUMENTS: "{task description} --task-file={TASK_FILE} [--tier=S|M|L] [--linear
 
 `### Brief` / `### Design` / `### Plan` が無く `### 案 {k}` だけがある場合は、候補が未採用なので中止して報告する（採用は呼び出し元が行う）。
 
+`## 再開ブリーフ`（orchestrator が置く 3 行）があれば、全文より先にそれを読む。
+
+### 最初に 1 回だけ回すもの
+
+```bash
+~/.claude/scripts/preflight.sh "$PWD"
+```
+
+`tsc` / `vitest` / `node_modules` / `.env*` の有無を 1 回で出す。`command -v tsc` や `ls node_modules/.bin/vitest` を個別に叩き直さない（足りない物は最初に分かる）。結果は今回の回の `#### 前提（推定）` に残す。
+
 ## ブランチ
 
 | `## Meta` の `branch:` | 動作 |
