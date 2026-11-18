@@ -77,6 +77,18 @@ CHILD_WORK = [
     (re.compile(r'\b(docker|docker-compose|make)\b'), '重いビルド'),
 ]
 EDIT_TOOLS = {'Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'edit', 'write', 'apply_patch'}
+
+# 文章の下書き（draft.sh）と、外に残る文書を書く操作。下書きを使ったかを測るため。
+DRAFT_OPS = [(re.compile(r'draft\.sh\s+--kind='), 'gemini 下書き')]
+RESEARCH_OPS = [(re.compile(r'consult\.sh[^\n]*--to\s+pi'), 'gemini 研究')]
+OUTWARD_OPS = [
+    (re.compile(r'^\[mcp__\w+__save_comment\]'), 'Linear コメント'),
+    (re.compile(r'^\[mcp__\w+__(save_issue|create_issue)\]'), 'Linear issue'),
+    (re.compile(r'^\[mcp__\w+__(save_document|update_page)\]'), 'Notion'),
+    (re.compile(r'\bglab\s+mr\s+(create|note|update)'), 'MR 本文/コメント'),
+    (re.compile(r'\bgh\s+pr\s+(create|comment|edit)'), 'PR 本文/コメント'),
+    (re.compile(r'\bgit\s+commit\b'), 'コミットメッセージ'),
+]
 DELEGATE_CMDS = [
     ('herdr-agent.sh ensure', 'ensure'),
     ('herdr-agent.sh delegate', 'delegate'),
@@ -393,15 +405,33 @@ def unmanaged_worktrees() -> list[str]:
 def leftovers() -> dict:
     state = HOME / '.cache/harness'
     locks = HOME / '.local/share/harness/locks'
-    res = {'sessions': 0, 'worktrees': 0, 'locks': 0, 'unmanaged': []}
+    res = {'sessions': 0, 'worktrees': 0, 'locks': 0, 'unmanaged': [], 'locks_history': 0, 'locks_stale': 0}
     for d in ('herdr-agents', 'herdr-consult'):
         res['sessions'] += len(glob.glob(str(state / d / '*.json')))
     res['locks'] = len(glob.glob(str(locks / '*.lock')))
+    # task-file.sh の lock は 9>$path.guard を flock の対象にする（0 バイト）。
+    # release はリースだけ消すので、キーごとに 1 個溜まる。状態ではないが、
+    # タスク数に比例して増えるので見えるようにしておく。
+    guards = glob.glob(str(locks / '*.lock.guard'))
+    res['locks_history'] = len(guards)
+    res['locks_stale'] = sum(1 for g in guards if not os.path.exists(g[: -len('.guard')]))
     root = HOME / '.herdr/worktrees'
     for wt in glob.glob(str(root / '*' / '*')):
         res['worktrees'] += 1
     res['unmanaged'] = unmanaged_worktrees()
     return res
+
+
+def text_stats(sessions: list[Session]) -> Counter:
+    """下書き（gemini）と、外に残る文書を書く操作の回数。"""
+    counts: Counter = Counter()
+    for s in sessions:
+        for c in s.cmds:
+            for rx, name in DRAFT_OPS + RESEARCH_OPS + OUTWARD_OPS:
+                if rx.search(c['cmd']):
+                    counts[name] += 1
+                    break
+    return counts
 
 
 def main() -> int:
@@ -519,6 +549,19 @@ def main() -> int:
         per = sorted(len(s.cmds) for s in children)
         print(f'  子 1 セッションあたりのコマンド数: 中央 {per[len(per) // 2]} / 最大 {per[-1]}')
 
+    tstats = text_stats(sessions)
+    if tstats:
+        drafts = tstats.get('gemini 下書き', 0)
+        research = tstats.get('gemini 研究', 0)
+        outward = sum(tstats.get(name, 0) for _, name in OUTWARD_OPS)
+        print('\n■ 文章（下書き）')
+        print(f'  gemini 下書き {drafts} 件（研究 {research} 件）/ 対外文書の操作 {outward} 件')
+        detail = ' / '.join(f'{name} {tstats[name]}' for _, name in OUTWARD_OPS if tstats.get(name))
+        if detail:
+            print(f'  内訳: {detail}')
+        if outward and not drafts:
+            print('  → 下書きは `draft.sh --kind=…` に任せる（tool-routing.md「対外文書の下書き」）')
+
     res = leftovers()
     print('\n■ 残骸')
     line = f"  セッション記録 {res['sessions']} / worktree {res['worktrees']} / ロック {res['locks']}"
@@ -537,6 +580,11 @@ def main() -> int:
         if len(used) > 6:
             print(f"    … ほか {len(used) - 6} 本")
         print('  → 次は `git worktree add ~/.herdr/worktrees/{repo}/{branch}` に作る')
+    if res['locks_history']:
+        print(
+            f"  ロック履歴 {res['locks_history']} キー（うち失効 {res['locks_stale']}）: "
+            'flock 用の 0 バイト guard。消すのは *.lock が無く誰も握っていないものだけ'
+        )
     print('  確認: ~/.claude/scripts/herdr-cleanup.sh --worktrees --all-owners')
     return 0
 

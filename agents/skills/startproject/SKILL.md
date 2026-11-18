@@ -107,7 +107,9 @@ Hard Trigger（DB スキーマ変更・認証認可・決済・公開 API の変
 
 - ユーザーに質問できる環境なら質問してよい。できない（非対話実行・応答が返らない）なら止まらず妥当な推定で続行し、置いた前提を Brief の `**前提（推定）**` 項目に残す
 - サブエージェント・Web 検索・設計相談・Linear 連携は「使えるなら使う、無ければ自分で行い、その旨を Design に書く」
-- 外部 AI の設計相談は `~/.claude/scripts/ai-fallback.sh {prompt_file}` を優先する。モデルのフォールバック連鎖・切替条件は `$HOME/.claude/rules/tool-routing.md`「OpenCode リサーチの実行」。落とした候補は `利用AI:` 行に併記し、同一モデルの再試行はしない
+- **リサーチ（L / 条件付き M）は 2 系統**: 自分で `firecrawl` MCP（無ければ `curl`）で一次情報を取り、実装知見は `~/.claude/scripts/consult.sh --to pi -m google/gemini-4-carbon -` に材料ごと渡す（`$HOME/.claude/rules/tool-routing.md`「External Research」）。往復は 1〜4 分。材料を待たずに質問だけ先に投げてもよい
+- **設計相談・セカンドオピニオン**は `~/.claude/scripts/ai-fallback.sh {prompt_file}`（連鎖・切替条件は `tool-routing.md`「OpenCode リサーチの実行」）。これは **gemini が 429 / 認証エラー / 無出力で落ちたときの代替**でもある
+- 使ったモデルは `利用AI: claude/opus + pi/google/gemini-4-carbon` の形で**両方**書く。落とした候補は併記し、同一モデルの再試行はしない
 - Linear: 連携ツールがあれば LINEAR_ID に計画完了コメントを投稿し、無ければ投稿しない。Linear のステータスは変えない
 
 ## PHASE 1: UNDERSTAND
@@ -126,8 +128,8 @@ Design に書く内容: **採用した方針とその理由** / **検討して�
 | tier | 進め方 |
 |---|---|
 | S | リサーチはしない。PHASE 1 の理解から方針を 1〜2 行で書く |
-| M | 設計相談（サブエージェントや別モデルへの相談）が使えれば行い、結果を統合して書く。使えなければ自分で設計し「設計相談不可: {理由}」と書く |
-| L | 外部リサーチ（公式ドキュメント・リリースノートを出典 URL 付きで）と設計を行う。Web 検索が使えなければ自分の知識で設計し「外部リサーチ不可: {理由}」と書く |
+| M | 設計相談（`ai-fallback.sh`）が使えれば行い、結果を統合して書く。gemini（`consult.sh --to pi`）に実装知見を聞いてもよい。使えなければ自分で設計し「設計相談不可: {理由}」と書く |
+| L | 2 系統を**同時に**回す。一次情報は自分で `firecrawl` MCP（無ければ `curl`）で取り、実装知見は `consult.sh --to pi -m google/gemini-4-carbon` に材料を渡して聞く。どちらも落ちたら `ai-fallback.sh`。全滅なら自分の知識で設計し「外部リサーチ不可: {理由}」と書く |
 
 リサーチ結果と自分の理解が食い違ったら、**出典のある一次情報を優先**し、相違点と採用した方を Design に残す。
 
@@ -135,7 +137,7 @@ Design に書く内容: **採用した方針とその理由** / **検討して�
 
 1. 実装タスクリストを番号付きで作る（順序・依存・変更ファイル・テスト方針が分かる粒度）
 2. **[MUST]** 「書き込み規約」に従って TASK_FILE に Brief / Design / Plan を書き込む
-3. Linear 連携ツールがあれば、LINEAR_ID に計画完了コメント（Brief の要約・Plan の項目数・Gate 1 の結果）を投稿する
+3. Linear 連携ツールがあれば、LINEAR_ID に計画完了コメント（Brief の要約・Plan の項目数・Gate 1 の結果）を投稿する。3 行以上になるなら文面は `~/.claude/scripts/draft.sh --kind=comment` に下書きさせる（投稿は自分）
 4. 承認フロー（Gate 1）を自己判断する
 
 ### Gate 1（承認判断）
