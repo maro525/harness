@@ -393,10 +393,16 @@ def unmanaged_worktrees() -> list[str]:
 def leftovers() -> dict:
     state = HOME / '.cache/harness'
     locks = HOME / '.local/share/harness/locks'
-    res = {'sessions': 0, 'worktrees': 0, 'locks': 0, 'unmanaged': []}
+    res = {'sessions': 0, 'worktrees': 0, 'locks': 0, 'unmanaged': [], 'locks_history': 0, 'locks_stale': 0}
     for d in ('herdr-agents', 'herdr-consult'):
         res['sessions'] += len(glob.glob(str(state / d / '*.json')))
     res['locks'] = len(glob.glob(str(locks / '*.lock')))
+    # task-file.sh の lock は 9>$path.guard を flock の対象にする（0 バイト）。
+    # release はリースだけ消すので、キーごとに 1 個溜まる。状態ではないが、
+    # タスク数に比例して増えるので見えるようにしておく。
+    guards = glob.glob(str(locks / '*.lock.guard'))
+    res['locks_history'] = len(guards)
+    res['locks_stale'] = sum(1 for g in guards if not os.path.exists(g[: -len('.guard')]))
     root = HOME / '.herdr/worktrees'
     for wt in glob.glob(str(root / '*' / '*')):
         res['worktrees'] += 1
@@ -537,6 +543,11 @@ def main() -> int:
         if len(used) > 6:
             print(f"    … ほか {len(used) - 6} 本")
         print('  → 次は `git worktree add ~/.herdr/worktrees/{repo}/{branch}` に作る')
+    if res['locks_history']:
+        print(
+            f"  ロック履歴 {res['locks_history']} キー（うち失効 {res['locks_stale']}）: "
+            'flock 用の 0 バイト guard。消すのは *.lock が無く誰も握っていないものだけ'
+        )
     print('  確認: ~/.claude/scripts/herdr-cleanup.sh --worktrees --all-owners')
     return 0
 
