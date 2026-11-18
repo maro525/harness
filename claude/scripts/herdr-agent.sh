@@ -72,7 +72,7 @@
 #
 # stdout: ask prints the answer (the --answer-file content, else the pane tail);
 #         report prints the inbox file; inbox prints the list / the reports
-# stderr: AGENT= / PANE= / KIND= / REPO= / STATE=
+# stderr: AGENT= / PANE= / KIND= / MODEL= / REPO= / STATE=
 #         delegate: AGENT= / BOSS= / REQUEST= / WATCH=<pid|none> / STATE=
 #         report:   INBOX= / NOTIFY=<prompt|notification|none>
 # exit:   0 = ok, 1 = failed, 2 = usage error
@@ -197,6 +197,30 @@ set_record_field() {
     rm -f -- "$tmp"
     return 1
   fi
+}
+
+# どのモデルでこの子を起動するか。親の報告に「どの AI がやったか」を出すために使う。
+# 分からない kind は `-`（推測で埋めない）。
+agent_model_label() {
+  local kind=$1 i=0
+  local -a a=(${NATIVE_ARGS[@]+"${NATIVE_ARGS[@]}"})
+  if [[ "$kind" == "pi" ]]; then
+    while (( i < ${#a[@]} )); do
+      case "${a[i]}" in
+        --model) printf '%s' "${a[i + 1]:-default}"; return 0 ;;
+        --model=*) printf '%s' "${a[i]#--model=}"; return 0 ;;
+        -m) printf '%s' "${a[i + 1]:-default}"; return 0 ;;
+      esac
+      i=$((i + 1))
+    done
+    printf 'pi default'
+    return 0
+  fi
+  case "$kind" in
+    claude) printf '%s' "${CLAUDE_MODEL:-${ANTHROPIC_MODEL:-claude default}}" ;;
+    codex) printf 'codex default' ;;
+    *) printf '-' ;;
+  esac
 }
 
 # A preset names the intent, not a model id, so a caller (Cursor, or claude via
@@ -416,6 +440,7 @@ cmd_ensure() {
   echo "PANE=$pane" >&2
   echo "TAB=$tab" >&2
   echo "KIND=$KIND" >&2
+  echo "MODEL=$(agent_model_label "$KIND")" >&2
   echo "REPO=$REPO" >&2
   echo "STATE=started" >&2
 }
@@ -588,6 +613,7 @@ cmd_restart() {
   echo "PANE=$pane" >&2
   echo "TAB=$tab" >&2
   echo "KIND=${kind:-pi}" >&2
+  echo "MODEL=$(agent_model_label "${kind:-pi}")" >&2
   echo "REPO=$REPO" >&2
   echo "STATE=restarted" >&2
 }

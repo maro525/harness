@@ -181,6 +181,20 @@ EOF
 
 `origin` のリモート URL で判定し、GitLab（セルフホスト含む）は `glab`、GitHub は `gh` を使う。GitHub MCP は不安定なため使わない。
 
+## 移譲したら「誰がやったか」を書く
+
+子・外部モデルに仕事を渡したら、**報告・PR 本文・TASK_FILE の `利用AI:` に使った AI を書く**（推測で書かない。次の 3 つから取る）。
+
+| 何に移譲したか | どこから取るか |
+|---|---|
+| フェーズ（`phase-run.sh`） | `~/.claude/scripts/task-file.sh ai show --task-file={TASK_FILE}` の 1 行（`startproject=claude/opus / team-implement=auto/pi/google/gemini-4-carbon`）。`phase-run.sh` が成功のたびに `{TASK_FILE}.ai.log` へ書く（stderr の `LABEL=` を拾い損ねてもここから取れる） |
+| consult / draft（gemini・claude・codex） | stderr の `AI_MODEL=`（`draft.sh` は `文面: pi/<model>`） |
+| Herdr の子（`herdr-agent.sh`） | `delegate` / `ensure` の stderr `MODEL=` と、子の報告にある `利用AI:` |
+
+- 報告の形: `利用AI: startproject=claude/opus / team-implement=auto/pi/google/gemini-4-carbon / team-review=auto/codex/gpt-6-sol`
+- 取れなかったときは `利用AI: （不明）` と書く（空欄や推測で埋めない）
+- 人が読むのは「どのタスクを、どのモデルが、いくらでやったか」なので、**子の名前（タブ名）だけでは足りない**
+
 ## 対外文書の下書き（`draft.sh`）
 
 **外に残る文章は、下書きを `draft.sh`（gemini）に任せる。** 対象:
