@@ -65,6 +65,9 @@ python3 -m taskboard --recursive ~/src
 
 # no server, just a summary
 python3 -m taskboard --print --recursive ~/.local/share/harness/tasks
+
+# add the Agents / Timeline views (FOLDER defaults to ${XDG_DATA_HOME:-~/.local/share}/harness/tasks)
+python3 -m taskboard --harness --open
 ```
 
 | Flag | Meaning |
@@ -74,8 +77,11 @@ python3 -m taskboard --print --recursive ~/.local/share/harness/tasks
 | `--host` | Bind address (default `127.0.0.1`) |
 | `--poll SECONDS` | Change-detection interval (default 1.0) |
 | `--open` | Open a browser on start |
-| `--print` | Print a text summary (including waiting questions) and exit |
+| `--print` | Print a text summary (including waiting questions) and exit. Exits 1 when no task was found, except with `--harness`, where the agent summary is the point and the exit is 0 |
 | `-v`, `--verbose` | Log HTTP requests |
+| `--harness` | Add the Agents and Timeline views (see below). Off by default; FOLDER becomes optional |
+| `--no-herdr` | With `--harness`: never call `herdr agent list` |
+| `--herdr-poll SECONDS` | With `--harness`: `herdr agent list` interval (default 3) |
 
 ## How a card gets its column
 
@@ -155,6 +161,48 @@ a task that is blocked on a person is obvious at a glance.
 - **Untrusted content.** The logs quote Linear. Everything is HTML-escaped,
   and only `https://linear.app/` URLs become links.
 
+## Harness view (`--harness`)
+
+Three views share one page, switched by the tabs or the URL hash: `#/board`
+(the board above, unchanged), `#/agents` and `#/timeline`. Selecting an agent,
+a timeline row or a card opens a detail panel (`?sel=agent:NAME` or
+`?sel=task:PATH`, so a selection can be bookmarked).
+
+**Data comes only from the harness's own records.** The agents' conversation
+logs (JSONL) are never read.
+
+| Source | Gives |
+|---|---|
+| `herdr agent list` (every 3 s, 2 s timeout) | Which sessions are alive, and their status (`idle` / `working` / `done`) |
+| `~/.cache/harness/herdr-agents/*.json`, `herdr-consult/*.json` | Who started whom (`boss`, `owner`), kind, model, repo, `created` |
+| `~/.cache/harness/inbox/<boss>/` (and `done/`, newest 50) | Reports and questions; header plus a 300-character preview |
+| `$HARNESS_LOCKS_DIR` or `~/.local/share/harness/locks/*.lock` | Held task locks (`updated_epoch + ttl` judges expiry, in the browser) |
+| `~/.cache/harness/herdr-worktrees/*.json` | Worktrees handed to agents (path, branch) |
+| `task-*.md.ai.log` beside each TASK_FILE | Which AI finished which phase |
+
+`XDG_CACHE_HOME` / `XDG_DATA_HOME` / `HARNESS_LOCKS_DIR` are honoured the same
+way the scripts honour them.
+
+- **Parent (boss)** is `boss`, else `owner: agent:X`, else the session sitting
+  in the pane named by `owner: pane:…` / `owner_pane`. Bosses without a record
+  or a live session appear as a "(no record)" group.
+- **A reused name.** When a record's `pane` disagrees with the live session of
+  the same name, the record is from an earlier session: live data wins and the
+  record is flagged "old record".
+- **Status** is the live status; `ended` when a successful `herdr agent list`
+  does not include the agent; `unknown` when herdr is missing, hangs or is
+  disabled. The header then says `herdr: unavailable (reason)` and the tree is
+  drawn from the records alone. Ended agents older than 24 h are hidden unless
+  the toggle is on.
+- **Tasks** link to an agent through its worktree's branch (the TASK_FILE's
+  `branch:`), or through a lock's `task_file`.
+- **Timeline** is rebuilt from the files on every change, nothing is stored:
+  delegations (`created`), inbox messages (`at:`), lock acquisitions
+  (`started`), worktrees and phase completions (`ai.log`), last 24 h, newest
+  500.
+- Lock heartbeats (`updated_epoch`) are reported to the minute, so a held lock
+  does not bump the version every second.
+
 ## Design notes
 
 **There is no filesystem watcher, deliberately.** Measured on the 1,449-file
@@ -198,7 +246,8 @@ understood shows up as a card with a parse error rather than disappearing.
 |---|---|
 | `/` | The board |
 | `/api/board` | JSON snapshot, `ETag` / `If-None-Match` |
-| `/events` | SSE change stream |
+| `/events` | SSE change stream: `event: change` (board version); with `--harness` also `event: activity` |
+| `/api/activity` | `--harness` only (404 otherwise): agents, inbox, locks, worktrees, timeline; `ETag` / `If-None-Match` |
 | `/healthz` | Liveness |
 
 `/api/board` returns one object per card with `phase`, `declaredPhase`,
