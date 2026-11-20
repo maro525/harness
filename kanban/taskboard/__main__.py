@@ -3,14 +3,28 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
+import time
 import webbrowser
 
+from .activity import build_document
+from .harness import HarnessPaths, HarnessScanner
+from .herdr import DEFAULT_POLL_SECONDS as DEFAULT_HERDR_POLL_SECONDS
+from .herdr import DISABLED, fetch_live_agents
 from .model import PHASE_ORDER, Card
 from .scanner import Scanner
-from .server import DEFAULT_POLL_SECONDS, run
+from .server import DEFAULT_POLL_SECONDS, HarnessOptions, run
 
 DEFAULT_PORT = 8787
+
+
+def default_tasks_root() -> str:
+    """Task folders read when `--harness` is given without FOLDER."""
+    data = os.environ.get("XDG_DATA_HOME") or os.path.join(
+        os.path.expanduser("~"), ".local", "share"
+    )
+    return os.path.join(data, "harness", "tasks")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -23,12 +37,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "folders",
-        nargs="+",
+        nargs="*",
         metavar="FOLDER",
         help=(
             "Folder(s) holding task-*.md files. The current layout is "
             "~/.local/share/harness/tasks (one folder per repository); the "
-            "legacy location is {repo}/.claude/docs/decisions"
+            "legacy location is {repo}/.claude/docs/decisions. Optional with "
+            "--harness, which then reads ~/.local/share/harness/tasks recursively"
         ),
     )
     parser.add_argument(
@@ -52,6 +67,26 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--open", action="store_true", help="Open a browser on start")
     parser.add_argument("-v", "--verbose", action="store_true", help="Log HTTP requests")
+    parser.add_argument(
+        "--harness",
+        action="store_true",
+        help=(
+            "Add the Agents and Timeline views, built from the harness records "
+            "(herdr sessions, inbox, locks, worktrees, ai.log). Off by default"
+        ),
+    )
+    parser.add_argument(
+        "--no-herdr",
+        action="store_true",
+        help="With --harness: never call `herdr agent list` (liveness shows as unknown)",
+    )
+    parser.add_argument(
+        "--herdr-poll",
+        type=float,
+        default=DEFAULT_HERDR_POLL_SECONDS,
+        metavar="SECONDS",
+        help=f"With --harness: herdr poll interval (default {DEFAULT_HERDR_POLL_SECONDS:g})",
+    )
     parser.add_argument(
         "--print",
         dest="print_only",
@@ -92,6 +127,23 @@ def print_summary(folders: tuple[str, ...], recursive: bool) -> int:
     return 0
 
 
+def print_harness(folders: tuple[str, ...], recursive: bool, use_herdr: bool) -> None:
+    """Agents, unread inbox and held locks, for `--print --harness`."""
+    board = Scanner(roots=folders, recursive=recursive).scan()
+    snapshot = HarnessScanner(HarnessPaths.default()).scan(c.task.path for c in board.cards)
+    live = fetch_live_agents() if use_herdr else DISABLED
+    document = build_document(snapshot, live, board.cards, time.time())
+    counts = document["counts"]
+    herdr = "ok" if live.ok else f"unavailable ({live.error})"
+    print(f"\nharness  (herdr: {herdr})")
+    print(f"  agents  {counts['agents']}  (live {counts['live']})")
+    print(f"  unread  {counts['unread']}  (needs attention {counts['attention']})")
+    print(f"  locks   {counts['locks']}")
+    for source, status in document["sources"].items():
+        if not status["ok"]:
+            print(f"  warning : {source}: {status['error']}")
+
+
 def print_waiting(cards: tuple[Card, ...]) -> None:
     """List tasks with a relayed question still waiting for an answer."""
     waiting = [(c, c.question) for c in cards if c.question is not None]
@@ -108,11 +160,28 @@ def print_waiting(cards: tuple[Card, ...]) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
     folders = tuple(args.folders)
+    recursive = args.recursive
+    if not folders:
+        if not args.harness:
+            parser.error("FOLDER is required (or pass --harness)")
+        folders = (default_tasks_root(),)
+        recursive = True
 
     if args.print_only:
-        return print_summary(folders, args.recursive)
+        status = print_summary(folders, recursive)
+        if args.harness:
+            print_harness(folders, recursive, not args.no_herdr)
+            return 0
+        return status
+
+    harness = (
+        HarnessOptions(herdr=not args.no_herdr, herdr_poll_seconds=args.herdr_poll)
+        if args.harness
+        else None
+    )
 
     if args.open:
         webbrowser.open(f"http://{args.host}:{args.port}")
@@ -120,9 +189,10 @@ def main(argv: list[str] | None = None) -> int:
         roots=folders,
         host=args.host,
         port=args.port,
-        recursive=args.recursive,
+        recursive=recursive,
         poll_seconds=args.poll,
         verbose=args.verbose,
+        harness=harness,
     )
     return 0
 

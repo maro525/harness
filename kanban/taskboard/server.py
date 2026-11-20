@@ -14,6 +14,11 @@ Change delivery is two-stage:
   /events     an SSE stream carrying only a version token
   /api/board  the real payload, revalidated with ETag / If-None-Match
 
+With `--harness`, the same stream also carries `event: activity` (the version
+of /api/activity). Event names keep the existing `change` data a bare number,
+so an older client simply ignores the new topic, and one shared `Notifier`
+wakes the stream for either.
+
 Keeping the stream tiny matters because SSE over HTTP/1.1 is capped at 6
 concurrent connections per origin (Chrome crbug.com/275955 and Firefox
 bugzil.la/906896 both closed this "Won't fix"), so every held connection is
@@ -27,10 +32,15 @@ import hashlib
 import json
 import threading
 import time
+from dataclasses import dataclass
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+from .activity import ActivityState, Notifier
+from .harness import HarnessPaths, HarnessScanner
+from .herdr import DEFAULT_POLL_SECONDS as DEFAULT_HERDR_POLL_SECONDS
+from .herdr import HerdrPoller
 from .model import Board
 from .scanner import Scanner
 
@@ -54,9 +64,15 @@ _CONTENT_TYPES = {
 class BoardState:
     """Holds the current board and wakes SSE listeners when it changes."""
 
-    def __init__(self, scanner: Scanner, poll_seconds: float = DEFAULT_POLL_SECONDS) -> None:
+    def __init__(
+        self,
+        scanner: Scanner,
+        poll_seconds: float = DEFAULT_POLL_SECONDS,
+        notifier: Notifier | None = None,
+    ) -> None:
         self._scanner = scanner
         self._poll_seconds = poll_seconds
+        self.notifier = notifier or Notifier()
         self._condition = threading.Condition()
         self._version = 0
         # Fingerprint BEFORE scanning. The cold scan takes ~1.1 s on a large
@@ -122,6 +138,7 @@ class BoardState:
             self._key = key
             self._version += 1
             self._condition.notify_all()
+        self.notifier.notify()
         return True
 
     def wait_for_change(self, last_seen: int, timeout: float) -> int:
@@ -140,6 +157,7 @@ class BoardState:
         self._stop.set()
         with self._condition:
             self._condition.notify_all()
+        self.notifier.notify()
 
     def _loop(self) -> None:
         while not self._stop.wait(self._poll_seconds):
@@ -157,6 +175,7 @@ class BoardRequestHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
     state: BoardState  # injected via the handler subclass
+    activity: ActivityState | None  # None unless started with --harness
 
     def log_message(self, fmt: str, *args: object) -> None:
         if self.server.verbose:  # type: ignore[attr-defined]
@@ -184,10 +203,15 @@ class BoardRequestHandler(BaseHTTPRequestHandler):
         path = self.path.split("?", 1)[0]
         if path in ("/", "/index.html"):
             self._serve_static("index.html")
-        elif path in ("/app.js", "/style.css"):
+        elif path in ("/app.js", "/activity.js", "/style.css"):
             self._serve_static(path.lstrip("/"))
         elif path == "/api/board":
-            self._serve_board()
+            self._serve_snapshot(*self.state.snapshot())
+        elif path == "/api/activity":
+            if self.activity is None:
+                self.send_error(HTTPStatus.NOT_FOUND, "Harness view is off (start with --harness)")
+            else:
+                self._serve_snapshot(*self.activity.snapshot())
         elif path == "/events":
             self._serve_events()
         elif path == "/healthz":
@@ -209,8 +233,7 @@ class BoardRequestHandler(BaseHTTPRequestHandler):
         content_type = _CONTENT_TYPES.get(target.suffix, "application/octet-stream")
         self._send_bytes(target.read_bytes(), content_type, cache="no-cache")
 
-    def _serve_board(self) -> None:
-        version, payload = self.state.snapshot()
+    def _serve_snapshot(self, version: int, payload: bytes) -> None:
         etag = f'"v{version}"'
         if self.headers.get("If-None-Match") == etag:
             # Per MDN, a 304 carries no body and repeats only validators.
@@ -240,20 +263,29 @@ class BoardRequestHandler(BaseHTTPRequestHandler):
             # to accumulate them, and ThreadingHTTPServer has no thread cap.
             return
 
-        last_seen = -1
+        notifier = self.state.notifier
+        topics: list[tuple[str, BoardState | ActivityState]] = [("change", self.state)]
+        if self.activity is not None:
+            topics.append(("activity", self.activity))
+        last_seen = {name: -1 for name, _ in topics}
         try:
             self.wfile.write(f"retry: {SSE_RETRY_MS}\n\n".encode())
             self.wfile.flush()
             while True:
-                version = self.state.wait_for_change(last_seen, SSE_KEEPALIVE_SECONDS)
-                if version > last_seen:
-                    last_seen = version
-                    self.wfile.write(f"event: change\ndata: {version}\n\n".encode())
-                else:
+                # Read the generation before the versions: a change landing in
+                # between advances it, so the wait below returns at once.
+                generation = notifier.generation
+                for name, source in topics:
+                    version = source.version
+                    if version > last_seen[name]:
+                        last_seen[name] = version
+                        self.wfile.write(f"event: {name}\ndata: {version}\n\n".encode())
+                self.wfile.flush()
+                if notifier.wait_past(generation, SSE_KEEPALIVE_SECONDS) == generation:
                     # A comment line keeps the socket warm and lets us notice
                     # a disconnected client via the write failing.
                     self.wfile.write(b": keepalive\n\n")
-                self.wfile.flush()
+                    self.wfile.flush()
         except (BrokenPipeError, ConnectionResetError, OSError):
             return
 
@@ -285,11 +317,55 @@ class BoardServer(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
 
-    def __init__(self, address: tuple[str, int], state: BoardState, verbose: bool) -> None:
+    def __init__(
+        self,
+        address: tuple[str, int],
+        state: BoardState,
+        verbose: bool,
+        activity: ActivityState | None = None,
+    ) -> None:
         self.verbose = verbose
         self.state = state
-        handler = type("BoundHandler", (BoardRequestHandler,), {"state": state})
+        self.activity = activity
+        handler = type(
+            "BoundHandler", (BoardRequestHandler,), {"state": state, "activity": activity}
+        )
         super().__init__(address, handler)
+
+    def server_close(self) -> None:
+        self.state.stop()
+        if self.activity is not None:
+            self.activity.stop()
+        super().server_close()
+
+
+@dataclass(frozen=True, slots=True)
+class HarnessOptions:
+    """`--harness` settings. `paths=None` means the scripts' default locations."""
+
+    paths: HarnessPaths | None = None
+    herdr: bool = True
+    herdr_command: tuple[str, ...] = ("herdr", "agent", "list")
+    herdr_poll_seconds: float = DEFAULT_HERDR_POLL_SECONDS
+
+
+def build_activity(
+    options: HarnessOptions, state: BoardState, poll_seconds: float
+) -> ActivityState:
+    scanner = HarnessScanner(options.paths or HarnessPaths.default())
+    activity: ActivityState | None = None
+
+    def wake() -> None:
+        if activity is not None:
+            activity.wake()
+
+    poller = (
+        HerdrPoller(wake, options.herdr_command, options.herdr_poll_seconds)
+        if options.herdr
+        else None
+    )
+    activity = ActivityState(scanner, state, state.notifier, poller, poll_seconds)
+    return activity
 
 
 def serve(
@@ -299,12 +375,16 @@ def serve(
     recursive: bool = False,
     poll_seconds: float = DEFAULT_POLL_SECONDS,
     verbose: bool = False,
+    harness: HarnessOptions | None = None,
 ) -> BoardServer:
     """Build and start the board server. Returns the running server."""
     scanner = Scanner(roots=roots, recursive=recursive)
     state = BoardState(scanner, poll_seconds=poll_seconds)
     state.start()
-    server = BoardServer((host, port), state, verbose)
+    activity = build_activity(harness, state, poll_seconds) if harness else None
+    if activity is not None:
+        activity.start()
+    server = BoardServer((host, port), state, verbose, activity)
     return server
 
 
@@ -315,9 +395,10 @@ def run(
     recursive: bool = False,
     poll_seconds: float = DEFAULT_POLL_SECONDS,
     verbose: bool = False,
+    harness: HarnessOptions | None = None,
 ) -> None:
     """Run the board server until interrupted."""
-    server = serve(roots, host, port, recursive, poll_seconds, verbose)
+    server = serve(roots, host, port, recursive, poll_seconds, verbose, harness)
     board = server.state.board
     print(f"taskboard  http://{host}:{server.server_address[1]}")
     print(f"  folders : {len(board.roots)}")
@@ -325,6 +406,9 @@ def run(
     if board.errors:
         for message in board.errors:
             print(f"  warning : {message}")
+    if server.activity is not None:
+        counts = server.activity.document.get("counts", {})
+        print(f"  harness : {counts}  (herdr {'on' if harness and harness.herdr else 'off'})")
     print("  Ctrl-C to stop")
     try:
         server.serve_forever()
@@ -335,4 +419,4 @@ def run(
         server.server_close()
 
 
-__all__ = ["BoardState", "BoardServer", "serve", "run", "time"]
+__all__ = ["BoardState", "BoardServer", "HarnessOptions", "serve", "run", "time"]

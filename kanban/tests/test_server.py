@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import threading
 import time
 import urllib.error
@@ -345,3 +346,133 @@ def test_touching_an_ask_log_without_change_keeps_version(decisions: Path) -> No
     os.utime(path, (1_800_000_100, 1_800_000_100))
     assert state.refresh() is False, "same question content must keep the ETag"
     assert state.version == first
+
+
+# -- --harness -------------------------------------------------------------
+
+from taskboard.harness import HarnessPaths  # noqa: E402
+from taskboard.server import HarnessOptions  # noqa: E402
+
+
+@pytest.fixture()
+def harness_paths(tmp_path: Path) -> HarnessPaths:
+    root = tmp_path / "harness"
+    paths = HarnessPaths(
+        agents=str(root / "herdr-agents"),
+        consult=str(root / "herdr-consult"),
+        inbox=str(root / "inbox"),
+        locks=str(root / "locks"),
+        worktrees=str(root / "herdr-worktrees"),
+    )
+    for folder in (paths.agents, paths.consult, paths.inbox, paths.locks, paths.worktrees):
+        os.makedirs(folder)
+    Path(paths.agents, "child.json").write_text(
+        json.dumps({"agent": "child", "pane": "w1:p2", "boss": "boss", "kind": "claude"})
+    )
+    return paths
+
+
+@pytest.fixture()
+def harness_server(decisions: Path, harness_paths: HarnessPaths) -> Iterator[str]:
+    srv = serve(
+        roots=(str(decisions),),
+        port=0,
+        poll_seconds=0.2,
+        harness=HarnessOptions(paths=harness_paths, herdr=False),
+    )
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        yield f"http://127.0.0.1:{srv.server_address[1]}"
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+
+def read_sse_events(url: str, count: int, timeout: float) -> list[tuple[str, str]]:
+    """Collect `count` (event, data) pairs from an SSE stream."""
+    events: list[tuple[str, str]] = []
+    name = "message"
+    with urllib.request.urlopen(url, timeout=timeout) as stream:
+        for raw in stream:
+            text = raw.decode().strip()
+            if text.startswith("event:"):
+                name = text.split(":", 1)[1].strip()
+            elif text.startswith("data:"):
+                events.append((name, text.split(":", 1)[1].strip()))
+                name = "message"
+                if len(events) >= count:
+                    break
+    return events
+
+
+def test_activity_is_404_without_harness(server: str) -> None:
+    with pytest.raises(urllib.error.HTTPError) as caught:
+        get(f"{server}/api/activity")
+    assert caught.value.code == 404
+
+
+def test_activity_js_is_served(server: str) -> None:
+    assert get(f"{server}/activity.js").status == 200
+
+
+def test_activity_api_returns_agents_and_revalidates(harness_server: str) -> None:
+    response = get(f"{harness_server}/api/activity")
+    payload = json.loads(response.read())
+    assert [a["name"] for a in payload["agents"]] == ["child"]
+    assert payload["agents"][0]["status"] == "unknown"  # --no-herdr
+    assert payload["herdr"]["ok"] is False
+    etag = response.headers["ETag"]
+    with pytest.raises(urllib.error.HTTPError) as caught:
+        get(f"{harness_server}/api/activity", {"If-None-Match": etag})
+    assert caught.value.code == 304
+
+
+def test_activity_rejects_foreign_host(harness_server: str) -> None:
+    with pytest.raises(urllib.error.HTTPError) as caught:
+        get(f"{harness_server}/api/activity", {"Host": "evil.example"})
+    assert caught.value.code == 403
+
+
+def test_sse_replays_both_topics_and_keeps_change_numeric(harness_server: str) -> None:
+    events = read_sse_events(f"{harness_server}/events", 2, timeout=5)
+    assert [name for name, _ in events] == ["change", "activity"]
+    assert all(data.isdigit() for _, data in events)
+
+
+def test_new_inbox_item_emits_an_activity_event(
+    harness_server: str, harness_paths: HarnessPaths
+) -> None:
+    received: list[tuple[str, str]] = []
+    ready = threading.Event()
+
+    def listen() -> None:
+        ready.set()
+        received.extend(read_sse_events(f"{harness_server}/events", 3, timeout=10))
+
+    listener = threading.Thread(target=listen, daemon=True)
+    listener.start()
+    ready.wait(timeout=5)
+    time.sleep(0.4)
+
+    boss = Path(harness_paths.inbox, "boss")
+    boss.mkdir()
+    (boss / "child-20261120-110000.question.md").write_text(
+        "from: child\nto: boss\nat: 2026-11-20T11:00:00+09:00\nkind: question\n\nWhich?\n"
+    )
+    started = time.monotonic()
+    listener.join(timeout=10)
+
+    assert len(received) == 3, received
+    assert received[2][0] == "activity"
+    assert int(received[2][1]) > int(received[1][1])
+    assert time.monotonic() - started < 3
+    payload = json.loads(get(f"{harness_server}/api/activity").read())
+    assert payload["counts"]["attention"] == 1
+    assert payload["agents"][0]["unreadFrom"] == {"question": 1}
+
+
+def test_hidden_attribute_beats_every_display_rule() -> None:
+    # `.tabs { display: flex }` used to beat the UA's [hidden], so the tabs
+    # showed without --harness. One global rule covers every element.
+    css = (Path(__file__).parent.parent / "taskboard" / "static" / "style.css").read_text()
+    assert re.search(r"(?m)^\[hidden\]\s*\{\s*display:\s*none\s*!important;\s*\}", css)

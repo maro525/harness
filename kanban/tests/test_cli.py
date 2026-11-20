@@ -52,3 +52,61 @@ def test_print_lists_waiting_questions(decisions: Path, capsys) -> None:
 def test_print_without_waiting_questions_omits_section(decisions: Path, capsys) -> None:
     assert main(["--print", str(decisions)]) == 0
     assert "waiting for an answer" not in capsys.readouterr().out
+
+
+def test_folder_is_required_without_harness(capsys) -> None:
+    with pytest.raises(SystemExit) as caught:
+        main([])
+    assert caught.value.code == 2
+    assert "FOLDER is required" in capsys.readouterr().err
+
+
+def test_print_harness_summarizes_agents(
+    decisions: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    cache = tmp_path / "cache"
+    agents = cache / "harness" / "herdr-agents"
+    agents.mkdir(parents=True)
+    (agents / "child.json").write_text('{"agent": "child", "boss": "boss"}')
+    inbox = cache / "harness" / "inbox" / "boss"
+    inbox.mkdir(parents=True)
+    (inbox / "child-20261120-110000.blocked.md").write_text("from: child\nkind: blocked\n\nstuck")
+    monkeypatch.setenv("XDG_CACHE_HOME", str(cache))
+    monkeypatch.setenv("HARNESS_LOCKS_DIR", str(tmp_path / "locks"))
+
+    assert main(["--print", "--harness", "--no-herdr", str(decisions)]) == 0
+
+    out = capsys.readouterr().out
+    assert "herdr: unavailable (disabled (--no-herdr))" in out
+    assert "agents  1  (live 0)" in out
+    assert "unread  1  (needs attention 1)" in out
+
+
+def test_harness_without_folder_reads_the_default_tasks_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    tasks = tmp_path / "home" / ".local" / "share" / "harness" / "tasks" / "repo"
+    tasks.mkdir(parents=True)
+    (tasks / "task-ABC-1-first.md").write_text(TASK, encoding="utf-8")
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.delenv("XDG_DATA_HOME", raising=False)
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    monkeypatch.setenv("HARNESS_LOCKS_DIR", str(tmp_path / "locks"))
+
+    assert main(["--print", "--harness", "--no-herdr"]) == 0
+    assert "1 tasks in 1 folder(s)" in capsys.readouterr().out
+
+
+def test_harness_without_folder_follows_xdg_data_home(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    tasks = tmp_path / "data" / "harness" / "tasks" / "repo"
+    tasks.mkdir(parents=True)
+    (tasks / "task-ABC-1-first.md").write_text(TASK, encoding="utf-8")
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    monkeypatch.setenv("HARNESS_LOCKS_DIR", str(tmp_path / "locks"))
+
+    assert main(["--print", "--harness", "--no-herdr"]) == 0
+    assert "1 tasks in 1 folder(s)" in capsys.readouterr().out

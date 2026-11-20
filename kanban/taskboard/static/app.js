@@ -51,6 +51,14 @@ let shown = Object.create(null);
 let sseFailures = 0;
 let pollTimer = null;
 
+/**
+ * Hooks for activity.js (the --harness views). Board behaviour does not
+ * depend on them: with the harness off they stay null.
+ *   activity  called on each SSE `activity` event and on every fallback poll
+ *   rendered  called after the board is redrawn
+ */
+const hooks = { activity: null, rendered: null };
+
 const escapeHtml = (value) =>
   String(value ?? "").replace(/[&<>"']/g, (c) => (
     { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
@@ -76,6 +84,7 @@ async function fetchBoard() {
 async function refresh() {
   try {
     if (await fetchBoard()) render();
+    if (pollTimer && hooks.activity) hooks.activity();
     if (!pollTimer) setStatus(liveLabel(), "live");
   } catch (err) {
     setStatus("disconnected", "down");
@@ -224,7 +233,7 @@ function cardHtml(card) {
     .join("\n");
 
   return (
-    `<div class="${classes.join(" ")}" title="${escapeHtml(tip)}">` +
+    `<div class="${classes.join(" ")}" data-path="${escapeHtml(card.path)}" title="${escapeHtml(tip)}">` +
     `<div class="t">${escapeHtml(card.title)}</div>` +
     `<div class="m">${tags.join("")}</div>` +
     (q ? questionHtml(q, now) : "") +
@@ -273,8 +282,9 @@ function render() {
   // One write: building the whole board as a string and assigning once is
   // markedly faster than creating ~1,400 nodes individually.
   el.board.innerHTML = html.join("");
-  el.empty.hidden = total > 0;
+  el.empty.hidden = total > 0 || el.board.hidden;
   if (!pollTimer) setStatus(liveLabel(), "live");
+  if (hooks.rendered) hooks.rendered();
 }
 
 function syncSelect(select, values) {
@@ -314,6 +324,9 @@ function connect() {
     setStatus(liveLabel(), "live");
   });
   source.addEventListener("change", refresh);
+  source.addEventListener("activity", () => {
+    if (hooks.activity) hooks.activity();
+  });
   source.addEventListener("error", () => {
     sseFailures++;
     setStatus("reconnecting…", "down");
@@ -345,6 +358,22 @@ el.board.addEventListener("click", (event) => {
   shown[name] = (shown[name] || PAGE_SIZE) + PAGE_SIZE;
   render();
 });
+
+/** Shared with activity.js, which reuses the card markup and helpers. */
+window.TaskBoard = {
+  hooks,
+  cardHtml,
+  escapeHtml,
+  formatSpan,
+  timeOf,
+  render,
+  get data() {
+    return data;
+  },
+  get polling() {
+    return pollTimer !== null;
+  },
+};
 
 setInterval(tickClocks, CLOCK_MS);
 document.addEventListener("visibilitychange", tickClocks);

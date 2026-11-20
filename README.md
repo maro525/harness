@@ -75,6 +75,7 @@ hook の登録（`settings.json` の `hooks.UserPromptSubmit`）と `Skill(orche
 `agents/README.md` は HOME に配布しない。orchestrate のフェーズ指定モードは `$HARNESS`（未設定なら `~/src/harness`）から直接読む。別の場所に clone したら `HARNESS` を設定する。
 
 kanban は `uv tool install --editable ~/src/harness/kanban`（詳細は `kanban/README.md`）。
+`taskboard --harness --open` で、エージェントの親子・inbox・ロック・フェーズの動きも同じ画面で見られる。
 
 ## 外部 AI のフォールバック
 
