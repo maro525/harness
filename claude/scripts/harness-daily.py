@@ -79,9 +79,9 @@ CHILD_WORK = [
 EDIT_TOOLS = {'Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'edit', 'write', 'apply_patch'}
 
 # 文章の下書き（draft.sh）と、外に残る文書を書く操作。下書きを使ったかを測るため。
-# `draft.sh --kind=…` を実行したときだけ数える。コミットメッセージや規則文に
-# 含まれた同じ文字列（heredoc 内）を拾わないよう、コマンド先頭に錨を打つ。
-DRAFT_OPS = [(re.compile(r'^(?:\S+=\S*\s+)*(?:[~$][^\s]*/|/)?[\w./-]*draft\.sh\s+--kind='), 'gemini 下書き')]
+# 下書きはコマンド文字列では数えない（heredoc の中の用例と、実際の実行が同じ形に見える）。
+# `draft.sh` が書いたファイル（`$TMPDIR/draft-<kind>-<YYYYmmdd-HHMMSS>.md`）を実行の証拠にする。
+DRAFT_KINDS = ('pr', 'comment', 'commit', 'section', 'reply')
 RESEARCH_OPS = [(re.compile(r'consult\.sh[^\n]*--to\s+pi'), 'gemini 研究')]
 OUTWARD_OPS = [
     (re.compile(r'^\[mcp__\w+__save_comment\]'), 'Linear コメント'),
@@ -441,12 +441,33 @@ def herdr_children(since: datetime, until: datetime) -> list[str]:
     return sorted(out)
 
 
+def draft_files(since: datetime, until: datetime) -> Counter:
+    """`draft.sh` がその日に書いた下書き（$TMPDIR/draft-<kind>-<ts>.md）。"""
+    counts: Counter = Counter()
+    seen = set()
+    for base in {str(HOME / 'tmp'), '/tmp', os.environ.get('TMPDIR', '/tmp')}:
+        if not base:
+            continue
+        for path in glob.glob(os.path.join(base, 'draft-*.md')):
+            if path in seen:
+                continue
+            seen.add(path)
+            parts = os.path.basename(path).split('-')
+            kind = parts[1] if len(parts) > 2 else '?'
+            if kind not in DRAFT_KINDS:
+                continue
+            ts = datetime.fromtimestamp(os.path.getmtime(path), JST)
+            if since <= ts <= until:
+                counts[kind] += 1
+    return counts
+
+
 def text_stats(sessions: list[Session]) -> Counter:
     """下書き（gemini）と、外に残る文書を書く操作の回数。"""
     counts: Counter = Counter()
     for s in sessions:
         for c in s.cmds:
-            for rx, name in DRAFT_OPS + RESEARCH_OPS + OUTWARD_OPS:
+            for rx, name in RESEARCH_OPS + OUTWARD_OPS:
                 if rx.search(c['cmd']):
                     counts[name] += 1
                     break
@@ -574,17 +595,26 @@ def main() -> int:
         print(f'  子 1 セッションあたりのコマンド数: 中央 {per[len(per) // 2]} / 最大 {per[-1]}')
 
     tstats = text_stats(sessions)
-    if tstats:
-        drafts = tstats.get('gemini 下書き', 0)
+    drafts = draft_files(since, until)
+    if tstats or drafts:
+        n_drafts = sum(drafts.values())
         research = tstats.get('gemini 研究', 0)
         outward = sum(tstats.get(name, 0) for _, name in OUTWARD_OPS)
+        detail_kind = ' / '.join(f'{k} {v}' for k, v in sorted(drafts.items()))
         print('\n■ 文章（下書き）')
-        print(f'  gemini 下書き {drafts} 件（研究 {research} 件）/ 対外文書の操作 {outward} 件')
+        print(
+            f'  gemini 下書き {n_drafts} 件'
+            + (f'（{detail_kind}）' if detail_kind else '')
+            + f' / 研究 {research} 件 / 対外文書の操作 {outward} 件'
+        )
         detail = ' / '.join(f'{name} {tstats[name]}' for _, name in OUTWARD_OPS if tstats.get(name))
         if detail:
             print(f'  内訳: {detail}')
-        if outward and not drafts:
+        if outward and not n_drafts:
             print('  → 下書きは `draft.sh --kind=…` に任せる（tool-routing.md「対外文書の下書き」）')
+        elif n_drafts:
+            ratio = min(100, round(n_drafts * 100 / max(outward, 1)))
+            print(f'  下書き率 {ratio}%（対外文書 {outward} 操作に対して）')
 
     res = leftovers()
     print('\n■ 残骸')
