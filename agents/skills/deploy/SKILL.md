@@ -104,6 +104,17 @@ Closes #12
 Related to #34
 ```
 
+**本文の下書きは `draft.sh`（gemini）に任せる**（3 行以上になるとき）。`## team-implement` の最新回と
+`## team-review` の申し送りを材料ファイルにまとめてから:
+
+```bash
+~/.claude/scripts/draft.sh --kind=pr --material /tmp/mr-notes.md > /tmp/mr-body.md
+```
+
+帰ってきた文面を**確かめてから** `--description-file` / `-F` に渡す（事実・数値・ID は自分で照合する）。
+使ったら `## deploy` の `利用AI:` に `文面: pi/<model>` を併記する。`draft.sh` が exit 1 なら
+自分で書くか `ai-fallback.sh` を使い、どちらにしたかを報告に残す（往復は 1〜4 分）。
+
 禁則（magic word として読ませるため）:
 - Linear ID は大文字のまま書く。参照は 1 行に 1 つ（行頭に `- ` や `*` を付けない）
 - `## 関連` の参照行はコードフェンスやインラインコード（`` ` ``）の中に書かない（上のテンプレートのフェンスは説明用。実際の本文には付けない）
