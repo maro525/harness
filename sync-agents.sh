@@ -54,6 +54,21 @@ for name in "${AGENT_SKILLS[@]}"; do
   sync_common::sync_directory "$SOURCE/$name" "$DEST/$name" "*" || true
 done
 
+# --- 1b. スキルが相対で参照する docs/ を配る -------------------------------
+# orchestrate の SKILL.md は「契約は `docs/phase-contract.md`」と相対で書いている。
+# ~/.agents/skills/orchestrate/ に docs/ が無いと、子（codex / claude）がタスクの
+# リポジトリから辿れずに失敗する（実例: 2026-11-20 06:22 と 07:16 に exit 1）。
+# リポジトリの docs/ が正本なので、同期のたびにコピーする（リポジトリには重複を置かない）。
+echo ""
+echo "Skill docs:"
+if [[ -f "$SCRIPT_DIR/docs/phase-contract.md" ]]; then
+  mkdir -p "$SOURCE/orchestrate/docs"
+  cp "$SCRIPT_DIR/docs/phase-contract.md" "$SOURCE/orchestrate/docs/phase-contract.md"
+  echo "  copy  docs/phase-contract.md -> $SOURCE/orchestrate/docs/"
+else
+  echo "  skip  docs/phase-contract.md（$SCRIPT_DIR/docs に無い）"
+fi
+
 # --- 2. Cline symlinks (skip anything that already exists) -------------------
 echo ""
 echo "Cline symlinks ($CLINE_SKILLS):"

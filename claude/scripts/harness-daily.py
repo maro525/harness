@@ -79,7 +79,9 @@ CHILD_WORK = [
 EDIT_TOOLS = {'Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'edit', 'write', 'apply_patch'}
 
 # 文章の下書き（draft.sh）と、外に残る文書を書く操作。下書きを使ったかを測るため。
-DRAFT_OPS = [(re.compile(r'draft\.sh\s+--kind='), 'gemini 下書き')]
+# `draft.sh --kind=…` を実行したときだけ数える。コミットメッセージや規則文に
+# 含まれた同じ文字列（heredoc 内）を拾わないよう、コマンド先頭に錨を打つ。
+DRAFT_OPS = [(re.compile(r'^(?:\S+=\S*\s+)*(?:[~$][^\s]*/|/)?[\w./-]*draft\.sh\s+--kind='), 'gemini 下書き')]
 RESEARCH_OPS = [(re.compile(r'consult\.sh[^\n]*--to\s+pi'), 'gemini 研究')]
 OUTWARD_OPS = [
     (re.compile(r'^\[mcp__\w+__save_comment\]'), 'Linear コメント'),
@@ -422,6 +424,23 @@ def leftovers() -> dict:
     return res
 
 
+def herdr_children(since: datetime, until: datetime) -> list[str]:
+    """その日に herdr で立てた子・相談先（親が Cursor だとコマンドに残らないため）。"""
+    out: list[str] = []
+    state = HOME / '.cache/harness'
+    for d in ('herdr-agents', 'herdr-consult'):
+        for path in glob.glob(str(state / d / '*.json')):
+            try:
+                o = json.loads(Path(path).read_text(encoding='utf-8'))
+            except Exception:
+                continue
+            ts = to_jst(o.get('created'))
+            if ts is None or not (since <= ts <= until):
+                continue
+            out.append(str(o.get('agent') or Path(path).stem))
+    return sorted(out)
+
+
 def text_stats(sessions: list[Session]) -> Counter:
     """下書き（gemini）と、外に残る文書を書く操作の回数。"""
     counts: Counter = Counter()
@@ -541,6 +560,11 @@ def main() -> int:
         print('  委譲の呼び出し: ' + ' / '.join(f'{k} ×{v}' for k, v in sorted(kinds.items())))
     else:
         print('  委譲の呼び出し: なし（自分で全部やっている可能性）')
+    made = herdr_children(since, until)
+    if made:
+        print(f'  herdr で立てた子: {len(made)} 本（' + ', '.join(made[:4]) + ('…' if len(made) > 4 else '') + '）')
+    elif not kinds and children:
+        print('  子は居るが delegate / phase の記録が無い（親が Cursor だとコマンドに残らない）')
     repeats = Counter(re.sub(r'\s+', ' ', c['cmd'])[:60] for c in all_cmds if not c['cmd'].startswith('['))
     hot = [(k, v) for k, v in repeats.most_common(5) if v >= 3]
     if hot:
