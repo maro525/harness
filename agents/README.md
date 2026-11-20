@@ -69,7 +69,7 @@ orchestrate のフェーズ指定モードは探索に頼らず、プロンプ�
 | セッションを立てて何かをさせる（すべて Herdr 経由） | **Herdr 経由**: `herdr-agent.sh ensure` / `consult.sh` / `orchestrate-parallel.sh` | **`tmux` / `screen` / `nohup` / `claude --bg` で立てる**（記録が残らず、片付けの対象外になる） |
 | 外部リサーチ（Web・別モデルの解釈） | 自分（firecrawl / `curl`）＋ **gemini**（`consult.sh --to pi -m google/gemini-4-carbon`） | consult だけ（自分が調べない） |
 | 文章作成・推敲、動画や画像の分析を pi に任せる | `herdr-agent.sh ensure --kind pi --preset writing`（動画は `--preset video`）→ `google/gemini-4-carbon` | 既定の pi（deepseek）で文章を書かせる |
-| 文章の下書き（コミットメッセージ / Linear や **Notion** の文面 / PR・MR 本文 / TASK_FILE の節） | `consult.sh --to pi -m google/gemini-4-carbon`（同期・1 回だけ） | 書き込みまでそのモデルに任せない（作成・投稿は MCP を持つ自分が行う） |
+| 文章の下書き（コミットメッセージ / Linear や **Notion** の文面 / PR・MR 本文 / TASK_FILE の節） | `draft.sh --kind=pr｜comment｜commit｜section｜reply`（gemini。stdout が本文） | 書き込みまでそのモデルに任せない（作成・投稿は MCP を持つ自分が行う）。往復 1〜4 分 |
 
 - `pi` の既定は `ollama-cloud/deepseek-v4.1-flash:1017`（コード向け）。**文章作成・推敲・動画/画像の分析**は `--preset writing` / `--preset video` で `google/gemini-4-carbon`（1M context・images 対応）を使う。`--` の後ろに `--model` を書けばそちらが優先
 - `--preset` は `--kind pi` 専用。claude は consult / 4 フェーズが自分の既定を持つ
