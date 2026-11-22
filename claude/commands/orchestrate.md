@@ -497,7 +497,7 @@ team-implement はコードと git 操作のみ行い、`IMPLEMENTATION_NOTES` /
 
 `{m}` は実装・レビューの回数（`## team-implement` の既存の最大 + 1。初回は `### 1回目`）。`{n}` は追加依頼の通し番号にだけ使う（STEP 3F）。
 
-**[MUST]** `### {m}回目` の直下（空行を挟まない）に `利用AI: claude/{model}` を書く（model は tier 表の implement モデル: S=`sonnet`、M=`opus`、L=`best`）。`IMPLEMENTATION_NOTES` 本文に `利用AI:` 行が既にあれば重ねて書かない。
+**[MUST]** `### {m}回目` の直下（空行を挟まない）に `利用AI: claude/{model}` を書く（model は tier 表の implement モデル: S=`sonnet`、M=`opus`、L=`best`）。`### {m}回目` の直下に `利用AI:` 行が既にあれば重ねて書かない。
 
 **[MUST]** `LINEAR_COMMENT` の本文を `mcp__linear-server__save_comment` で LINEAR_ID に投稿する。
 
@@ -528,7 +528,7 @@ team-review は `VERDICT` / `REVIEW` / `REVIEWER` / `INDEPENDENT` / `LINEAR_COMM
 | `REVIEW` | `## team-review` に `### {m}回目` として追記 |
 | `VERDICT` | `### {m}回目` の直下に `**VERDICT: PASS**` / `**VERDICT: FAIL**` / `**VERDICT: BLOCKED**` の 1 行（kanban が Gate 2 差し戻しの判定に使う。`REVIEW` 本文にこの行が含まれていれば重ねて書かない） |
 
-**[MUST]** `### {m}回目` の直下（空行を挟まない）に `利用AI: claude/opus` を書く（`REVIEW` 本文に `利用AI:` 行が既にあれば重ねて書かない）。
+**[MUST]** `### {m}回目` の直下（空行を挟まない）に `利用AI: claude/opus` を書く（`### {m}回目` の直下に `利用AI:` 行が既にあれば重ねて書かない。`REVIEW` 本文中の `##### OpenCode Reviewer` の `利用AI:` は数えない）。
 
 `REVIEWER` と `INDEPENDENT` を控え、STEP 7 の `reviewed by` に使う（`INDEPENDENT` が `no` なら独立レビュー未実施として扱う）。
 

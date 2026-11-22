@@ -27,6 +27,7 @@ PASS を出すには、実装者と別モデルの独立レビューが取れて
 - 実装者の `利用AI:` が無い → BLOCKED（PASS にしない）
 - OpenCode Reviewer（`ai-fallback.sh`）が動いた → `REVIEWER: {AI_MODEL}`、`INDEPENDENT: yes`（実装者と別ファミリ）
 - 動かなかった → 自分の `--label`（無ければ `claude/opus`）と実装者を比較。同じ → BLOCKED、違う → `REVIEWER: {自分の label}`、`INDEPENDENT: yes`
+- 実装者が `claude/best` のときは具体モデル名が無いので、ラベル比較で独立としない。OpenCode Reviewer があるときだけ `INDEPENDENT: yes`、無ければ BLOCKED
 
 ## Input
 

@@ -85,6 +85,7 @@ linear: posted|skipped|unavailable
 team-review の PASS は、直近 `## team-implement` の `利用AI:` と**異なる** `--label` でレビューした場合だけ有効（独立）。
 
 - `--label` が無い / 実装者の `利用AI:` が無い / 同一 → 独立を証明できない
+- 比較はラベルの**モデル部分**（最初の `/` 以降）で行う。`auto/{model}` は実際のモデルとして読む。CLI 名だけの違いは独立とみなさない
 - 独立が取れない → `**VERDICT: BLOCKED**` + `##### 独立レビュー不可`（理由）+ RESULT `verdict: BLOCKED`。PASS にしない
 - 別ラベルのセカンドオピニオン（別モデル）が取れて、その結果を反映した場合だけ独立とみなし、`reviewer:` にそのラベルを書く
 - BLOCKED は FAIL ではない（差し戻さない）。orchestrator は deploy せず報告して停止する
