@@ -204,6 +204,19 @@ for token in '--thinking' '--effort' 'model_reasoning_effort' 'ignores @'; do
     ng "$dispatcher に '$token' の記述が無い"
 done
 
+# P0 wiring: keep the normal-mode independent-review routes.
+check_tokens() {
+  local rel=$1
+  shift
+  for token in "$@"; do
+    grep -qF -- "$token" "$(readonly_path "$rel")" || ng "$rel に '$token' の記述が無い"
+  done
+}
+check_tokens claude/commands/orchestrate.md '利用AI: claude/' '--label=claude/opus' 'Skill（opus）'
+check_tokens claude/commands/team-review.md 'REVIEWER' 'INDEPENDENT'
+check_tokens opencode/commands/orchestrate.md 'phase-run.sh --phase=team-review' '--fallback=pi:ollama-cloud/kimi-k3'
+check_tokens agents/skills/team-review/SKILL.md 'モデル部分'
+
 if [[ $fail -eq 0 ]]; then
   ok "phase parity (${PHASES[*]}) / 3 系統 / orchestrator 3 本 / phase-run.sh"
   exit 0

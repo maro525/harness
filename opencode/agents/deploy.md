@@ -42,8 +42,6 @@ $ARGUMENTS で指示された書き込み系 git 操作（「GIT RULES」の書�
 
 コミット・push・PR / MR 作成を担当する（動作検証は team-review で済んでいるので行わない）。前提: feature ブランチ作成済み・team-review PASS 済み。作業ブランチに open な PR / MR が既にあれば（`/orchestrate` の追加修正モード）、新規作成せず**追加 push と本文追記**を行う。
 
-**ガード:** TASK_FILE の `## team-review` 直近 verdict が `PASS` でなければ中止して報告する（`BLOCKED: independent review` または `verdict is not PASS`。記録のコミットだけを行う場合は対象外）。
-
 **終了後も作業ブランチに留まり、分岐元には戻らない。** `## deploy` の記入（STEP 4）は作業ブランチ上で行い、その後 orchestrator が `status: in-review` を書き、`git switch {base}` で分岐元に戻る（`/orchestrate` STEP 6a → 6b → 6c）。TASK_FILE はリポジトリ外にあり、git では扱わない。
 
 ## Input

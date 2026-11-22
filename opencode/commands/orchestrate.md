@@ -343,10 +343,12 @@ team-review は implement と同じモデル（`opencode/{agent の frontmatter 
 
 ```bash
 ~/.claude/scripts/phase-run.sh --phase=team-review --task-file={TASK_FILE} \
-  --tier={tier} --linear-id={LINEAR_ID} --runner=claude:opus
+  --tier={tier} --linear-id={LINEAR_ID} --runner=claude:opus \
+  --fallback=pi:ollama-cloud/kimi-k3
 ```
 
 - `claude:opus` が使えない環境では `--runner=pi:ollama-cloud/kimi-k3`（別ファミリ）。どちらも使えなければ BLOCKED
+- **`--fallback` を省略しない**（既定連鎖はモデル無しの `opencode2` に落ちることがあり、その label では独立を証明できない → BLOCKED）
 - 結果は STEP 3P P3 と同じ扱い: 節が書かれていればそれを使い、`### RESULT` の `verdict` / `reviewer` / `independent` を読む。`written: no` なら `### SECTION` を `## team-review` に書く。`利用AI:` が無ければ phase-run の label で足す
 - phase-run の label が implement と同じ（`opencode/ollama-cloud/deepseek-v4.1-flash`）なら BLOCKED（推測で PASS にしない）
 

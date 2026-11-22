@@ -49,8 +49,6 @@ git は `$HOME/.claude/rules/tool-routing.md` の「Git Operations」（保護�
 
 コミット・push・PR / MR 作成を担当する（動作検証は team-review で済んでいるので行わない）。前提: feature ブランチ作成済み・team-review PASS 済み。作業ブランチに open な PR / MR が既にあれば（`/orchestrate` の追加修正モード）、新規作成せず**追加 push と本文追記**を行う。
 
-**ガード:** TASK_FILE の `## team-review` 直近 verdict が `PASS` でなければ中止して報告する（`BLOCKED: independent review` または `verdict is not PASS`。記録のコミットだけを行う場合は対象外）。
-
 **終了後も作業ブランチに留まり、分岐元には戻らない。** 分岐元への復帰は呼び出し元（`/orchestrate` STEP 6c）が `git switch {base}` で行う。TASK_FILE はリポジトリ外にあり、この command は git で扱わない。
 
 **TASK_FILE への書き込みと Linear への投稿・ステータス変更は行わない。** 結果は OUTPUT フォーマットで呼び出し元（`/orchestrate` STEP 6b）に返し、TASK_FILE の更新・Linear コメント投稿・ステータス変更は呼び出し元が行う。TASK_FILE は Read のみ。
