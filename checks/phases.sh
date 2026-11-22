@@ -174,6 +174,53 @@ for rel in claude/commands/orchestrate.md opencode/commands/orchestrate.md agent
   fi
 done
 
+# --- poteto first batch ------------------------------------------------------
+for rel in claude/commands/team-review.md opencode/agents/team-review.md agents/skills/team-review/SKILL.md; do
+  path=$(readonly_path "$rel")
+  [[ -f $path ]] || { ng "定義が無い: $rel"; continue; }
+  grep -q -- 'BLOCKED' "$path" || ng "$rel に BLOCKED が無い"
+  grep -q -- '独立' "$path" || ng "$rel に 独立 が無い"
+done
+
+for rel in claude/commands/orchestrate.md opencode/commands/orchestrate.md agents/skills/orchestrate/SKILL.md; do
+  path=$(readonly_path "$rel")
+  [[ -f $path ]] || { ng "orchestrator が無い: $rel"; continue; }
+  grep -q -- 'BLOCKED' "$path" || ng "$rel に BLOCKED が無い"
+done
+
+for rel in claude/commands/deploy.md opencode/agents/deploy.md agents/skills/deploy/SKILL.md; do
+  path=$(readonly_path "$rel")
+  [[ -f $path ]] || { ng "定義が無い: $rel"; continue; }
+  grep -q -- 'BLOCKED' "$path" || ng "$rel に BLOCKED が無い"
+done
+
+for token in 'BLOCKED' '@level' 'skip:' 'Attention'; do
+  grep -qF -- "$token" "$(readonly_path "$contract")" ||
+    ng "$contract に '$token' の記述が無い"
+done
+
+for token in '--thinking' '--effort' 'model_reasoning_effort' 'ignores @'; do
+  grep -qF -- "$token" "$(readonly_path "$dispatcher")" ||
+    ng "$dispatcher に '$token' の記述が無い"
+done
+
+# P0 wiring: keep the normal-mode independent-review routes.
+check_tokens() {
+  local rel=$1
+  shift
+  for token in "$@"; do
+    grep -qF -- "$token" "$(readonly_path "$rel")" || ng "$rel に '$token' の記述が無い"
+  done
+}
+check_tokens claude/commands/orchestrate.md '利用AI: claude/' '--label=claude/opus' 'Skill（opus）'
+check_tokens claude/commands/team-review.md 'REVIEWER' 'INDEPENDENT'
+check_tokens opencode/commands/orchestrate.md 'phase-run.sh --phase=team-review' '--fallback=pi:ollama-cloud/kimi-k3'
+check_tokens agents/skills/team-review/SKILL.md 'モデル部分' '実装者の `利用AI:` に `/` が無い' '`--label` に `/` が無い'
+check_tokens docs/phase-contract.md '実装者の `利用AI:` に `/` が無い' '解決済みラベル'
+check_tokens claude/commands/team-review.md '実装者の `利用AI:` に `/` が無い'
+check_tokens opencode/agents/team-review.md '`--label` に `/` が無い' '実装者の `利用AI:` に `/` が無い'
+check_tokens agents/skills/orchestrate/SKILL.md '解決済みラベル'
+
 if [[ $fail -eq 0 ]]; then
   ok "phase parity (${PHASES[*]}) / 3 系統 / orchestrator 3 本 / phase-run.sh"
   exit 0

@@ -20,10 +20,11 @@ Usage: phase-run.sh --phase={phase} --task-file={TASK_FILE} [options]
   --task-file=        path to the TASK_FILE (required; may live outside the repo)
   --repo=DIR          repository (or worktree) the phase works on
                       (default: $PWD). TASK_FILE paths are never used to guess it.
-  --runner=SPEC       claude[:model] | opencode2[:model] | opencode[:model]
-                      | pi[:model] | codex[:model] | cline[:model] | auto
-                      auto = ~/.claude/scripts/ai-fallback.sh (model + engine chain)
-  --phase-map=MAP     "startproject=claude:opus,team-review=pi:ollama-cloud/deepseek-v4.1-flash"
+  --runner=SPEC       claude[:model][@level] | opencode2[:model][@level] | opencode[:model][@level]
+                      | pi[:model][@level] | codex[:model][@level] | cline[:model][@level] | auto
+                      level = minimal|low|medium|high|xhigh|max
+                      auto = ~/.claude/scripts/ai-fallback.sh (model + engine chain; level 非対応)
+  --phase-map=MAP     "startproject=claude:opus,team-review=pi:ollama-cloud/deepseek-v4.1-flash@high"
                       (per-phase assignment; --runner wins for a single run)
   --fallback=LIST     runners to try when the chosen one fails
                       (default: claude:opus,opencode2,pi:ollama-cloud/deepseek-v4.1-flash,auto)
@@ -98,6 +99,25 @@ REPO_DIR=${REPO_ARG:-$PWD}
 [[ -n "$FALLBACK" ]] ||
   FALLBACK="claude:opus,opencode2,pi:ollama-cloud/deepseek-v4.1-flash,auto"
 
+LEVELS="minimal low medium high xhigh max"
+check_level() {
+  local spec=$1 level
+  [[ -n "$spec" && "$spec" == *@* ]] || return 0
+  level=${spec##*@}
+  [[ -n "$level" ]] || die "unknown @level: (empty) (minimal|low|medium|high|xhigh|max)"
+  case " $LEVELS " in
+    *" $level "*) ;;
+    *) die "unknown @level: $level (minimal|low|medium|high|xhigh|max)" ;;
+  esac
+}
+check_level "$RUNNER"
+for entry in ${PHASE_MAP//,/ }; do
+  [[ -n "$entry" ]] && check_level "${entry#*=}"
+done
+for entry in ${FALLBACK//,/ }; do
+  [[ -n "$entry" ]] && check_level "$entry"
+done
+
 # Phase definitions live in the harness checkout (agents/skills) — the same
 # place orchestrate STEP 3P reads them from.
 if [[ -z "${HARNESS:-}" ]]; then
@@ -132,8 +152,24 @@ map_runner() {
   done
 }
 
-spec_cli() { printf '%s' "${1%%:*}"; }
-spec_model() { [[ "$1" == *:* ]] && printf '%s' "${1#*:}"; return 0; }
+spec_cli() { # cli without the trailing @level
+  local spec=$1 cli
+  cli=${spec%%:*}
+  [[ "$cli" == *@* ]] && cli=${cli%@*}
+  printf '%s' "$cli"
+}
+spec_model() { # model without the trailing @level
+  local spec=$1 m
+  [[ "$spec" == *:* ]] || return 0
+  m=${spec#*:}
+  [[ "$m" == *@* ]] && m=${m%@*}
+  printf '%s' "$m"
+}
+spec_level() { # trailing @level or empty
+  local spec=$1
+  [[ "$spec" == *@* ]] || return 0
+  printf '%s' "${spec##*@}"
+}
 
 spec_label() {
   local model
@@ -170,16 +206,18 @@ EOF
 
 build_cmd() { # spec prompt tmpdir -> fills global CMD
   local spec=$1 prompt=$2 tmp=$3
-  local cli model
+  local cli model level
   cli=$(spec_cli "$spec")
   model=$(spec_model "$spec")
+  level=$(spec_level "$spec")
   CMD=()
   case "$cli" in
     claude)
       # --allowedTools is variadic: the "=" form keeps the prompt from being
       # swallowed as another tool name.
-      CMD=(claude -p --model "${model:-opus}" --permission-mode auto
-        "--allowedTools=$CLAUDE_TOOLS" "$prompt")
+      CMD=(claude -p --model "${model:-opus}")
+      [[ -n "$level" ]] && CMD+=(--effort "$level")
+      CMD+=(--permission-mode auto "--allowedTools=$CLAUDE_TOOLS" "$prompt")
       ;;
     opencode2)
       CMD=(opencode2 run --standalone --agent build --auto)
@@ -194,6 +232,7 @@ build_cmd() { # spec prompt tmpdir -> fills global CMD
     pi)
       CMD=(pi -p --no-session)
       [[ -n "$model" ]] && CMD+=(--model "$model")
+      [[ -n "$level" ]] && CMD+=(--thinking "$level")
       CMD+=("$prompt")
       ;;
     codex)
@@ -201,6 +240,7 @@ build_cmd() { # spec prompt tmpdir -> fills global CMD
         -c "sandbox_workspace_write.writable_roots=[\"$REPO/.git\"]"
         -o "$tmp/last.md")
       [[ -n "$model" ]] && CMD+=(-m "$model")
+      [[ -n "$level" ]] && CMD+=(-c "model_reasoning_effort=$level")
       CMD+=("$prompt")
       ;;
     cline)
@@ -214,6 +254,13 @@ build_cmd() { # spec prompt tmpdir -> fills global CMD
       ;;
     *) return 1 ;;
   esac
+  if [[ -n "$level" ]]; then
+    case "$cli" in
+      opencode2|opencode|cline|auto)
+        printf 'phase-run: %s ignores @%s\n' "$cli" "$level" >&2
+        ;;
+    esac
+  fi
 }
 
 tmpdir=$(mktemp -d) || { echo "phase-run: mktemp failed" >&2; exit 1; }

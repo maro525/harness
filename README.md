@@ -140,7 +140,7 @@ herdr agent rename "$HERDR_PANE_ID" boss-myrepo
 ```bash
 # 1 フェーズだけ別 CLI で
 ~/.claude/scripts/phase-run.sh --phase=team-review --task-file=~/.local/share/harness/tasks/{repo}/task-X.md \
-  --runner=pi:ollama-cloud/deepseek-v4.1-flash
+  --runner=pi:ollama-cloud/deepseek-v4.1-flash@high
 
 # タスク全体の割り当てを決める（--phase-map）
 ~/.claude/scripts/phase-run.sh --phase=team-implement --task-file=~/.local/share/harness/tasks/{repo}/task-X.md \

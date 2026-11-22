@@ -102,13 +102,13 @@ $ARGUMENTS
 
 | tier | STEP 3 startproject | STEP 4 team-implement | STEP 5 team-review | STEP 6 deploy |
 |---|---|---|---|---|
-| S | 起動しない（orchestrate が計画する。STEP 3 の「tier=S」） | Agent・`sonnet` | Agent・`sonnet` | Skill（haiku） |
+| S | 起動しない（orchestrate が計画する。STEP 3 の「tier=S」） | Agent・`sonnet` | Skill（opus） | Skill（haiku） |
 | M | Skill（best） | Agent・`opus` | Skill（opus） | Skill（haiku） |
 | L | Skill（best） | Skill（best） | Skill（opus） | Skill（haiku） |
 
 - **Skill:** `/{phase} "{引数}"` で呼ぶ。モデルは command の frontmatter の `model:` で決まり、呼び出し側からは変えられない
 - **Agent:** frontmatter と違うモデルで動かすときに使う。Agent ツールに command 定義を読ませて起動する（下記）。`best` は Agent の `model` に指定できないので、`best` を使うフェーズは Skill で呼ぶ
-- Agent で起動したフェーズはサブエージェントを使わない（team-implement の S / M、team-review の S はどれも自分で作業する体制）。Agent の中でさらに Agent が使えるかは確認していないため、Agent 経由に移すフェーズを増やすときは、その command の体制が Agent ツールを使わないことを先に確かめる
+- Agent で起動したフェーズはサブエージェントを使わない（team-implement の S / M はどれも自分で作業する体制）。Agent の中でさらに Agent が使えるかは確認していないため、Agent 経由に移すフェーズを増やすときは、その command の体制が Agent ツールを使わないことを先に確かめる
 - Agent も Skill と同じく、完了通知で返却を受け取るまで次の手順に進まない
 
 ```
@@ -497,6 +497,8 @@ team-implement はコードと git 操作のみ行い、`IMPLEMENTATION_NOTES` /
 
 `{m}` は実装・レビューの回数（`## team-implement` の既存の最大 + 1。初回は `### 1回目`）。`{n}` は追加依頼の通し番号にだけ使う（STEP 3F）。
 
+**[MUST]** `### {m}回目` の直下（空行を挟まない）に `利用AI: claude/{model}` を書く（model は tier 表の implement モデル: S=`sonnet`、M=`opus`、L=`best`）。`### {m}回目` の直下に `利用AI:` 行が既にあれば重ねて書かない。
+
 **[MUST]** `LINEAR_COMMENT` の本文を `mcp__linear-server__save_comment` で LINEAR_ID に投稿する。
 
 **エスカレーション:** 返却に `ESCALATION` がある場合（team-implement が tier の引き上げで中断した）:
@@ -511,28 +513,34 @@ team-implement はコードと git 操作のみ行い、`IMPLEMENTATION_NOTES` /
 
 開始時に「状態管理」に従い TASK_FILE の `status` を `reviewing` に更新し、続けて「Linear の description 更新」を行う。
 
-起動方法は「tier 別のフェーズ構成」に従う（S は Agent・`sonnet`、M / L は下の Skill）。
+起動方法は「tier 別のフェーズ構成」に従う（S / M / L とも Skill・`opus`。S の review は Agent を使わない）。
 
 ```
-/team-review "{task description} --tier={tier} --task-file={TASK_FILE} --linear-id={LINEAR_ID}"
+/team-review "{task description} --tier={tier} --task-file={TASK_FILE} --linear-id={LINEAR_ID} --label=claude/opus"
 ```
 
-team-review は `VERDICT` / `REVIEW` / `LINEAR_COMMENT` を返してくる。
+team-review は `VERDICT` / `REVIEW` / `REVIEWER` / `INDEPENDENT` / `LINEAR_COMMENT` を返してくる。
 
 **[MUST]** 返却内容を TASK_FILE に書き込む:
 
 | OUTPUT セクション | 書き込み先 |
 |---|---|
 | `REVIEW` | `## team-review` に `### {m}回目` として追記 |
-| `VERDICT` | `### {m}回目` の直下に `**VERDICT: PASS**` / `**VERDICT: FAIL**` の 1 行（kanban が Gate 2 差し戻しの判定に使う。`REVIEW` 本文にこの行が含まれていれば重ねて書かない） |
+| `VERDICT` | `### {m}回目` の直下に `**VERDICT: PASS**` / `**VERDICT: FAIL**` / `**VERDICT: BLOCKED**` の 1 行（kanban が Gate 2 差し戻しの判定に使う。`REVIEW` 本文にこの行が含まれていれば重ねて書かない） |
+
+**[MUST]** `### {m}回目` の直下（空行を挟まない）に `利用AI: claude/opus` を書く（`### {m}回目` の直下に `利用AI:` 行が既にあれば重ねて書かない。`REVIEW` 本文中の `##### OpenCode Reviewer` の `利用AI:` は数えない）。
+
+`REVIEWER` と `INDEPENDENT` を控え、STEP 7 の `reviewed by` に使う（`INDEPENDENT` が `no` なら独立レビュー未実施として扱う）。
 
 **FAIL の場合も必ず書き込む**（差し戻し履歴を残すため）。Gate 2 で STEP 4 に戻ったら、次の実装・レビューは m+1 回目として追記する（上書きしない）。
 
 **[MUST]** `LINEAR_COMMENT` の本文を `mcp__linear-server__save_comment` で LINEAR_ID に投稿する。
 
-**Gate 2:** `VERDICT` が `PASS` なら即 STEP 6 へ。`FAIL` ならユーザーに報告し、team-implement に戻るかを「質問の中継」で確認する（phase 名 `gate2`。指摘の要約と選択肢「1. 差し戻して直す / 2. ここで止める」を質問に書く）。報告の前に **[MUST]** 「状態管理」の「Linear の description 更新」を行う（`status` は `reviewing` のままで、フェーズ欄が「レビュー差し戻し（判断待ち）」になる）。
+**Gate 2:** `VERDICT` が `PASS` なら即 STEP 6 へ。`BLOCKED` ならユーザーに報告して停止する（Gate 2 の選択肢にしない。deploy しない。TASK_FILE の判定行は書いてあるので、それ以上は書き足さない）。`FAIL` ならユーザーに報告し、team-implement に戻るかを「質問の中継」で確認する（phase 名 `gate2`。指摘の要約と選択肢「1. 差し戻して直す / 2. ここで止める」を質問に書く）。報告の前に **[MUST]** 「状態管理」の「Linear の description 更新」を行う（`status` は `reviewing` のままで、フェーズ欄が「レビュー差し戻し（判断待ち）」になる）。
 
 ## STEP 6: deploy を実行
+
+`## team-review` の直近 verdict が `PASS` でなければ中止する（`BLOCKED` / `FAIL` / 欠落）。deploy しない。
 
 開始時に「状態管理」に従い TASK_FILE の `status` を `deploying` に更新し、続けて「Linear の description 更新」を行う。
 
@@ -601,7 +609,13 @@ deploy はコミット・push・PR / MR 作成（既存の PR / MR があれば�
 ### 質問
 - {phase}: {質問の要旨} → {回答の要旨}（{Linear | ターミナル}{Linear なら返信 URL}）
 - ログ: .claude/logs/ask-{LINEAR_ID}-….md
+
+### Attention
+- {要確認・未検証の事項}
+- reviewed by {team-review の REVIEWER}（無ければ `reviewed by なし（独立レビュー未実施）`）
 ```
+
+報告の事実には `（実測）` / `（推定）` / `（推測）` を付ける（実測 = 実行・計測した値、推定 = 根拠のある計算、推測 = 根拠の無い見立て）。
 
 「### 質問」は質問しなかったら「なし」の 1 行にする。Gate 1 を中継で聞いた場合は startproject 行の Gate 1 にも経路を添える（例: `Gate 1: approved（Linear）`）。
 

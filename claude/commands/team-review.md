@@ -20,6 +20,17 @@ $ARGUMENTS
 
 **TASK_FILE への書き込みと Linear への投稿は行わない。** 結果は OUTPUT フォーマットで呼び出し元（`/orchestrate` STEP 5）に返し、TASK_FILE の更新・Linear コメント投稿は呼び出し元が行う。TASK_FILE は Read のみ。
 
+### 独立レビュー（必須）
+
+PASS を出すには、実装者と別モデルの独立レビューが取れている必要がある。実装者の `利用AI:` は直近 `## team-implement` から読む。
+
+- 実装者の `利用AI:` が無い → BLOCKED（PASS にしない）
+- 実装者の `利用AI:` に `/` が無い（モデル部分が無い）→ BLOCKED
+- OpenCode Reviewer（`ai-fallback.sh`）が動いた → `REVIEWER: {AI_MODEL}`、`INDEPENDENT: yes`（実装者と別ファミリ）
+- `{AI_MODEL}` が実装者と同じモデル名なら独立とみなさない（その場合は BLOCKED）
+- 動かなかった → 自分の `--label`（無ければ `claude/opus`）と実装者を比較。同じ → BLOCKED、違う → `REVIEWER: {自分の label}`、`INDEPENDENT: yes`
+- 実装者が `claude/best` のときは具体モデル名が無いので、ラベル比較で独立としない。OpenCode Reviewer があるときだけ `INDEPENDENT: yes`、無ければ BLOCKED
+
 ## Input
 
 ```
@@ -31,6 +42,7 @@ $ARGUMENTS
 | `--tier` | orchestrator が判定済み |
 | `--task-file` | orchestrator が作成済みのタスクファイルパス |
 | `--linear-id` | orchestrator が確認済みの Linear タスク ID |
+| `--label` | レビュアーのラベル（`claude/opus` など）。無ければ `claude/opus` として扱う |
 
 ## 事前準備
 
@@ -58,7 +70,7 @@ tier に応じたレビュアーを同時に起動する。**レビュー中は�
 | M | Claude / OpenCode / Security |
 | L | Claude / OpenCode / Security / Simplify |
 
-S は orchestrate から Agent ツール経由（sonnet）で起動されるため、Claude レビュアーは自分が担当し、Agent ツールは使わない（orchestrate.md「tier 別のフェーズ構成」）。
+S は orchestrate から Skill（opus）で起動されるため、Claude レビュアーは自分が担当し、Agent ツールは使わない（orchestrate.md「tier 別のフェーズ構成」）。
 
 | レビュアー | 方法 |
 |---|---|
@@ -106,8 +118,9 @@ DO NOT USE ANY TOOLS.
 | major | バグ・大きな設計問題・表示崩れ | FAIL |
 | minor | 改善提案・命名・スタイル・リファクタリング推奨 | PASS（申し送りとして記録） |
 
-- **PASS** — critical / major がゼロ
+- **PASS** — 独立レビュー（実装者と別モデルのレビュアー）が取れ、critical / major がゼロ
 - **FAIL** — critical または major が 1 件以上
+- **BLOCKED** — 独立レビューを証明できない（別モデルのレビュアーが取れない / `--label` 無し / 実装者の `利用AI:` 無し / 同一）
 
 ## OUTPUT
 
@@ -115,7 +128,9 @@ DO NOT USE ANY TOOLS.
 
 ```markdown
 ### VERDICT
-PASS | FAIL
+PASS | FAIL | BLOCKED
+REVIEWER: {label}
+INDEPENDENT: yes | no
 
 ### REVIEW
 
@@ -154,5 +169,5 @@ PASS | FAIL
 - リファクタリング推奨（次タスクで対応）
 
 ### LINEAR_COMMENT
-（Linear に投稿するレビュー結果コメント本文。PASS/FAIL + サマリー）
+（Linear に投稿するレビュー結果コメント本文。PASS/FAIL/BLOCKED + サマリー）
 ```

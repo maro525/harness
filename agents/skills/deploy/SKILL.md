@@ -59,7 +59,7 @@ git remote get-url origin        # github.com → gh / それ以外の GitLab（
 
 開始前に必ず TASK_FILE の以下を読む。
 
-1. `## team-review` の最新回 — `#### 判定` が **PASS でなければ中止**して報告する（PR は作らない）。申し送り事項は PR 本文に使う
+1. `## team-review` の最新回 — 直近 verdict（`#### 判定` / `**VERDICT:**`）が **PASS でなければ中止**して報告する（`BLOCKED` / `FAIL` / 欠落。PR は作らない）。申し送り事項は PR 本文に使う
 2. `## Meta` の `branch:` / `base:` — push する作業ブランチと、その分岐元。**`branch:` が空なら中止**して報告する
 3. `## team-implement` — PR 本文とコミットメッセージに書く変更内容（新規作成なら全回。追加 push なら `#### 追加依頼 {n}` の「扱い」行に書いた開始回から最新回まで全回。差し戻しがあると追加依頼の本体は最新回より前の回にあるため、最新回だけ読まない）
 4. `## deploy` の `PR/MR:` — 既存 PR / MR の URL（あれば追加 push）

@@ -339,19 +339,29 @@ team-implement が `ESCALATION: {新しい tier}: {理由}` を返した場合�
 
 開始時に「状態管理」に従い TASK_FILE の `status` を `reviewing` に更新し、続けて「Linear の description 更新」を行う。
 
-```
-@team-review "{task description} --tier={tier} --task-file={TASK_FILE} --linear-id={LINEAR_ID} --label=opencode/{agent の frontmatter model}"
+team-review は implement と同じモデル（`opencode/{agent の frontmatter model}`）でしか動かないので、`@team-review` ではなく `~/.claude/scripts/phase-run.sh` で**別モデルを指定**して独立レビューを取る。
+
+```bash
+~/.claude/scripts/phase-run.sh --phase=team-review --task-file={TASK_FILE} \
+  --tier={tier} --linear-id={LINEAR_ID} --runner=claude:opus \
+  --fallback=pi:ollama-cloud/kimi-k3
 ```
 
-team-review は TASK_FILE の `## team-review` に `### {m}回目` として追記する（FAIL の場合も必ず書き込む）。Gate 2 で STEP 4 に戻ったら、次の実装・レビューは m+1 回目として追記する（上書きしない）。
+- `claude:opus` が使えない環境では `--runner=pi:ollama-cloud/kimi-k3`（別ファミリ）。どちらも使えなければ BLOCKED
+- **`--fallback` を省略しない**（既定連鎖はモデル無しの `opencode2` に落ちることがあり、その label では独立を証明できない → BLOCKED）
+- 結果は STEP 3P P3 と同じ扱い: 節が書かれていればそれを使い、`### RESULT` の `verdict` / `reviewer` / `independent` を読む。`written: no` なら `### SECTION` を `## team-review` に書く。`利用AI:` が無ければ phase-run の label で足す
+- phase-run の label が implement と同じ（`opencode/ollama-cloud/deepseek-v4.1-flash`）なら BLOCKED（推測で PASS にしない）
 
 **Gate 2:**
 - PASS → 即 STEP 6
+- BLOCKED → ユーザーに報告して停止する（Gate 2 の選択肢にしない。deploy しない）
 - FAIL → ユーザーに報告し、「質問の中継」で判断を聞く（phase 名 `gate2`。STEP 4 に戻る場合は `status` を `implementing` に戻す）。報告の前に「Linear の description 更新」を行う（`status` は `reviewing` のまま、フェーズ欄が「レビュー差し戻し（判断待ち）」になる）
 
 ---
 
 ## STEP 6: deploy を実行
+
+`## team-review` の直近 verdict が `PASS` でなければ中止する（`BLOCKED` / `FAIL` / 欠落）。deploy しない。
 
 開始時に「状態管理」に従い TASK_FILE の `status` を `deploying` に更新し、続けて「Linear の description 更新」を行う。
 
@@ -404,7 +414,13 @@ TASK_FILE はリポジトリ外にあるので **git の操作は何もしない
 ### 質問
 - {phase}: {質問の要旨} → {回答の要旨}（{Linear | ターミナル}）
 - ログ: .claude/logs/ask-{LINEAR_ID}-….md
+
+### Attention
+- {要確認・未検証の事項}
+- reviewed by {team-review の reviewer}（無ければ `reviewed by なし（独立レビュー未実施）`）
 ```
+
+報告の事実には `（実測）` / `（推定）` / `（推測）` を付ける（実測 = 実行・計測した値、推定 = 根拠のある計算、推測 = 根拠の無い見立て）。
 
 「### 質問」は質問しなかったら「なし」の 1 行にする。
 
