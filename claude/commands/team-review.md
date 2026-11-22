@@ -20,6 +20,14 @@ $ARGUMENTS
 
 **TASK_FILE への書き込みと Linear への投稿は行わない。** 結果は OUTPUT フォーマットで呼び出し元（`/orchestrate` STEP 5）に返し、TASK_FILE の更新・Linear コメント投稿は呼び出し元が行う。TASK_FILE は Read のみ。
 
+### 独立レビュー（必須）
+
+PASS を出すには、並列レビュアーのうち**少なくとも 1 体を実装者と別のモデル**にする（Agent の `model` を指定できる場合）。実装者の `利用AI:` は直近 `## team-implement` から読む。
+
+- 別モデルのレビュアーが取れない / Agent の `model` を指定できない → `BLOCKED`（PASS にしない）
+- 取れたら、そのレビュアーのラベルを `reviewer:` に、`independent: yes` を返す
+- `--label` が無い / 実装者の `利用AI:` が無い / 同一 → 独立を証明できない
+
 ## Input
 
 ```
@@ -106,8 +114,9 @@ DO NOT USE ANY TOOLS.
 | major | バグ・大きな設計問題・表示崩れ | FAIL |
 | minor | 改善提案・命名・スタイル・リファクタリング推奨 | PASS（申し送りとして記録） |
 
-- **PASS** — critical / major がゼロ
+- **PASS** — 独立レビュー（実装者と別モデルのレビュアー）が取れ、critical / major がゼロ
 - **FAIL** — critical または major が 1 件以上
+- **BLOCKED** — 独立レビューを証明できない（別モデルのレビュアーが取れない / `--label` 無し / 実装者の `利用AI:` 無し / 同一）
 
 ## OUTPUT
 
@@ -115,7 +124,9 @@ DO NOT USE ANY TOOLS.
 
 ```markdown
 ### VERDICT
-PASS | FAIL
+PASS | FAIL | BLOCKED
+reviewer: {label}
+independent: yes | no
 
 ### REVIEW
 
@@ -154,5 +165,5 @@ PASS | FAIL
 - リファクタリング推奨（次タスクで対応）
 
 ### LINEAR_COMMENT
-（Linear に投稿するレビュー結果コメント本文。PASS/FAIL + サマリー）
+（Linear に投稿するレビュー結果コメント本文。PASS/FAIL/BLOCKED + サマリー）
 ```
