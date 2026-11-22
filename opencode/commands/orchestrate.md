@@ -347,11 +347,14 @@ team-review は TASK_FILE の `## team-review` に `### {m}回目` として追�
 
 **Gate 2:**
 - PASS → 即 STEP 6
+- BLOCKED → ユーザーに報告して停止する（Gate 2 の選択肢にしない。deploy しない）
 - FAIL → ユーザーに報告し、「質問の中継」で判断を聞く（phase 名 `gate2`。STEP 4 に戻る場合は `status` を `implementing` に戻す）。報告の前に「Linear の description 更新」を行う（`status` は `reviewing` のまま、フェーズ欄が「レビュー差し戻し（判断待ち）」になる）
 
 ---
 
 ## STEP 6: deploy を実行
+
+`## team-review` の直近 verdict が `PASS` でなければ中止する（`BLOCKED` / `FAIL` / 欠落）。deploy しない。
 
 開始時に「状態管理」に従い TASK_FILE の `status` を `deploying` に更新し、続けて「Linear の description 更新」を行う。
 
@@ -404,7 +407,13 @@ TASK_FILE はリポジトリ外にあるので **git の操作は何もしない
 ### 質問
 - {phase}: {質問の要旨} → {回答の要旨}（{Linear | ターミナル}）
 - ログ: .claude/logs/ask-{LINEAR_ID}-….md
+
+### Attention
+- {要確認・未検証の事項}
+- reviewed by {team-review の reviewer}（無ければ `reviewed by なし（独立レビュー未実施）`）
 ```
+
+報告の事実には `（実測）` / `（推定）` / `（推測）` を付ける（実測 = 実行・計測した値、推定 = 根拠のある計算、推測 = 根拠の無い見立て）。
 
 「### 質問」は質問しなかったら「なし」の 1 行にする。
 

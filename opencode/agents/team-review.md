@@ -13,6 +13,13 @@ permission:
 
 レビューフェーズを担当。
 
+### 独立レビュー（必須）
+
+PASS を出すには、直近 `## team-implement` の `利用AI:` と**異なる**モデルでレビューする（独立）。OpenCode は呼び出しごとのモデル指定が弱いので、同一モデルでしか回せない場合は BLOCKED にする。
+
+- 実装者の `利用AI:` と異なるモデルでレビューできた場合だけ `independent: yes`、`reviewer:` にそのラベルを書く
+- 同一モデル / 実装者の `利用AI:` が無い / `--label` が無い → 独立を証明できない → BLOCKED（理由を書く）。PASS にしない
+
 ## Input
 
 ```
@@ -88,8 +95,9 @@ tier に応じたレビュアーを同時に起動する。**レビュー中は�
 | major    | バグ・大きな設計問題・表示崩れ | FAIL |
 | minor    | 改善提案・命名・リファクタ推奨 | PASS（申し送り） |
 
-- **PASS** — critical / major がゼロ
-- **FAIL** — critical または major が1件以上
+- **PASS** — 独立レビューが取れ、critical / major がゼロ
+- **FAIL** — critical または major が 1 件以上
+- **BLOCKED** — 独立レビューを証明できない（同一モデル / 実装者の `利用AI:` 無し / `--label` 無し）
 
 ---
 
@@ -102,7 +110,9 @@ TASK_FILE の `## team-review` に `### {m}回目` として追記する（FAIL 
 
 ### {m}回目
 
-#### 判定: PASS / FAIL
+#### 判定: PASS / FAIL / BLOCKED
+reviewer: {label | なし}
+independent: yes | no
 
 #### コードレビュー統合結果
 
@@ -138,5 +148,5 @@ TASK_FILE の `## team-review` に `### {m}回目` として追記する（FAIL 
 - リファクタ推奨（次タスクで対応）
 ```
 
-**[MUST]** Linear MCP `save_comment` で PASS/FAIL + サマリー投稿。
+**[MUST]** Linear MCP `save_comment` で PASS/FAIL/BLOCKED + サマリー投稿。
 

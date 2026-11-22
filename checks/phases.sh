@@ -175,6 +175,25 @@ for rel in claude/commands/orchestrate.md opencode/commands/orchestrate.md agent
 done
 
 # --- 10: poteto first batch --------------------------------------------------
+for rel in claude/commands/team-review.md opencode/agents/team-review.md agents/skills/team-review/SKILL.md; do
+  path=$(readonly_path "$rel")
+  [[ -f $path ]] || { ng "定義が無い: $rel"; continue; }
+  grep -q -- 'BLOCKED' "$path" || ng "$rel に BLOCKED が無い"
+  grep -q -- '独立' "$path" || ng "$rel に 独立 が無い"
+done
+
+for rel in claude/commands/orchestrate.md opencode/commands/orchestrate.md agents/skills/orchestrate/SKILL.md; do
+  path=$(readonly_path "$rel")
+  [[ -f $path ]] || { ng "orchestrator が無い: $rel"; continue; }
+  grep -q -- 'BLOCKED' "$path" || ng "$rel に BLOCKED が無い"
+done
+
+for rel in claude/commands/deploy.md opencode/agents/deploy.md agents/skills/deploy/SKILL.md; do
+  path=$(readonly_path "$rel")
+  [[ -f $path ]] || { ng "定義が無い: $rel"; continue; }
+  grep -q -- 'BLOCKED' "$path" || ng "$rel に BLOCKED が無い"
+done
+
 for token in 'BLOCKED' '@level' 'skip:' 'Attention'; do
   grep -qF -- "$token" "$(readonly_path "$contract")" ||
     ng "$contract に '$token' の記述が無い"
