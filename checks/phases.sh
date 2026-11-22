@@ -174,6 +174,12 @@ for rel in claude/commands/orchestrate.md opencode/commands/orchestrate.md agent
   fi
 done
 
+# --- 10: poteto first batch --------------------------------------------------
+for token in 'BLOCKED' '@level' 'skip:' 'Attention'; do
+  grep -qF -- "$token" "$(readonly_path "$contract")" ||
+    ng "$contract に '$token' の記述が無い"
+done
+
 if [[ $fail -eq 0 ]]; then
   ok "phase parity (${PHASES[*]}) / 3 系統 / orchestrator 3 本 / phase-run.sh"
   exit 0
