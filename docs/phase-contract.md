@@ -59,9 +59,6 @@ linear: posted|skipped|unavailable
 
 - Claude 版（`context: fork`）は従来どおり OUTPUT を返し、orchestrator が TASK_FILE に書く（`written: no` 相当）
 - 汎用版（`agents/skills/*`）は自分で書き、`written: yes` を返す。サンドボックス等で書けなかったときだけ `### SECTION` を orchestrator が代筆する
-- 報告の事実には `（実測）` / `（推定）` / `（推測）` を付ける（実測 = 実行・計測した値、推定 = 根拠のある計算、推測 = 根拠の無い見立て）
-- 報告の末尾に `### Attention` を置き、要確認・未検証の事項を書く
-- 末尾に `reviewed by {label}` を書く（独立レビューが無ければ `reviewed by なし（独立レビュー未実施）`）
 
 ## 4. 質問（Gate 1 / 確認）— 非対話でも止まらない
 
@@ -136,3 +133,11 @@ team-review の PASS は、直近 `## team-implement` の `利用AI:` と**異�
 - `@level` の受け渡し: `pi` → `--thinking`、`claude` → `--effort`、`codex` → `model_reasoning_effort`。`opencode2` / `opencode` / `cline` / `auto` は `phase-run: {runner} ignores @{level}` を出して無視する
 
 **`--runner=claude` は Claude Code を汎用 CLI として起動し、`agents/skills/{phase}/SKILL.md` を読ませる**（`claude/commands/{phase}.md` は使わない）。したがって Claude 版固有の並列レビュアー・`context: fork` の frontmatter モデルは効かず、観点は汎用定義どおり順次になる。Claude 版のフル機能が要るときは Claude セッション内で `/team-review` 等を直接使う（混在の対象外）。
+
+### orchestrator の報告
+
+orchestrator の完了報告（STEP 7）には次を付ける。
+
+- 報告の事実には `（実測）` / `（推定）` / `（推測）` を付ける（実測 = 実行・計測した値、推定 = 根拠のある計算、推測 = 根拠の無い見立て）
+- 報告の末尾に `### Attention` を置き、要確認・未検証の事項を書く
+- 末尾に `reviewed by {label}` を書く（独立レビューが無ければ `reviewed by なし（独立レビュー未実施）`）

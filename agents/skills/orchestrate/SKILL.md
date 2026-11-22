@@ -234,9 +234,9 @@ Linear が使えるなら、この時点で**「実行開始」コメントを 1
 
 | tier | startproject | team-implement | team-review | deploy |
 |---|---|---|---|---|
-| S | 起動しない（自分で計画） | `--runner=auto` | `--runner=auto` | `--runner=auto` |
-| M | `--runner=auto` | `--runner=auto` | `--runner=auto` | `--runner=auto` |
-| L | `--runner=auto`（リサーチ併用） | `--runner=auto` | `--runner=auto` | `--runner=auto` |
+| S | 起動しない（自分で計画） | `--runner=auto` | 実装者と別（STEP 5 で選ぶ） | `--runner=auto` |
+| M | `--runner=auto` | `--runner=auto` | 実装者と別（STEP 5 で選ぶ） | `--runner=auto` |
+| L | `--runner=auto`（リサーチ併用） | `--runner=auto` | 実装者と別（STEP 5 で選ぶ） | `--runner=auto` |
 
 `--phase-map` が渡されたら全フェーズでそれを優先する（例: `--phase-map="startproject=claude:opus,team-implement=pi:ollama-cloud/deepseek-v4.1-flash,team-review=codex:gpt-6-sol,deploy=claude:haiku"`）。
 
@@ -273,7 +273,12 @@ Linear が使えるなら、この時点で**「実行開始」コメントを 1
 
 ## STEP 5: team-review
 
-`status:` を `reviewing` に更新してから起動する。**team-review は team-implement と別のモデルで起動する**（`--runner` / `--phase-map`）。同一モデルになるならその旨を報告し、BLOCKED を想定する。
+`status:` を `reviewing` に更新してから起動する。**team-review は team-implement と別のモデルで起動する**（独立レビュー）。選び方は下のとおり。
+
+- STEP 4 で控えた実装者の `利用AI:`（LABEL）を読む
+- `--phase-map` が渡されていればそれを優先する
+- 無ければ LABEL と違う runner を選ぶ（例: `claude/*` → `--runner=pi:ollama-cloud/deepseek-v4.1-flash`、`pi/*` → `--runner=claude:opus`、`opencode2/*` / `opencode/*` → `--runner=pi:ollama-cloud/deepseek-v4.1-flash`）
+- 選んだ runner が失敗して fallback で実装者と同じ label になったら BLOCKED を想定する（推測で PASS にしない）
 
 ```bash
 ~/.claude/scripts/phase-run.sh --phase=team-review --task-file={TASK_FILE} \

@@ -16,8 +16,6 @@ metadata:
 
 このスキルは Deploy Workflow のみを持つ。単発の git 操作（アドホックなコミット・ブランチ操作）には使わない。
 
-**ガード:** TASK_FILE の `## team-review` 直近 verdict が `PASS` でなければ中止して報告する（`BLOCKED: independent review` または `verdict is not PASS`。記録のコミットだけを行う場合は対象外）。
-
 ## Input
 
 ```

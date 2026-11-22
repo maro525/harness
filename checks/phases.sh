@@ -174,7 +174,7 @@ for rel in claude/commands/orchestrate.md opencode/commands/orchestrate.md agent
   fi
 done
 
-# --- 10: poteto first batch --------------------------------------------------
+# --- poteto first batch ------------------------------------------------------
 for rel in claude/commands/team-review.md opencode/agents/team-review.md agents/skills/team-review/SKILL.md; do
   path=$(readonly_path "$rel")
   [[ -f $path ]] || { ng "定義が無い: $rel"; continue; }
