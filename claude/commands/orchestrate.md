@@ -102,13 +102,13 @@ $ARGUMENTS
 
 | tier | STEP 3 startproject | STEP 4 team-implement | STEP 5 team-review | STEP 6 deploy |
 |---|---|---|---|---|
-| S | 起動しない（orchestrate が計画する。STEP 3 の「tier=S」） | Agent・`sonnet` | Agent・`sonnet` | Skill（haiku） |
+| S | 起動しない（orchestrate が計画する。STEP 3 の「tier=S」） | Agent・`sonnet` | Skill（opus） | Skill（haiku） |
 | M | Skill（best） | Agent・`opus` | Skill（opus） | Skill（haiku） |
 | L | Skill（best） | Skill（best） | Skill（opus） | Skill（haiku） |
 
 - **Skill:** `/{phase} "{引数}"` で呼ぶ。モデルは command の frontmatter の `model:` で決まり、呼び出し側からは変えられない
 - **Agent:** frontmatter と違うモデルで動かすときに使う。Agent ツールに command 定義を読ませて起動する（下記）。`best` は Agent の `model` に指定できないので、`best` を使うフェーズは Skill で呼ぶ
-- Agent で起動したフェーズはサブエージェントを使わない（team-implement の S / M、team-review の S はどれも自分で作業する体制）。Agent の中でさらに Agent が使えるかは確認していないため、Agent 経由に移すフェーズを増やすときは、その command の体制が Agent ツールを使わないことを先に確かめる
+- Agent で起動したフェーズはサブエージェントを使わない（team-implement の S / M はどれも自分で作業する体制）。Agent の中でさらに Agent が使えるかは確認していないため、Agent 経由に移すフェーズを増やすときは、その command の体制が Agent ツールを使わないことを先に確かめる
 - Agent も Skill と同じく、完了通知で返却を受け取るまで次の手順に進まない
 
 ```
@@ -497,6 +497,8 @@ team-implement はコードと git 操作のみ行い、`IMPLEMENTATION_NOTES` /
 
 `{m}` は実装・レビューの回数（`## team-implement` の既存の最大 + 1。初回は `### 1回目`）。`{n}` は追加依頼の通し番号にだけ使う（STEP 3F）。
 
+**[MUST]** `### {m}回目` の直下（空行を挟まない）に `利用AI: claude/{model}` を書く（model は tier 表の implement モデル: S=`sonnet`、M=`opus`、L=`best`）。`IMPLEMENTATION_NOTES` 本文に `利用AI:` 行が既にあれば重ねて書かない。
+
 **[MUST]** `LINEAR_COMMENT` の本文を `mcp__linear-server__save_comment` で LINEAR_ID に投稿する。
 
 **エスカレーション:** 返却に `ESCALATION` がある場合（team-implement が tier の引き上げで中断した）:
@@ -511,13 +513,13 @@ team-implement はコードと git 操作のみ行い、`IMPLEMENTATION_NOTES` /
 
 開始時に「状態管理」に従い TASK_FILE の `status` を `reviewing` に更新し、続けて「Linear の description 更新」を行う。
 
-起動方法は「tier 別のフェーズ構成」に従う（S は Agent・`sonnet`、M / L は下の Skill）。
+起動方法は「tier 別のフェーズ構成」に従う（S / M / L とも Skill・`opus`。S の review は Agent を使わない）。
 
 ```
-/team-review "{task description} --tier={tier} --task-file={TASK_FILE} --linear-id={LINEAR_ID}"
+/team-review "{task description} --tier={tier} --task-file={TASK_FILE} --linear-id={LINEAR_ID} --label=claude/opus"
 ```
 
-team-review は `VERDICT` / `REVIEW` / `LINEAR_COMMENT` を返してくる。
+team-review は `VERDICT` / `REVIEW` / `REVIEWER` / `INDEPENDENT` / `LINEAR_COMMENT` を返してくる。
 
 **[MUST]** 返却内容を TASK_FILE に書き込む:
 
@@ -525,6 +527,10 @@ team-review は `VERDICT` / `REVIEW` / `LINEAR_COMMENT` を返してくる。
 |---|---|
 | `REVIEW` | `## team-review` に `### {m}回目` として追記 |
 | `VERDICT` | `### {m}回目` の直下に `**VERDICT: PASS**` / `**VERDICT: FAIL**` / `**VERDICT: BLOCKED**` の 1 行（kanban が Gate 2 差し戻しの判定に使う。`REVIEW` 本文にこの行が含まれていれば重ねて書かない） |
+
+**[MUST]** `### {m}回目` の直下（空行を挟まない）に `利用AI: claude/opus` を書く（`REVIEW` 本文に `利用AI:` 行が既にあれば重ねて書かない）。
+
+`REVIEWER` と `INDEPENDENT` を控え、STEP 7 の `reviewed by` に使う（`INDEPENDENT` が `no` なら独立レビュー未実施として扱う）。
 
 **FAIL の場合も必ず書き込む**（差し戻し履歴を残すため）。Gate 2 で STEP 4 に戻ったら、次の実装・レビューは m+1 回目として追記する（上書きしない）。
 
@@ -606,7 +612,7 @@ deploy はコミット・push・PR / MR 作成（既存の PR / MR があれば�
 
 ### Attention
 - {要確認・未検証の事項}
-- reviewed by {team-review の reviewer}（無ければ `reviewed by なし（独立レビュー未実施）`）
+- reviewed by {team-review の REVIEWER}（無ければ `reviewed by なし（独立レビュー未実施）`）
 ```
 
 報告の事実には `（実測）` / `（推定）` / `（推測）` を付ける（実測 = 実行・計測した値、推定 = 根拠のある計算、推測 = 根拠の無い見立て）。

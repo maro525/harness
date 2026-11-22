@@ -277,8 +277,9 @@ Linear が使えるなら、この時点で**「実行開始」コメントを 1
 
 - STEP 4 で控えた実装者の `利用AI:`（LABEL）を読む
 - `--phase-map` が渡されていればそれを優先する
-- 無ければ LABEL と違う runner を選ぶ（例: `claude/*` → `--runner=pi:ollama-cloud/deepseek-v4.1-flash`、`pi/*` → `--runner=claude:opus`、`opencode2/*` / `opencode/*` → `--runner=pi:ollama-cloud/deepseek-v4.1-flash`）
-- 選んだ runner が失敗して fallback で実装者と同じ label になったら BLOCKED を想定する（推測で PASS にしない）
+- 無ければ LABEL と違う runner を選ぶ（例: `claude/*` → `--runner=pi:ollama-cloud/kimi-k3`、`pi/*` → `--runner=claude:opus`、`opencode2/*` / `opencode/*` → `--runner=claude:opus`、`codex/*` / `cline/*` → `--runner=claude:opus`）
+- `auto/*` は phase-run の `MODEL=`（実際のモデル）を見て、別ファミリを選ぶ（実際が claude なら `--runner=pi:ollama-cloud/kimi-k3`、それ以外なら `--runner=claude:opus`）。**label の文字列だけで独立と判断しない**
+- 選んだ runner が全滅して同じモデルになったら BLOCKED（推測で PASS にしない）
 
 ```bash
 ~/.claude/scripts/phase-run.sh --phase=team-review --task-file={TASK_FILE} \

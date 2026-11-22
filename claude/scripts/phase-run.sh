@@ -104,6 +104,7 @@ check_level() {
   local spec=$1 level
   [[ -n "$spec" && "$spec" == *@* ]] || return 0
   level=${spec##*@}
+  [[ -n "$level" ]] || die "unknown @level: (empty) (minimal|low|medium|high|xhigh|max)"
   case " $LEVELS " in
     *" $level "*) ;;
     *) die "unknown @level: $level (minimal|low|medium|high|xhigh|max)" ;;

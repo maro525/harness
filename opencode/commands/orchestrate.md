@@ -339,11 +339,16 @@ team-implement が `ESCALATION: {新しい tier}: {理由}` を返した場合�
 
 開始時に「状態管理」に従い TASK_FILE の `status` を `reviewing` に更新し、続けて「Linear の description 更新」を行う。
 
-```
-@team-review "{task description} --tier={tier} --task-file={TASK_FILE} --linear-id={LINEAR_ID} --label=opencode/{agent の frontmatter model}"
+team-review は implement と同じモデル（`opencode/{agent の frontmatter model}`）でしか動かないので、`@team-review` ではなく `~/.claude/scripts/phase-run.sh` で**別モデルを指定**して独立レビューを取る。
+
+```bash
+~/.claude/scripts/phase-run.sh --phase=team-review --task-file={TASK_FILE} \
+  --tier={tier} --linear-id={LINEAR_ID} --runner=claude:opus
 ```
 
-team-review は TASK_FILE の `## team-review` に `### {m}回目` として追記する（FAIL の場合も必ず書き込む）。Gate 2 で STEP 4 に戻ったら、次の実装・レビューは m+1 回目として追記する（上書きしない）。
+- `claude:opus` が使えない環境では `--runner=pi:ollama-cloud/kimi-k3`（別ファミリ）。どちらも使えなければ BLOCKED
+- 結果は STEP 3P P3 と同じ扱い: 節が書かれていればそれを使い、`### RESULT` の `verdict` / `reviewer` / `independent` を読む。`written: no` なら `### SECTION` を `## team-review` に書く。`利用AI:` が無ければ phase-run の label で足す
+- phase-run の label が implement と同じ（`opencode/ollama-cloud/deepseek-v4.1-flash`）なら BLOCKED（推測で PASS にしない）
 
 **Gate 2:**
 - PASS → 即 STEP 6

@@ -22,11 +22,11 @@ $ARGUMENTS
 
 ### 独立レビュー（必須）
 
-PASS を出すには、並列レビュアーのうち**少なくとも 1 体を実装者と別のモデル**にする（Agent の `model` を指定できる場合）。実装者の `利用AI:` は直近 `## team-implement` から読む。
+PASS を出すには、実装者と別モデルの独立レビューが取れている必要がある。実装者の `利用AI:` は直近 `## team-implement` から読む。
 
-- 別モデルのレビュアーが取れない / Agent の `model` を指定できない → `BLOCKED`（PASS にしない）
-- 取れたら、そのレビュアーのラベルを `reviewer:` に、`independent: yes` を返す
-- `--label` が無い / 実装者の `利用AI:` が無い / 同一 → 独立を証明できない
+- 実装者の `利用AI:` が無い → BLOCKED（PASS にしない）
+- OpenCode Reviewer（`ai-fallback.sh`）が動いた → `REVIEWER: {AI_MODEL}`、`INDEPENDENT: yes`（実装者と別ファミリ）
+- 動かなかった → 自分の `--label`（無ければ `claude/opus`）と実装者を比較。同じ → BLOCKED、違う → `REVIEWER: {自分の label}`、`INDEPENDENT: yes`
 
 ## Input
 
@@ -39,6 +39,7 @@ PASS を出すには、並列レビュアーのうち**少なくとも 1 体を�
 | `--tier` | orchestrator が判定済み |
 | `--task-file` | orchestrator が作成済みのタスクファイルパス |
 | `--linear-id` | orchestrator が確認済みの Linear タスク ID |
+| `--label` | レビュアーのラベル（`claude/opus` など）。無ければ `claude/opus` として扱う |
 
 ## 事前準備
 
@@ -66,7 +67,7 @@ tier に応じたレビュアーを同時に起動する。**レビュー中は�
 | M | Claude / OpenCode / Security |
 | L | Claude / OpenCode / Security / Simplify |
 
-S は orchestrate から Agent ツール経由（sonnet）で起動されるため、Claude レビュアーは自分が担当し、Agent ツールは使わない（orchestrate.md「tier 別のフェーズ構成」）。
+S は orchestrate から Skill（opus）で起動されるため、Claude レビュアーは自分が担当し、Agent ツールは使わない（orchestrate.md「tier 別のフェーズ構成」）。
 
 | レビュアー | 方法 |
 |---|---|
@@ -125,8 +126,8 @@ DO NOT USE ANY TOOLS.
 ```markdown
 ### VERDICT
 PASS | FAIL | BLOCKED
-reviewer: {label}
-independent: yes | no
+REVIEWER: {label}
+INDEPENDENT: yes | no
 
 ### REVIEW
 

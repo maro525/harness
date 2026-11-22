@@ -58,14 +58,12 @@ $ARGUMENTS: "{task description} --tier={S|M|L} --task-file={TASK_FILE} --linear-
 
 開始前に必ず TASK_FILE の以下を読む。
 
-1. `## team-review` の最新回 — PASS/FAIL 判定・申し送り事項
+1. `## team-review` の最新回 — 直近 verdict（`#### 判定` / `**VERDICT:**`）が **PASS でなければ中止**して報告する（`BLOCKED` / `FAIL` / 欠落。PR は作らない）。申し送り事項は PR 本文に使う
 2. `## Meta` の `branch:` / `base:` — push する作業ブランチと、その分岐元
 3. `## team-implement` — PR 本文に書く変更内容（新規作成なら全回。追加 push なら `#### 追加依頼 {n}` の「扱い」行に書いた開始回から最新回まで全回。差し戻しがあると追加依頼の本体は最新回より前の回にあるため、最新回だけ読まない）
 4. `## deploy` の `PR/MR:` — 既存 PR / MR の URL（あれば追加 push）
 5. `## startproject` > `### Plan` の末尾の `#### 追加依頼 {n}` — 追加 push の本文追記に使う番号・依頼内容と、「扱い」行の開始回（追加修正モードのときだけ存在する）。`- issue:` の行があれば、その追加依頼で増えた GitHub / GitLab issue
 6. `## Meta` の `linear_id:` / `issue:` — PR / MR に紐づける Linear issue と GitHub / GitLab issue（「紐づけの規則」）
-
-Review が FAIL の場合は PR を作らずに中止し、ユーザーに報告して終了。
 
 ### 既存 PR / MR の判定
 
