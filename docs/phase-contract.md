@@ -88,7 +88,7 @@ team-review の PASS は、直近 `## team-implement` の `利用AI:` と**異�
 - 比較はラベルの**モデル部分**（最初の `/` 以降）で行う。`auto/{model}` は実際のモデルとして読む。CLI 名だけの違いは独立とみなさない
 - `--label` に `/` が無い（モデル部分が無い）→ 独立を証明できない → BLOCKED
 - 実装者の `利用AI:` に `/` が無い（モデル部分が無い）→ 独立を証明できない → BLOCKED
-- 実装フェーズが `--runner=auto` のとき、`利用AI:` が `auto` のままになることがある。orchestrator は `phase-run.sh` の `LABEL=`（`auto/{model}` の解決済みラベル）で見出し直下の `利用AI:` 行だけを上書きしてから team-review に渡す（本文は変えない）
+- 実装フェーズが `--runner=auto` のとき、`利用AI:` が `auto` のままになることがある。orchestrator は `phase-run.sh` の `LABEL=`（`auto/{model}` の解決済みラベル）で見出し直下の `利用AI:` 行だけを上書き（日時は残す）してから team-review に渡す（本文は変えない）
 - 独立が取れない → `**VERDICT: BLOCKED**` + `##### 独立レビュー不可`（理由）+ RESULT `verdict: BLOCKED`。PASS にしない
 - 別ラベルのセカンドオピニオン（別モデル）が取れて、その結果を反映した場合だけ独立とみなし、`reviewer:` にそのラベルを書く
 - BLOCKED は FAIL ではない（差し戻さない）。orchestrator は deploy せず報告して停止する
