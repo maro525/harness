@@ -68,11 +68,11 @@ done
 command -v pi >/dev/null 2>&1 || die "pi is not installed（gemini は pi 経由で走る）"
 
 case "$kind" in
-  pr) what="PR / MR の本文。見出しは ## を使い、「何をしたか / 確かめたこと / 影響・注意」の順に書く" ;;
-  comment) what="Linear のコメント（または issue の description）。要点を 3〜6 行で、根拠と次の手を書く" ;;
-  commit) what="コミットメッセージ。1 行目は 50 文字以内の命令形（prefix は材料の慣習に合わせる）、必要なら空行を挟んで本文" ;;
-  section) what="TASK_FILE に書き込む Markdown の節。見出しは材料の構成に合わせる" ;;
-  reply) what="レビューコメントへの返信。丁寧だが簡潔に、変更点と根拠を書く" ;;
+  pr) what="PR / MR の本文（見出しは ## を使い、「何をしたか / 確かめたこと / 影響・注意」の順）" ;;
+  comment) what="Linear のコメント（または issue の description、要点 3〜6 行、根拠と次の手）" ;;
+  commit) what="コミットメッセージ（1 行目は 50 文字以内の命令形、prefix は材料の慣習に合わせる。必要なら空行を挟んで本文）" ;;
+  section) what="TASK_FILE に書き込む Markdown の節（見出しは材料の構成に合わせる）" ;;
+  reply) what="レビューコメントへの返信（丁寧だが簡潔に、変更点と根拠）" ;;
   *) die "unknown --kind: $kind（pr|comment|commit|section|reply）" ;;
 esac
 
@@ -95,7 +95,7 @@ fi
 [[ -s "$tmpdir/material.md" ]] || die "材料が空"
 
 {
-  printf '%s\n' "あなたは日本語の技術文書を書く編集者です。以下の材料だけを根拠に、$what を書いてください。"
+  printf '%s\n' "あなたは技術文書を書く編集者です。以下の材料だけを根拠に、$whatを書いてください。"
   printf '\n%s\n' "守ること:"
   printf '%s\n' "- 出力は本文だけ。前置き・後書き・「以下が下書きです」・全体を囲うコードフェンスは書かない"
   printf '%s\n' "- 材料に無い事実・数値・固有名詞を作らない。書けないことは書かずに落とす"
