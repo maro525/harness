@@ -25,6 +25,7 @@ $ARGUMENTS
 PASS を出すには、実装者と別モデルの独立レビューが取れている必要がある。実装者の `利用AI:` は直近 `## team-implement` から読む。
 
 - 実装者の `利用AI:` が無い → BLOCKED（PASS にしない）
+- 実装者の `利用AI:` に `/` が無い（モデル部分が無い）→ BLOCKED
 - OpenCode Reviewer（`ai-fallback.sh`）が動いた → `REVIEWER: {AI_MODEL}`、`INDEPENDENT: yes`（実装者と別ファミリ）
 - `{AI_MODEL}` が実装者と同じモデル名なら独立とみなさない（その場合は BLOCKED）
 - 動かなかった → 自分の `--label`（無ければ `claude/opus`）と実装者を比較。同じ → BLOCKED、違う → `REVIEWER: {自分の label}`、`INDEPENDENT: yes`

@@ -1,5 +1,5 @@
 ---
-description: Review subagent — parallel reviewers by tier (S: self / M: +Second Opinion, Security / L: +Simplify), browser/test verification. Outputs PASS / FAIL to TASK_FILE.
+description: Review subagent — parallel reviewers by tier (S: self / M: +Second Opinion, Security / L: +Simplify), browser/test verification. Outputs PASS / FAIL / BLOCKED to TASK_FILE.
 mode: subagent
 model: ollama-cloud/deepseek-v4.1-flash
 permission:
@@ -19,6 +19,7 @@ PASS を出すには、直近 `## team-implement` の `利用AI:` と**異なる
 
 - 実装者の `利用AI:` と異なるモデルでレビューできた場合だけ `independent: yes`、`reviewer:` にそのラベルを書く
 - 同一モデル / 実装者の `利用AI:` が無い / `--label` が無い → 独立を証明できない → BLOCKED（理由を書く）。PASS にしない
+- 実装者の `利用AI:` に `/` が無い（モデル部分が無い。例 `opencode2`）→ 独立を証明できない → BLOCKED
 
 ## Input
 
