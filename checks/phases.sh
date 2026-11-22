@@ -199,6 +199,11 @@ for token in 'BLOCKED' '@level' 'skip:' 'Attention'; do
     ng "$contract に '$token' の記述が無い"
 done
 
+for token in '--thinking' '--effort' 'model_reasoning_effort' 'ignores @'; do
+  grep -qF -- "$token" "$(readonly_path "$dispatcher")" ||
+    ng "$dispatcher に '$token' の記述が無い"
+done
+
 if [[ $fail -eq 0 ]]; then
   ok "phase parity (${PHASES[*]}) / 3 系統 / orchestrator 3 本 / phase-run.sh"
   exit 0
