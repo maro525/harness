@@ -269,22 +269,26 @@ Linear が使えるなら、この時点で**「実行開始」コメントを 1
 - `## Meta` の `branch:` / `base:` はフェーズが書く（`written: no` なら `### SECTION` から拾って代筆）
 - `### RESULT` に `escalation:` があれば、tier を上げて `## Meta` の `tier:` を更新し、STEP 3 からやり直す（作業ブランチの変更はそのまま）
 - `## team-implement` に `### {m}回目` が入ったことを確認して STEP 5 へ
+- 実装者の `利用AI:`（`## team-implement` の直近回）を控え、STEP 5 の独立レビュー判定に使う
 
 ## STEP 5: team-review
 
-`status:` を `reviewing` に更新してから起動する。
+`status:` を `reviewing` に更新してから起動する。**team-review は team-implement と別のモデルで起動する**（`--runner` / `--phase-map`）。同一モデルになるならその旨を報告し、BLOCKED を想定する。
 
 ```bash
 ~/.claude/scripts/phase-run.sh --phase=team-review --task-file={TASK_FILE} \
   --tier={tier} --linear-id={LINEAR_ID} {RUNNER_ARGS}
 ```
 
-- `### RESULT` の `verdict:` を読む（`PASS` / `FAIL`）
-- `## team-review` の `### {m}回目` の直下に `**VERDICT: PASS**` / `**VERDICT: FAIL**` の 1 行を書く（本文に既にあれば重ねない）
+- `### RESULT` の `verdict:` を読む（`PASS` / `FAIL` / `BLOCKED`）
+- `## team-review` の `### {m}回目` の直下に `**VERDICT: PASS**` / `**VERDICT: FAIL**` / `**VERDICT: BLOCKED**` の 1 行を書く（本文に既にあれば重ねない）
+- **BLOCKED は報告して停止**（Gate 2 の選択肢にしない。deploy しない）。TASK_FILE への書き込みは済んでいるので、判定行を書いたら終わる
 - **FAIL は Gate 2**: 指摘の要約と「1. 差し戻して直す / 2. ここで止める」を提示して判断を待つ。差し戻すなら `status:` を `implementing` に戻して STEP 4 へ（`{m}` を進める）。**最大 5 回**まで。超えたら報告して停止する
 - PASS なら STEP 6 へ
 
 ## STEP 6: deploy（3 段）
+
+`## team-review` の直近 verdict が `PASS` でなければ中止する（`BLOCKED` / `FAIL` / 欠落）。deploy しない。
 
 `status:` を `deploying` に更新してから 6a → 6b → 6c を順に実行する。
 
@@ -335,7 +339,13 @@ git switch {base}
 
 ### 質問
 - {なし | phase: 要旨 → 回答の要旨}
+
+### Attention
+- {要確認・未検証の事項}
+- reviewed by {team-review の reviewer}（無ければ `reviewed by なし（独立レビュー未実施）`）
 ```
+
+報告の事実には `（実測）` / `（推定）` / `（推測）` を付ける（実測 = 実行・計測した値、推定 = 根拠のある計算、推測 = 根拠の無い見立て）。
 
 `利用AI:` の値は `~/.claude/scripts/task-file.sh ai show --task-file={TASK_FILE}` の 1 行を使う（`phase-run.sh` が成功のたびに `{TASK_FILE}.ai.log` に書く。stderr の `LABEL=` を拾い損ねてもここから取れる）。`consult.sh` を使ったら stderr の `AI_MODEL=`、herdr の子に移譲したら `delegate` の `MODEL=` を併記する（`tool-routing.md`「移譲したら「誰がやったか」を書く」）。取れないときは `（不明）` と書く。
 
