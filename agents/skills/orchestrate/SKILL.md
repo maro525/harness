@@ -270,6 +270,7 @@ Linear が使えるなら、この時点で**「実行開始」コメントを 1
 - `### RESULT` に `escalation:` があれば、tier を上げて `## Meta` の `tier:` を更新し、STEP 3 からやり直す（作業ブランチの変更はそのまま）
 - `## team-implement` に `### {m}回目` が入ったことを確認して STEP 5 へ
 - 実装者の `利用AI:`（`## team-implement` の直近回）を控え、STEP 5 の独立レビュー判定に使う
+- その `利用AI:` がモデル部分を持たない（`auto` など）ときは、`phase-run.sh` の stderr `LABEL=`（または `~/.claude/scripts/task-file.sh ai show --task-file={TASK_FILE}`）の解決済みラベル（`auto/{model}`）で**見出し直下の `利用AI:` 行だけ**を上書きしてから STEP 5 へ（本文は変えない）
 
 ## STEP 5: team-review
 

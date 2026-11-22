@@ -215,7 +215,11 @@ check_tokens() {
 check_tokens claude/commands/orchestrate.md '利用AI: claude/' '--label=claude/opus' 'Skill（opus）'
 check_tokens claude/commands/team-review.md 'REVIEWER' 'INDEPENDENT'
 check_tokens opencode/commands/orchestrate.md 'phase-run.sh --phase=team-review' '--fallback=pi:ollama-cloud/kimi-k3'
-check_tokens agents/skills/team-review/SKILL.md 'モデル部分'
+check_tokens agents/skills/team-review/SKILL.md 'モデル部分' '実装者の `利用AI:` に `/` が無い' '`--label` に `/` が無い'
+check_tokens docs/phase-contract.md '実装者の `利用AI:` に `/` が無い' '解決済みラベル'
+check_tokens claude/commands/team-review.md '実装者の `利用AI:` に `/` が無い'
+check_tokens opencode/agents/team-review.md '`--label` に `/` が無い' '実装者の `利用AI:` に `/` が無い'
+check_tokens agents/skills/orchestrate/SKILL.md '解決済みラベル'
 
 if [[ $fail -eq 0 ]]; then
   ok "phase parity (${PHASES[*]}) / 3 系統 / orchestrator 3 本 / phase-run.sh"
