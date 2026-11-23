@@ -23,7 +23,7 @@ agents/
     └── deploy/SKILL.md          # commit → push → PR/MR（gh / glab）、#### PR / MR + 利用AI 行 + 紐づけ行。作業ブランチに留まる（TASK_FILE のコミットと分岐元への復帰は呼び出し元）
 ```
 
-配布先は `~/.agents/skills/{name}/`（`./sync-agents.sh`）。Cline だけは `~/.cline/skills/{name}` → `~/.agents/skills/{name}` の symlink で読ませる。
+配布先は `~/.agents/skills/{name}/`（`./sync-agents.sh`）。Cline だけは `~/.cline/skills/{name}` → `~/.agents/skills/{name}` の symlink で読ませる。WSL 側の Cursor は Windows プロファイルのコピーを見ないので、`~/.cursor/skills/{name}` にも同じ symlink を張る。
 
 ## 共通規約
 
@@ -173,6 +173,7 @@ timeout -k 1m 30m {上表のコマンド} "$(cat {prompt_file})" < /dev/null > {
 `sync-agents.sh` は `~/.agents/skills` のうち **この 4 スキルだけ**を扱う（残りは `npx skills` 管理。`.skill-lock.json` に触らない）。同期後に:
 
 1. **Cline 用 symlink**: `~/.cline/skills/{name}` → `~/.agents/skills/{name}` を作る。既に何かあればスキップして警告（実体ディレクトリなら手で消してから再実行）。`sync-cline.sh` は symlink の先を辿らないので `cline/skills/` に重複は入らない
+2. **Cursor（WSL）用 symlink**: `~/.cursor/skills/{name}` → `~/.agents/skills/{name}` を作る（同じ規則で、既存の実ディレクトリは触らない）。`sync-cursor.sh` は Windows 側のプロファイルに**コピー**するので、WSL の Cursor からはこちらの symlink が見える
 2. **pi の旧コピー**: `~/.pi/agent/skills/{startproject,team-implement,team-review,deploy,orchestrate}` に旧仕様（Decision Log 前提）のコピーが残っていると、pi はそちらを先に見つけて `~/.agents/skills` 側を無視する。スクリプトは警告だけ出す。中身が旧コピーであることを確認してから手で削除する:
 
    ```bash

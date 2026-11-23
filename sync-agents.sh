@@ -12,6 +12,10 @@
 # sync a symlink ~/.cline/skills/{name} -> ~/.agents/skills/{name} is created
 # for each skill that exists in HOME. Existing entries are left alone.
 #
+# Cursor (WSL) also gets ~/.cursor/skills/{name} -> ~/.agents/skills/{name}
+# symlinks. sync-cursor.sh copies the same skills into the *Windows* profile, so
+# without this the WSL-side Cursor sees nothing.
+#
 # pi reads ~/.pi/agent/skills before ~/.agents/skills and keeps the first skill
 # it finds, so a stale copy there shadows the synced one. This script only
 # warns about that; deleting the old copies is a manual step (see
@@ -32,6 +36,7 @@ AGENT_SKILLS=(startproject team-implement team-review deploy orchestrate claude-
 # has its own commands and the consult skills are for *other* agents.
 CLAUDE_SKILLS=(herdr-cleanup harness-daily)
 CLAUDE_SKILLS_DIR="$HOME/.claude/skills"
+CURSOR_SKILLS="$HOME/.cursor/skills"
 
 # shellcheck source=lib/sync-common.sh
 source "$SCRIPT_DIR/lib/sync-common.sh"
@@ -113,6 +118,34 @@ for name in "${CLAUDE_SKILLS[@]}"; do
     continue
   fi
   mkdir -p "$CLAUDE_SKILLS_DIR"
+  ln -s "$target" "$link"
+  echo "  link  $name -> $target"
+done
+
+# --- 3b. Cursor (WSL) symlinks ------------------------------------------------
+# Cursor は WSL からでも ~/.cursor/skills を読む。sync-cursor.sh は Windows 側の
+# プロファイルに**コピー**するので、WSL の Cursor からは見えない。ここでは
+# Cline と同じく symlink を張る（~/.agents を正本にするので常に最新）。
+# 既存の実ディレクトリは消さない（手で置いたものを壊さない）。
+echo ""
+echo "Cursor (WSL) symlinks ($CURSOR_SKILLS):"
+for name in "${AGENT_SKILLS[@]}"; do
+  target="$SOURCE/$name"
+  link="$CURSOR_SKILLS/$name"
+
+  if [[ ! -d "$target" ]]; then
+    echo "  skip  $name (no $target yet)"
+    continue
+  fi
+  if [[ -L "$link" ]]; then
+    echo "  ok    $name -> $(readlink "$link")"
+    continue
+  fi
+  if [[ -e "$link" ]]; then
+    echo "  warn  $link exists and is not a symlink — left alone (remove it to link $target)" >&2
+    continue
+  fi
+  mkdir -p "$CURSOR_SKILLS"
   ln -s "$target" "$link"
   echo "  link  $name -> $target"
 done
