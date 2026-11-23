@@ -171,6 +171,19 @@ spec_level() { # trailing @level or empty
   printf '%s' "${spec##*@}"
 }
 
+# CLI ごとの有効値に丸める。無効な level を渡すと claude は警告して既定で走り、
+# codex は API 400 で phase ごと落ちる（どちらも指定が黙って無駄になる）。
+clamp_level() {
+  local cli=$1 level=$2
+  case "$cli:$level" in
+    claude:minimal | codex:minimal)
+      printf 'phase-run: %s has no @minimal; using @low\n' "$cli" >&2
+      printf 'low'
+      ;;
+    *) printf '%s' "$level" ;;
+  esac
+}
+
 spec_label() {
   local model
   model=$(spec_model "$1")
@@ -209,16 +222,10 @@ build_cmd() { # spec prompt tmpdir -> fills global CMD
   local cli model level
   cli=$(spec_cli "$spec")
   model=$(spec_model "$spec")
-  level=$(spec_level "$spec")
+  level=$(clamp_level "$cli" "$(spec_level "$spec")")
   CMD=()
   case "$cli" in
     claude)
-      # claude の --effort は minimal を受け付けない（指定すると警告を出して既定値のまま走る）。
-      # 黙って無視されると @level の意味が崩れるので、こちらで low に丸める。
-      if [[ "$level" == "minimal" ]]; then
-        printf 'phase-run: claude has no @minimal; using @low\n' >&2
-        level=low
-      fi
       # --allowedTools is variadic: the "=" form keeps the prompt from being
       # swallowed as another tool name.
       CMD=(claude -p --model "${model:-opus}")

@@ -140,7 +140,7 @@ team-review の PASS は、直近 `## team-implement` の `利用AI:` と**異�
 |---|---|---|---|
 | `pi` | `--thinking` | `off` `minimal` `low` `medium` `high` `xhigh` `max` | 全 level が使える（`off` は spec では指定しない） |
 | `claude` | `--effort` | `low` `medium` `high` `xhigh` `max` | **`minimal` が無い**。指定すると CLI は警告を出して既定 effort で走るので、`phase-run.sh` が `@minimal` → `@low` に丸めて警告する |
-| `codex` | `-c model_reasoning_effort=` | `minimal` `low` `medium` `high`（`xhigh` / `max` は未検証） | 高い level を使う前に 1 回実測する |
+| `codex` | `-c model_reasoning_effort=` | `none` `low` `medium` `high` `xhigh` `max` | **`minimal` が無い**（gpt-6-sol では API 400 で phase ごと落ちる）。`@minimal` は `@low` に丸める。`high` / `xhigh` / `max` は使える（実測するとトークンは 7,440 / 12,110 / 12,146 と増える） |
 | `opencode2` / `opencode` / `cline` / `auto` | （渡さない） | — | `phase-run: {runner} ignores @{level}` を出して無視 |
 
 - `--dry-run` は**丸めた後のコマンド**を出す（`@minimal` + claude なら `--effort low`）。指定と実行が違う場合は stderr の警告を読む
