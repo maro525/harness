@@ -134,7 +134,16 @@ team-review の PASS は、直近 `## team-implement` の `利用AI:` と**異�
 `利用AI:` 行には**実際に走った runner とモデル**を書く（`phase-run.sh` が `--label` で渡す）。
 
 - runner spec は `{cli}:{model}[@level]`。`@level` は spec の**末尾**（model の後ろ）。`level` は `minimal|low|medium|high|xhigh|max`。`auto` は level 非対応
-- `@level` の受け渡し: `pi` → `--thinking`、`claude` → `--effort`、`codex` → `model_reasoning_effort`。`opencode2` / `opencode` / `cline` / `auto` は `phase-run: {runner} ignores @{level}` を出して無視する
+- `@level` の受け渡しと**CLI ごとの有効値**（差があるので丸めるか無視する）:
+
+| cli | 渡し方 | 有効値 | 備考 |
+|---|---|---|---|
+| `pi` | `--thinking` | `off` `minimal` `low` `medium` `high` `xhigh` `max` | 全 level が使える（`off` は spec では指定しない） |
+| `claude` | `--effort` | `low` `medium` `high` `xhigh` `max` | **`minimal` が無い**。指定すると CLI は警告を出して既定 effort で走るので、`phase-run.sh` が `@minimal` → `@low` に丸めて警告する |
+| `codex` | `-c model_reasoning_effort=` | `minimal` `low` `medium` `high`（`xhigh` / `max` は未検証） | 高い level を使う前に 1 回実測する |
+| `opencode2` / `opencode` / `cline` / `auto` | （渡さない） | — | `phase-run: {runner} ignores @{level}` を出して無視 |
+
+- `--dry-run` は**丸めた後のコマンド**を出す（`@minimal` + claude なら `--effort low`）。指定と実行が違う場合は stderr の警告を読む
 
 **`--runner=claude` は Claude Code を汎用 CLI として起動し、`agents/skills/{phase}/SKILL.md` を読ませる**（`claude/commands/{phase}.md` は使わない）。したがって Claude 版固有の並列レビュアー・`context: fork` の frontmatter モデルは効かず、観点は汎用定義どおり順次になる。Claude 版のフル機能が要るときは Claude セッション内で `/team-review` 等を直接使う（混在の対象外）。
 
