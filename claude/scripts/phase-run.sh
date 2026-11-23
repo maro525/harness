@@ -213,6 +213,12 @@ build_cmd() { # spec prompt tmpdir -> fills global CMD
   CMD=()
   case "$cli" in
     claude)
+      # claude の --effort は minimal を受け付けない（指定すると警告を出して既定値のまま走る）。
+      # 黙って無視されると @level の意味が崩れるので、こちらで low に丸める。
+      if [[ "$level" == "minimal" ]]; then
+        printf 'phase-run: claude has no @minimal; using @low\n' >&2
+        level=low
+      fi
       # --allowedTools is variadic: the "=" form keeps the prompt from being
       # swallowed as another tool name.
       CMD=(claude -p --model "${model:-opus}")
