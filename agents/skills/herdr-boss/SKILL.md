@@ -53,6 +53,15 @@ inbox のディレクトリ名と通知の宛先になる。
 
 - 名前は役割が分かるもの（`child-tests`、`child-docs` など）。同じ名前は使い回される（文脈が残る）
 - 別リポジトリ・隔離したい作業は `--topology workspace` / `--topology worktree`（harness の `docs/session-lifecycle.md`）
+- 子の tab を 1 つの workspace に集めたいとき（1 タスク 1 workspace）は、タスク用の workspace を 1 つ作り、その id を子の `ensure` すべてに渡す。`--workspace` は `tab` 用で、id でもラベルでもよい（見つからない・複数一致なら exit 2）
+
+```bash
+WS=$(herdr workspace create --cwd "$PWD" --label boss-harness --no-focus | jq -r '.result.workspace.workspace_id')
+~/.claude/scripts/herdr-agent.sh ensure child-a --kind claude --workspace "$WS"
+~/.claude/scripts/herdr-agent.sh ensure child-b --kind pi --workspace "$WS"
+```
+
+- 手で作った workspace はこのツールの所有ではないので、`close` は tab だけを閉じる。片付けは `herdr workspace close "$WS"`。
 
 ### 2. 依頼を書いて渡す
 
