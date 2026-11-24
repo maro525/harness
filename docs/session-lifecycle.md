@@ -32,11 +32,13 @@ Herdr の構造は workspace → tab → pane。セッションをどこに作�
 
 | topology | 何ができる | 向いている場面 |
 |---|---|---|
-| `tab`（既定） | 呼び出し元の workspace に新しい tab | 同じリポジトリの作業を並行する。今の workspace を汚さない |
+| `tab`（既定） | 呼び出し元（または `--workspace` で名指しした）workspace に新しい tab | 同じリポジトリの作業を並行する。今の workspace を汚さない |
 | `workspace` | そのリポジトリ専用の workspace（tab と pane 付き） | **別のリポジトリ**を任せるとき。workspace ごとにサイドバーで分離される（git は触らない） |
 | `worktree` | git worktree を作り、その workspace と tab で起動（パスは `~/.herdr/worktrees/{repo}/{branch}`） | 同じリポジトリでタスクを隔離したいとき。ブランチも切られる（`--branch` / `--base`） |
 
-- `tab` は**呼び出し元の workspace id を必要とする**（`HERDR_WORKSPACE_ID`）。無い・古い場合は `workspace create` に自動フォールバックする
+- `tab` は既定で**呼び出し元の workspace id を使う**（`HERDR_WORKSPACE_ID`）。無い・古い場合は `workspace create` に自動フォールバックする
+- `tab` は `--workspace <id|label>` も受ける。司令塔がタスク用に workspace を 1 つ作り、その id を子の `ensure` すべてに渡せば、子の tab はその workspace に相乗りする（1 タスク 1 workspace）。id でもラベルでもよく、`herdr workspace list` の結果から一意に決まるときだけ解決する（見つからない・複数一致なら何も作らずに exit 2）
+- `--workspace` で相乗りした workspace は**このツールの所有ではない**ので、`close` は tab だけを閉じ、workspace は残る（片付けは `herdr workspace close <id>`）。`--workspace` は `tab` 専用で、`workspace` / `worktree` に付けると exit 2
 - `workspace` / `worktree` で作った workspace は**このツールが所有**するので、`close` で workspace ごと閉じる
 - `worktree` のセッションは `close` で **worktree も削除**する（`herdr worktree remove`。`--force` は使わないので、未コミットの変更があれば workspace だけ閉じて警告する）。**ブランチは残る**（成果物なので意図的）
 - 手で作った workspace / tab / worktree は絶対に閉じない（所有フラグで判定）

@@ -48,6 +48,10 @@
 #                     tab        : a new tab in the calling workspace
 #                     workspace  : a new workspace for the repo (no git changes)
 #                     worktree   : a new git worktree + its workspace + a tab
+#   --workspace REF   tab: put the tab in this workspace instead of the caller's.
+#                     REF is an id (w2N) or a label (boss-harness), resolved from
+#                     `herdr workspace list`; anything but exactly one match is
+#                     exit 2. Refused by --topology workspace / worktree.
 #   --branch BR       worktree: branch to create (default: feature/<name>). Herdr's
 #                     own default would be "worktree/<random words>", which does not
 #                     follow docs/naming.md; an explicit --branch always wins
@@ -107,6 +111,7 @@ KIND=""
 REPO=""
 TIMEOUT=${HERDR_AGENT_TIMEOUT:-20m}
 TOPOLOGY=${HERDR_AGENT_TOPOLOGY:-tab}
+WORKSPACE=""
 BRANCH=""
 BASE=""
 ANSWER_FILE=""
@@ -126,6 +131,7 @@ while [[ $# -gt 0 ]]; do
     --repo) REPO=$2; shift 2 ;;
     --timeout) TIMEOUT=$2; shift 2 ;;
     --topology) TOPOLOGY=$2; shift 2 ;;
+    --workspace) WORKSPACE=$2; shift 2 ;;
     --branch) BRANCH=$2; shift 2 ;;
     --base) BASE=$2; shift 2 ;;
     --answer-file) ANSWER_FILE=$2; shift 2 ;;
@@ -318,10 +324,36 @@ pane_stable() {
 }
 
 
+# --workspace REF -> the workspace id to pin a tab to. REF is an id or a label;
+# one `herdr workspace list` decides, and anything but exactly one match dies
+# instead of guessing (a wrong workspace puts the tab where nobody looks).
+resolve_workspace() {
+  local ref=$1 list id label
+  local -a ids=() names=()
+  list=$(herdr workspace list 2>&1) || die "herdr workspace list failed: $list"
+  while IFS=$'\t' read -r id label; do
+    [[ -n "$id" ]] || continue
+    ids+=("$id")
+    names+=("$id($label)")
+  done < <(jq -r --arg ref "$ref" \
+    '.result.workspaces[] | select(.workspace_id == $ref or .label == $ref)
+     | "\(.workspace_id)\t\(.label // "-")"' <<<"$list" 2>/dev/null)
+  case "${#ids[@]}" in
+    1) printf '%s' "${ids[0]}" ;;
+    0) die "no workspace matches '$ref' — run \`herdr workspace list\` and pass the id or the label" 2 ;;
+    *) die "workspace '$ref' matches ${#ids[@]} workspaces: ${names[*]} — pass the id" 2 ;;
+  esac
+}
+
 cmd_ensure() {
   [[ -n "$NAME" ]] || die "ensure needs a name" 2
   check_name "$NAME"
   [[ -n "$KIND" ]] || die "ensure needs --kind" 2
+  # Checked before anything is created: --workspace names an existing workspace,
+  # and the other topologies create (and own) one of their own.
+  if [[ -n "$WORKSPACE" && "$TOPOLOGY" != "tab" ]]; then
+    die "--workspace applies to --topology tab only (got --topology $TOPOLOGY)" 2
+  fi
   REPO=${REPO:-$PWD}
   REPO=$(cd "$REPO" && pwd) || die "not a directory: $REPO"
 
@@ -356,10 +388,20 @@ cmd_ensure() {
   local created tab workspace="" ws_owned="false"
   case "$TOPOLOGY" in
     tab)
-      # --workspace pins the tab to the caller's workspace: without it the tab can
-      # land in whatever workspace another client has focused.
+      # A tab is always pinned to a workspace: without one it can land in whatever
+      # workspace another client has focused. --workspace names the workspace the
+      # boss made for this task, so every child of the task shares it; without it
+      # the tab goes to the caller's ($HERDR_WORKSPACE_ID), and with neither the
+      # fallback below creates one.
       local -a tab_args=(--cwd "$REPO" --label "$NAME")
-      [[ -n "${HERDR_WORKSPACE_ID:-}" ]] && tab_args+=(--workspace "$HERDR_WORKSPACE_ID")
+      if [[ -n "$WORKSPACE" ]]; then
+        local pinned
+        pinned=$(resolve_workspace "$WORKSPACE") || exit 2
+        tab_args+=(--workspace "$pinned")
+        workspace=$pinned
+      elif [[ -n "${HERDR_WORKSPACE_ID:-}" ]]; then
+        tab_args+=(--workspace "$HERDR_WORKSPACE_ID")
+      fi
       if ! created=$(herdr tab create "${tab_args[@]}" --no-focus 2>&1); then
         # No workspace to attach to (or the id is stale): fall back to a workspace.
         echo "herdr-agent: tab create failed — creating a workspace instead" >&2
@@ -393,7 +435,10 @@ cmd_ensure() {
 
   pane=$(jq -r '.result.root_pane.pane_id // .result.tab.root_pane.pane_id // .result.pane.pane_id // empty' <<<"$created")
   tab=$(jq -r '.result.tab.tab_id // .result.tab_id // empty' <<<"$created")
-  workspace=$(jq -r '.result.workspace.workspace_id // .result.workspace_id // empty' <<<"$created")
+  # A pinned tab's answer carries no workspace id: keep the one resolved above.
+  local created_workspace
+  created_workspace=$(jq -r '.result.workspace.workspace_id // .result.workspace_id // empty' <<<"$created")
+  if [[ -n "$created_workspace" ]]; then workspace=$created_workspace; fi
   [[ -n "$pane" ]] || die "could not read the pane id from: $created"
   [[ -n "$tab" ]] && herdr tab rename "$tab" "$NAME" >/dev/null 2>&1 || true
   # A worktree workspace has its own directory; run there, not in REPO.
