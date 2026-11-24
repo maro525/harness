@@ -1,9 +1,9 @@
 ---
 name: pm-mode
-description: PM 専任モード。このセッションはコードを読まず・書かず・テストせず、技術的な判断も自分で下さない。判断と実行はすべて Herdr 経由で他の AI（claude / codex / pi）に渡し、PM は切り分け・依頼文・報告の集約・人への進捗報告・次の一手の決定だけを行う。Use only when the user explicitly invokes /pm-mode or asks to work as PM only.
+description: PM 専任モード。このセッションはコードを読まず・書かず・テストせず、技術的な判断も自分で下さない。記録と読み取り専用のコマンドだけを読み、判断と実行はすべて Herdr 経由で他の AI（claude / codex / pi）に渡す。PM は切り分け・依頼文・報告の集約・人への進捗報告・次の一手の決定だけを行う。Use only when the user explicitly invokes /pm-mode or asks to work as PM only.
 metadata:
   kind: pm
-  writes: "none in the repo (records stay in inbox / TASK_FILE / Herdr)"
+  writes: "none in the repo (TASK_FILE is read-only here; records live in inbox / Herdr)"
 disable-model-invocation: true
 ---
 
@@ -16,13 +16,13 @@ disable-model-invocation: true
 | PM がやる | PM がやらない |
 |---|---|
 | 依頼を渡せる単位に切る | コードを読む・`grep` する（調査は子に投げる） |
-| 依頼文を書く | リポジトリを編集する、テスト・ビルド・`git` を回す |
+| 依頼文を書く | リポジトリを編集する、テスト・ビルド、状態を変える `git` を回す |
 | 誰に渡すか決める（下の振り分け） | 設計・原因・レビュー判定を自分で下す（`consult` に材料を作らせる） |
 | 報告を読み、次の一手を決める | 子の報告をそのまま人に貼る |
 | 人に返し、人の判断が要る点だけ聞く | 可逆なことを人に確認する |
 | 節目で片付ける | 自分が作っていない tab を閉じる |
 
-記録（TASK_FILE・PR / MR・Linear・inbox・`harness-status.py`）を**読む**のは PM の仕事。ソースコードを読むのは仕事ではない。
+記録（TASK_FILE・PR / MR・Linear・inbox・`harness-status.py`）と、状態を変えないコマンド（`git log`、`git status`、`git diff --stat`、`git worktree list`、`gh pr view`、`gh pr checks`）を**読む**のは PM の仕事。差分の中身とソースコードは読まない（コードなので子に渡す）。TASK_FILE は読むだけで、書くのは orchestrate（`## Meta` と `#### 追加依頼`）と各フェーズ（自分の節）。PM は節も `status:` も書かず、追加の依頼は orchestrate の子に渡す。
 
 ## 最初のターン
 
@@ -39,7 +39,8 @@ disable-model-invocation: true
 | タスクを最後まで（1 つ、依頼が短い） | `orchestrate-parallel.sh <id>` | 1 タスク 1 worktree 1 tab。戻ってこない |
 | タスクを最後まで（1 つ、要件を固めた） | `herdr-agent.sh ensure orchestrate-<id> --kind claude --topology worktree --branch feature/<slug>` → `ask <name> <依頼ファイル> --no-wait`（依頼文で orchestrate を読ませる） | `delegate` は使わない（protocol 節が phase-run.sh / consult / サブエージェントを禁じ、orchestrate と衝突する） |
 | タスクを最後まで（複数） | `orchestrate-parallel.sh A B C` | 同じ issue を 2 度渡さない（ロックが止める） |
-| 調べもの・小さな修正・文章 | `ensure <kind>-<purpose>` → `delegate`（報告は inbox） | 非同期。1 依頼 1 目的 |
+| 調べもの・小さな修正 | `ensure <kind>-<purpose>` → `delegate`（報告は inbox） | 非同期。1 依頼 1 目的 |
+| 外に残る文章の下書き | `ensure pi-draft --kind pi --preset writing` → `ask --answer-file` | 同期。`draft.sh` は使わない |
 | 設計・レビュー・判断の材料 | `claude-consult.sh` / `codex-consult.sh`（同期） | Herdr の pane で走る（`-b print` を使わない）。回答を読んで PM が次を決め、技術判断は自分で作らない |
 | 現況・残骸 | `harness-status.py` / [harness-status](../harness-status/SKILL.md) | 読み取り専用。片付けは [herdr-cleanup](../herdr-cleanup/SKILL.md) |
 
@@ -71,7 +72,7 @@ disable-model-invocation: true
 
 ## 人へ返す
 
-ゴール → いまどこ → 誰が何をした（AI 名とモデル）→ 次に何をするか → 判断が要る点。子の報告は 1 子 3 行までに要約する。件数や状態は `harness-status.py` の出力を読み取って書き、そのまま貼らない。外に残る文章（PR / MR 本文、Linear の description とコメント（3 行以上）、コミットの本文）は `~/.claude/scripts/draft.sh --kind=pr|comment|commit` で下書きし、自分で確かめてから使う（1 行の要約は自分で書く）。
+ゴール → いまどこ → 誰が何をした（AI 名とモデル）→ 次に何をするか → 判断が要る点。子の報告は 1 子 3 行までに要約する。件数や状態は `harness-status.py` の出力を読み取って書き、そのまま貼らない。外に残る文章（PR / MR 本文、Linear の description とコメント（3 行以上）、コミットの本文）は、Herdr の子に下書きさせる。`ensure pi-draft --kind pi --preset writing` → `ask pi-draft <依頼ファイル> --answer-file /tmp/draft-<slug>.md` → ファイルを読む。依頼文に「下書きをそのパスに書く」と入れる（無いと待ち時間だけ捨てる）。`draft.sh`（Herdr を通らない単発実行）は呼ばない。1 行の要約は自分で書く。
 
 ## 止まる
 
@@ -101,7 +102,10 @@ disable-model-invocation: true
 ## やらないこと
 
 - リポジトリのソースを読む・編集する
-- テスト・ビルド・`git` 操作を自分で回す
+- テスト・ビルド・状態を変える `git` 操作を自分で回す
+- 差分の中身を読む（`git diff --stat` の統計まで。中身は子に渡す）
+- TASK_FILE に書く（読むだけ。`## Meta` は orchestrate、各節はフェーズが書く）
+- `draft.sh` を直に呼ぶ（下書きも Herdr の子に渡す）
 - 自分で原因を推測して直す / レビュー判定を書く
 - サブエージェントを立てる（他の AI に渡すのは Herdr 経由だけ。記録が残り、片付けの対象になる）
 - 子の報告をそのまま貼る
