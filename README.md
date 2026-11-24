@@ -12,7 +12,7 @@ harness/
 │   ├── commands/            # orchestrate / startproject / team-implement / team-review / deploy
 │   ├── rules/               # adaptive-execution.md (tier 分類) / tool-routing.md (委譲先)
 │   ├── hooks/agent-router.py  # UserPromptSubmit hook。意図を検出して /orchestrate へ誘導
-│   ├── skills/herdr-boss/   # 司令塔（boss）skill（~/.claude/skills/herdr-boss。下記「司令塔（boss）パターン」）
+│   ├── skills/herdr-boss/   # 司令塔（boss）の Claude 用入口。手順の正本は agents/skills/herdr-boss（下記「司令塔（boss）パターン」）
 │   └── scripts/
 │       ├── linear-ask.sh   # OpenCode 版 orchestrate の質問の中継用（Linear API キーが要る）
 │       ├── ai-fallback.sh  # リサーチ・設計相談のモデル連鎖（429 で次の候補へ）
@@ -36,7 +36,7 @@ harness/
 │   └── agents/
 ├── agents/                  # Claude 以外の CLI (pi / cline / opencode / codex) 向け Agent Skills (~/.agents/skills)
 │   ├── README.md            # 外部 CLI のフェーズ実行（orchestrate STEP 3P が直接読む）
-│   └── skills/              # 4 フェーズ + orchestrate + claude-consult / codex-consult（Cursor 等から設計相談）+ herdr-boss（司令塔）
+│   └── skills/              # 4 フェーズ + orchestrate + consult / boss / PM / 運用系（一覧の正本は sync-agents.sh の AGENT_SKILLS）
 ├── pi/                      # pi 専用 (~/.pi/agent)
 │   ├── README.md            # 配布と前提（permissions の許可リスト）
 │   └── prompts/
@@ -58,9 +58,9 @@ dotfiles と同じく HOME ⇄ リポジトリの双方向同期（対話モー�
 ```bash
 ./sync-claude.sh      # ~/.claude の harness ファイルだけ（commands / rules / hooks / scripts / skills/herdr-boss）
 ./sync-opencode.sh    # ~/.config/opencode の harness ファイルだけ
-./sync-agents.sh      # ~/.agents/skills の 4 フェーズ + orchestrate + claude-consult / codex-consult + herdr-boss（+ Cline 用 symlink）
+./sync-agents.sh      # ~/.agents/skills の 4 フェーズ + orchestrate + claude-consult / codex-consult + herdr-boss + pm-mode（+ Cline 用 symlink）
 ./sync-cursor.sh      # ~/.agents/skills を Cursor のユーザー skill ディレクトリへコピー（HOME ⇄ repo ではない）
-./sync-pi.sh          # ~/.pi/agent/prompts の /orchestrate
+./sync-pi.sh          # ~/.pi/agent/prompts の /orchestrate・/pm-mode
 ./sync-*.sh -n        # 非対話。repo → HOME の自動コピー（初回配布にも使える）
 ./sync-*.sh -n --to-repo  # 非対話。HOME → repo の自動コピー
 ```
@@ -104,7 +104,7 @@ AI_CHAIN="codex:gpt-6-sol ollama-cloud/deepseek-v4.1-flash" ~/.claude/scripts/ai
 
 ## 司令塔（boss）パターン
 
-Herdr の上で、1 つのセッションを**司令塔**にして、仕事を名前付きの子エージェント（別 tab の claude / pi / codex など）に渡す。司令塔は自分で手を動かさず、渡したら待たずに戻り、届いた報告を読んで要約する。手順と守ることは `claude/skills/herdr-boss/SKILL.md`（Claude 版）/ `agents/skills/herdr-boss/SKILL.md`（Cursor / pi / codex 版）。
+Herdr の上で、1 つのセッションを**司令塔**にして、仕事を名前付きの子エージェント（別 tab の claude / pi / codex など）に渡す。司令塔は自分で手を動かさず、渡したら待たずに戻り、届いた報告を読んで要約する。手順と守ることは `agents/skills/herdr-boss/SKILL.md` が正本（配布先 `~/.agents/skills/herdr-boss/`）。`claude/skills/herdr-boss/SKILL.md` はそれを指す Claude 用の入口で、手順は書かない。
 
 ```
 boss ──delegate──▶ child-a（依頼ファイル + 1 行ポインタ。末尾に「報告のしかた」を自動追記）
@@ -133,6 +133,15 @@ herdr agent rename "$HERDR_PANE_ID" boss-myrepo
 - `delegate` が失敗（子が blocked など）しても前の委任の watcher は残る。依頼ファイルは委任ごとに別名（本人だけが読める）で、作業中の子への依頼を上書きしない
 - `ack` は直前の `read` で表示したものだけを既読にする（後から届いた報告を取りこぼさない）。`HERDR_BOSS` があれば `inbox read child-a` のように boss 名を省ける
 - inbox / watcher のライフサイクルと掃除は `docs/session-lifecycle.md`
+
+### PM 専任（pm-mode）
+
+`/pm-mode <依頼>`（pi）で、そのセッションは **PM だけ**になる。コードを読む・書く・テストする・技術的な判断を自分で下すことをせず、判断と実行は上の道具（`delegate` / `consult` / `orchestrate-parallel.sh` / `ask`）で他の AI に渡す。PM がやるのは切り分け、依頼文、報告の集約、人への進捗報告、次の一手の決定だけ。手順は `agents/skills/pm-mode/SKILL.md`（配布先 `~/.agents/skills/pm-mode/`）、pi のコマンドは `pi/prompts/pm-mode.md`。
+
+```text
+/pm-mode 2511 と 3728 をそれぞれ orchestrate   → orchestrate-parallel.sh 2511 3728
+/pm-mode ○○を追加したい                        → 要件を聞く → orchestrate の子に依頼文ごと渡す
+```
 
 ## フェーズの混在（phase mixing）
 
@@ -175,7 +184,7 @@ $ARGUMENTS: "{task description} --tier=M"
 
 `~/.claude` と `~/.config/opencode` は [maro525/_dotfiles](https://github.com/maro525/_dotfiles) と共有している。**参照方向は harness → dotfiles の一方向**で、dotfiles は本リポジトリの存在を知らない（dotfiles 単体で完結し、harness は後から任意で足せるレイヤー）。したがって相互参照の検査はすべてこのリポジトリ側に置き、dotfiles の sync スクリプトからは呼ばない。dotfiles が見つからない場合、`checks/crossrefs.sh` は検査せずに成功終了する。
 
-dotfiles 側の `sync-claude.sh` は `~/.claude/skills` を**ディレクトリ走査**して `SKILL_EXCLUDES` の名前を除外する。harness が配る skill（現在 `herdr-boss`）は dotfiles 側の `SKILL_EXCLUDES` に名前が要る（無いと dotfiles 側にも取り込まれる）。skill を足したら両方を揃える。
+dotfiles 側の `sync-claude.sh` は `~/.claude/skills` を**ディレクトリ走査**して `SKILL_EXCLUDES` の名前を除外する。harness が `~/.claude/skills` に**実ファイルで**置くのは `herdr-boss` だけなので、dotfiles の `SKILL_EXCLUDES` に入れるのもこれだけでよい。`herdr-cleanup` / `harness-daily` / `harness-status` は `~/.agents/skills` への symlink で、dotfiles 側の `find -type f` は symlink 先をたどらない（実ディレクトリに変えたら同じく除外を足す）。
 
 `lib/sync-common.sh` は dotfiles の `lib/sync-common.sh` と同一内容（ヘッダコメント 1 行を除く）を保つ。片方を変えたらもう片方にも同じ変更を入れる。
 

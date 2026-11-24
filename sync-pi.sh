@@ -1,7 +1,7 @@
 #!/bin/bash
 # Sync the pi prompt templates between ~/.pi/agent/prompts and this repository.
 #
-#   ~/.pi/agent/prompts/{orchestrate}.md  <->  pi/prompts/
+#   ~/.pi/agent/prompts/{orchestrate,pm-mode}.md  <->  pi/prompts/
 #
 # ~/.pi/agent also holds pi's own configuration (AGENTS.md, settings.json,
 # extensions/, skills/, sessions/), so this script names every file it owns and
@@ -19,9 +19,9 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SOURCE="$HOME/.pi/agent/prompts"
 DEST="$SCRIPT_DIR/pi/prompts"
 
-PI_PROMPTS=(orchestrate.md)
+PI_PROMPTS=(orchestrate.md pm-mode.md)
 
-AGENT_SKILLS=(startproject team-implement team-review deploy orchestrate)
+AGENT_SKILLS=(startproject team-implement team-review deploy orchestrate pm-mode)
 AGENT_SKILLS_DIR="$HOME/.agents/skills"
 PI_OWN_SKILLS="$HOME/.pi/agent/skills"
 PHASE_RUN="$HOME/.claude/scripts/phase-run.sh"

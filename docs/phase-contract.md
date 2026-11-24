@@ -104,6 +104,8 @@ team-review の PASS は、直近 `## team-implement` の `利用AI:` と**異�
 
 フェーズ定義はこの遷移を書かない。Claude 版は `claude/commands/orchestrate.md`、OpenCode 版は `opencode/commands/orchestrate.md`、pi 版は `agents/skills/orchestrate/SKILL.md`（#13）が担当する。
 
+唯一の例外は、orchestrate を通さずに startproject を単独で回したとき（`agents/skills/startproject/SKILL.md`「TASK_FILE の新規作成」）。TASK_FILE が無いときだけ `status: planning` で作る。以後の遷移は orchestrate だけが書く。
+
 ## 6. 失敗時の扱い
 
 | 事象 | 扱い |

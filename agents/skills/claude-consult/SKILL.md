@@ -79,7 +79,7 @@ Claude Code 自身からは使わない（自分自身を呼ぶ形になる）�
 
 - **既定値**（何も指定しなくてよい）: role=`consult`、`--context` はインラインのとき自動で付く、タイムアウト 20 分、バックエンドは Herdr
 - 足りない前提は**自分で調べて補う**（リポジトリを見る、`--context` で付く repo/branch/直近コミットを使う）
-- 呼び出しは**フォアグラウンド**。回答が返るまで待ち、返ってきた本文をそのまま読んで要約する
+- **呼び出しは同期**。回答が返るまで待ち、返ってきた本文をそのまま読んで要約する（長いときは実行環境のバックグラウンド実行に回し、完了通知の後に読む。`tmux` で包まない）
 - `--close` は**採用/却下を決めた後**に自分で実行する（ユーザーに言われなくても）
 
 ## 手順
@@ -121,8 +121,8 @@ EOF
 ~/.claude/scripts/claude-consult.sh -t 30m -m sonnet {prompt_file}    # タイムアウト / モデル
 ```
 
-- **このコマンドは回答が返るまで戻らない（同期）**。バックグラウンドに回さず、フォアグラウンドで待って stdout をそのまま読めばよい（追加の「待つ」手順は無い）。タイムアウト既定 20 分（`-t` / `CONSULT_TIMEOUT`）
-- どうしてもバックグラウンドにするなら、**完了通知の後に stderr の `ANSWER_FILE={path}` を読む**（回答本文はそこにも書かれている）
+- **このコマンドは回答が返るまで戻らない（同期）**。stdout をそのまま読めばよい（追加の「待つ」手順は無い）。タイムアウト既定 20 分（`-t` / `CONSULT_TIMEOUT`）
+- 実行環境の上限（Bash の既定 10 分など）を超えるときだけ、**その実行環境のバックグラウンド実行**に回し、完了通知が来てから stderr の `ANSWER_FILE={path}` を読む（回答本文はそこにも書かれている）。**`tmux` / `screen` / `nohup` で包まない**（セッションはすでに Herdr の tab で動いており、包むと記録に乗らず回答の回収も自前になる）。出力を繰り返し見に行かず、`pgrep` で完了を推測しない
 - stdout が回答本文。`{prompt_file の拡張子を除いた名前}.answer.md` に同じ内容、`.json` にターミナルの生テキストと送信結果が残る（`--roles` は `.{role}.answer.md` / `.{role}.json`。標準入力のときは `$TMPDIR/harness-consult/out/{target}-consult-{timestamp}.answer.md`）
 - stderr の `ANSWER_FILE=…` / `AI_MODEL=claude/{model}` / `AGENT={agent名}` / `PANE={pane id}` を控える（tab 名は agent 名になる）
 - 回答は tab に常駐するセッションが `$TMPDIR/harness-consult/{agent}/` に書いた Markdown をそのまま使う（TUI の描画を経由しないのでコードフェンスが保たれる）

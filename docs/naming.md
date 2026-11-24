@@ -24,6 +24,7 @@ Herdr のセッション名は **agent 名・tab 名・（worktree のときは�
 | issue 無しの orchestrate | `orchestrate-noissue-<feature>` | `orchestrate-noissue-quick-fix` |
 | delegate の子 | `<claude\|codex\|pi>-<purpose>` | `claude-review-1983`, `codex-research-cache` |
 | boss | `boss-<repo>` | `boss-nanco-next` |
+| PM（pm-mode） | `pm-<repo>` | `pm-nanco-next` |
 | 相談・配布以外の一時セッション | `<kind>-<purpose>-<短い id>` | `pi-repro-4f2a` |
 
 `<role>` は `consult` / `review` / `implement` のいずれか（`consult.sh` のロール名と一致させる）。**claude が既定**なので、codex のときだけ `-codex` を付ける。

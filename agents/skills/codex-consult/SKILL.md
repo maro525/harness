@@ -75,7 +75,7 @@ EOF
 ~/.claude/scripts/codex-consult.sh -b print {prompt_file}              # Herdr 無しの単発 codex exec
 ```
 
-- **回答が返るまで戻らない（同期）**。フォアグラウンドで待って stdout を読むだけでよい。バックグラウンドにするなら、完了通知の後に stderr の `ANSWER_FILE=` を読む
+- **回答が返るまで戻らない（同期）**。フォアグラウンドで待って stdout を読むだけでよい。実行環境の上限を超えるときだけその実行環境のバックグラウンド実行に回し、完了通知の後に stderr の `ANSWER_FILE=` を読む。**`tmux` / `screen` / `nohup` で包まない**
 - `--text` で一言を渡せる。`--context` を付けると repo / branch / 直近のコミットが質問の前に付く（claude-consult と同じ）
 - stdout が回答本文、`{base}.answer.md` と `.json`（生ログ）が残る（標準入力のときは `$TMPDIR/harness-consult/out/` 配下）。stderr の `ANSWER_FILE=…` / `AI_MODEL=codex/{model}` / `AGENT=consult-codex[-{role}]` / `PANE={pane id}` を控える
 - 既定タイムアウト 20 分（`-t` / `CONSULT_TIMEOUT`）

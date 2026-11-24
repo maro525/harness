@@ -21,6 +21,7 @@ agents/
     ├── herdr-cleanup/SKILL.md  # フェーズではない。記録済みセッション・期限切れロック・孤児 worktree を整理する（既定はレポートのみ）
     ├── harness-daily/SKILL.md  # フェーズではない。1 日の振り返り（セッション・失敗・役割の逸脱・委譲比率・残骸）
     ├── harness-status/SKILL.md # フェーズではない。harness の現況を読み取り専用で一望する（片付けは herdr-cleanup）
+    ├── pm-mode/SKILL.md        # フェーズではない。PM 専任: 自分では手を動かさず（コードも読まず）、判断と実行は delegate / consult / orchestrate-parallel / ask で他の AI に渡す
     └── deploy/SKILL.md          # commit → push → PR/MR（gh / glab）、#### PR / MR + 利用AI 行 + 紐づけ行。作業ブランチに留まる（TASK_FILE のコミットと分岐元への復帰は呼び出し元）
 ```
 
@@ -28,7 +29,7 @@ agents/
 
 ## 共通規約
 
-フェーズの SKILL.md（claude-consult / codex-consult / herdr-boss を除く）はすべて同じ規約で書かれている。
+フェーズの SKILL.md（claude-consult / codex-consult / herdr-boss / pm-mode を除く）はすべて同じ規約で書かれている。
 
 | 項目 | 規約 |
 |---|---|
@@ -67,6 +68,7 @@ orchestrate のフェーズ指定モードは探索に頼らず、プロンプ�
 | 実装を同じブランチでやらせて結果を受け取る | `claude-consult.sh --role implement` | delegate（worktree が分かれる） |
 | 実装を別ブランチ / worktree で並行、報告を inbox で受ける | `herdr-agent.sh ensure --topology worktree --branch feature/<name>` + `delegate`（`herdr-boss`） | consult |
 | 4 フェーズを回す | `phase-run.sh`（orchestrate 経由） | consult / delegate の直呼び |
+| PM として回す（自分では手を動かさない） | `pm-mode` の振り分け（`delegate` / `consult` / `orchestrate-parallel.sh` / `ask`） | 自分でコードを読む・直す・テストを回す |
 | セッションを立てて何かをさせる（すべて Herdr 経由） | **Herdr 経由**: `herdr-agent.sh ensure` / `consult.sh` / `orchestrate-parallel.sh` | **`tmux` / `screen` / `nohup` / `claude --bg` で立てる**（記録が残らず、片付けの対象外になる） |
 | 外部リサーチ（Web・別モデルの解釈） | 自分（firecrawl / `curl`）＋ **gemini**（`consult.sh --to pi -m google/gemini-4-carbon`） | consult だけ（自分が調べない） |
 | 文章作成・推敲、動画や画像の分析を pi に任せる | `herdr-agent.sh ensure --kind pi --preset writing`（動画は `--preset video`）→ `google/gemini-4-carbon` | 既定の pi（deepseek）で文章を書かせる |
@@ -171,7 +173,7 @@ timeout -k 1m 30m {上表のコマンド} "$(cat {prompt_file})" < /dev/null > {
 ./sync-agents.sh -n --to-repo  # 非対話。~/.agents/skills → repo の自動コピー
 ```
 
-`sync-agents.sh` は `~/.agents/skills` のうち **この 4 スキルだけ**を扱う（残りは `npx skills` 管理。`.skill-lock.json` に触らない）。同期後に:
+`sync-agents.sh` は `~/.agents/skills` のうち **AGENT_SKILLS に挙げた skill だけ**を扱う（残りは `npx skills` 管理。`.skill-lock.json` に触らない）。新しい skill を足したら同じ配列に名前を入れる（`checks/phases.sh` が抜けを検出する）。同期後に:
 
 1. **Cline 用 symlink**: `~/.cline/skills/{name}` → `~/.agents/skills/{name}` を作る。既に何かあればスキップして警告（実体ディレクトリなら手で消してから再実行）。`sync-cline.sh` は symlink の先を辿らないので `cline/skills/` に重複は入らない
 2. **Cursor（WSL）用 symlink**: `~/.cursor/skills/{name}` → `~/.agents/skills/{name}` を作る（同じ規則で、既存の実ディレクトリは触らない）。`sync-cursor.sh` は Windows 側のプロファイルに**コピー**するので、WSL の Cursor からはこちらの symlink が見える

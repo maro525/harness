@@ -268,31 +268,7 @@ if [[ $DRY_RUN -eq 0 ]]; then
   printf '%s\n' ${managed[@]+"${managed[@]}"} >"$DEST/$MANIFEST_NAME"
 fi
 
-# --- 4. Cursor user rules (always-on guidance, not a skill) ------------------
-# docs/cursor-rules/*.mdc carries the "parent is the PM, children execute" rule.
-# It goes to the WSL-side ~/.cursor/rules only: that is where Cursor's own
-# hand-written rules live, and the Windows profile is not wanted for this.
-RULES_SRC="$SCRIPT_DIR/docs/cursor-rules"
-RULES_DIR="$HOME/.cursor/rules"
-if [[ -d "$RULES_SRC" ]]; then
-  for rule in "$RULES_SRC"/*.mdc; do
-    [[ -f "$rule" ]] || continue
-    name=$(basename "$rule")
-    if [[ $DRY_RUN -eq 1 ]]; then
-      echo "  rule  $name -> $RULES_DIR (dry-run)"
-      continue
-    fi
-    mkdir -p "$RULES_DIR"
-    if cmp -s "$rule" "$RULES_DIR/$name"; then
-      echo "  same  $RULES_DIR/$name"
-    else
-      cp -f "$rule" "$RULES_DIR/$name"
-      echo "  rule  $RULES_DIR/$name"
-    fi
-  done
-fi
-
-# --- 5. summary ------------------------------------------------------------
+# --- 4. summary ------------------------------------------------------------
 echo ""
 echo "Copied: $copied  Unchanged: $same  Skipped: $skipped  Pruned: $pruned"
 echo "Managed skills are listed in $DEST/$MANIFEST_NAME"
