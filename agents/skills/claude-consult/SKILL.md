@@ -28,7 +28,7 @@ Claude Code 自身からは使わない（自分自身を呼ぶ形になる）�
 - **使わない**:
   - 並行で走らせて報告で判断したい → [herdr-boss](../herdr-boss/SKILL.md) の `delegate`（非同期。子の画面は見えない）
   - 4 フェーズの実行 → `phase-run.sh`（orchestrate 経由）
-  - 外部リサーチ → `ai-fallback.sh`
+  - 外部リサーチ → `consult.sh --to pi`（gemini）。一次情報が要るときだけ firecrawl
 - **`herdr-agent.sh ensure` / `delegate` を直接使わない**（consult の tab/pane 管理はこのスクリプトが持つ。混ざると `consult*` と任意名のセッションが二重に残る）
 
 ## 前提

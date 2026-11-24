@@ -1,7 +1,7 @@
 # Tool Routing Rules
 
 **どの操作をどのツール・エージェントに委譲するかを定める。**
-外部リサーチは **自分（firecrawl MCP）+ gemini** の二系統、設計相談は ai-fallback（フォールバック連鎖）に振り分ける。使うかどうか自体は tier で決まる（`$HOME/.claude/rules/adaptive-execution.md` の「External Research」「OpenCode Design Consultation」）。本ファイルは「使う」となった場合の委譲先を定める。
+外部リサーチは **gemini が先**。インターネットの一次情報が要るときだけ firecrawl / WebFetch（pi は web fetch）を使う。設計相談は ai-fallback（フォールバック連鎖）に振り分ける。使うかどうか自体は tier で決まる（`$HOME/.claude/rules/adaptive-execution.md` の「External Research」「OpenCode Design Consultation」）。本ファイルは「使う」となった場合の委譲先を定める。
 
 **単発の作業はサブエージェント（Agent ツール）に振らず、メインセッションで直接実行する。** リサーチ・OpenCode・Linear・docker/uv/ruff・スクリプト作成などすべて対象。サブエージェントを使うのは `/orchestrate` 系（startproject / team-implement / team-review / deploy）と、それらの command が自分で定めている場合だけ。
 
@@ -17,12 +17,12 @@
 
 | Operation | Delegate To | Method |
 |-----------|-------------|--------|
-| External research | **firecrawl MCP（自分）+ gemini** | 二系統を並列実行し Claude が統合（下記） |
+| External research | **gemini（先）+ 必要時のみ firecrawl** | gemini に質問し、出典が要るときだけ一次情報を取る（下記） |
 | 記事 (URL 1 本) | **WebFetch** | 読めないページは firecrawl（`firecrawl_scrape`） |
 | PDF (URL) / 複数ページ | **firecrawl MCP** | `firecrawl_parse` / `firecrawl_scrape` |
 | 音声・動画 | **未対応** | 委託先なし。ユーザーに扱い方を確認する |
-| Library research | **firecrawl MCP（自分）+ gemini** | `firecrawl_search` で一次情報 + `consult.sh --to pi` で実装知見 |
-| Design decisions | **OpenCode（モデルはフォールバック連鎖）** | バックグラウンド Bash で直接（`~/.claude/scripts/ai-fallback.sh {prompt_file}`、下記「OpenCode リサーチの実行」） |
+| Library research | **gemini（先）+ 必要時のみ firecrawl** | `consult.sh --to pi` で実装知見。一次情報が要るときだけ `firecrawl_search` |
+| Design decisions | **OpenCode（モデルはフォールバック連鎖）** | バックグラウンド Bash で直接（`~/.claude/scripts/ai-fallback.sh {prompt_file}`、下記「設計相談・セカンドオピニオンの連鎖」） |
 | git（書き込み系） | **`/deploy` skill** | Ad-hoc Git モード。読み取り系は Claude が直接 |
 | `/orchestrate` で作った PR への追加変更 | **`/orchestrate` 追加修正モード** | `/orchestrate "{追加の依頼} --task-file={TASK_FILE}"`。直接編集して Ad-hoc push しない（下記「Git Operations」） |
 | docker/ruff/uv | **Direct** | Bash で直接実行（長いものは `run_in_background: true`） |
@@ -45,36 +45,39 @@
 - Herdr が使えないときは**止まって確認する**（黙って tmux に落ちない）。一回きりの文章作成なら `consult.sh --to pi`（`pi -p`）
 - `tmux` を Claude の状態表示（hooks）以外の目的で使わない
 
-## External Research: 自分 + gemini
+## External Research: gemini が先、一次情報は必要時だけ
 
-リサーチは **2 人でやる**: 自分（Cursor / Claude）が一次情報を取り、**gemini** が解釈する。突き合わせて統合する。
+リサーチは **gemini に聞くところから始める**。gemini は実装知見（設計上の勘所・落とし穴・比較）を返す。**インターネットの一次情報が要るときだけ**、自分で出典を取る。
 
-| 系統 | 担当 | 得意分野 |
+| 系統 | 担当 | 使う条件 |
 |------|-------|---------|
-| **一次情報** | **自分**（firecrawl MCP / `curl`） | 公式ドキュメント・リリースノートの実文面。出典 URL が取れるが解釈はしない |
-| **実装知見** | **gemini**（`consult --to pi`） | 設計上の勘所・落とし穴・比較。解釈は出せるが出典を持たない |
+| **実装知見** | **gemini**（`consult --to pi`） | まずこれ。最初に聞く |
+| **一次情報** | **自分**（firecrawl MCP / `WebFetch` / `curl`。pi は web fetch） | 出典 URL が要る / 最新版・リリースノート・公式仕様を確認する / gemini の答えを裏取りする |
 
 食い違ったら **一次情報を優先**し、相違点と採用した方を成果物に記録する（`/startproject` では OUTPUT の `DESIGN`）。
 
 ### リサーチの呼び出し形
 
+まず gemini に聞く（材料がまだ無くてもよい）:
+
 ```bash
 ~/.claude/scripts/consult.sh --to pi -m google/gemini-4-carbon - <<'EOF'
 {リサーチ質問}
----
-## こちらの一次情報（firecrawl / curl で取ったもの）
-- {出典 URL と要点}
 EOF
 ```
 
-- **自分は `firecrawl` MCP（または `curl`）で一次情報を取る。** gemini には「何を調べたいか」と「こちらが取った材料」を渡す
+インターネット情報が要るときだけ、一次情報を足す:
+
+- **Claude Code / Cursor**: `firecrawl` MCP（`firecrawl_search` / `firecrawl_scrape`）。無ければ `WebFetch` か `curl`
+- **pi**: `web_fetch` / `web_search` ツール
+- 取った材料は、添えて gemini にもう一度聞いてよい（gemini は同期）
 - gemini 側は既定で**ツールを持たない**（`pi -p --no-session --no-tools`。呼び出し元の AGENTS.md / skills / MCP も読ませない。実測 232s → 66s）。不足の裏取りをさせたいときだけ `CONSULT_PI_TOOLS=1` を付ける
-- 並列にしたいときは **材料を待たずに質問だけ先に投げる**（gemini は同期なので、材料を渡すなら自分が取ってから）
-- 記録は `利用AI:` に両方書く（例: `利用AI: claude/opus + pi/google/gemini-4-carbon`）
+- **gemini が 429 / 認証エラー / 無出力で落ちても、別のモデルに切り替えない。** 理由を書いて自分の知識で進む（`外部リサーチ不可: {理由}`）
+- 記録は `利用AI:` に使った方を書く（例: `利用AI: pi/google/gemini-4-carbon`。一次情報も取ったなら `+ claude/opus (firecrawl)`）
 
-### OpenCode リサーチの実行（ai-fallback・設計相談と代替用）
+### 設計相談・セカンドオピニオンの連鎖（ai-fallback）
 
-ふだんのリサーチは上の gemini 経由。ここから下は **gemini が 429 / 認証エラー / 無出力のときの代替**と、**設計相談（startproject）・セカンドオピニオン（team-review）** のためのもの（各ドキュメントからの「OpenCode リサーチの実行」参照はこの節を指す）。
+設計相談（startproject）とセカンドオピニオン（team-review）は `ai-fallback.sh` の連鎖で回す。リサーチは上の gemini が担当するので、この節はリサーチには使わない（各ドキュメントからの「設計相談・セカンドオピニオンの連鎖」参照はこの節を指す）。
 
 ```bash
 ~/.claude/scripts/ai-fallback.sh {prompt_file}
@@ -125,17 +128,17 @@ EOF
 **調べた結果はリポジトリの外、`~/.local/share/harness/tasks/{repo}/research/` に置く。** TASK_FILE（`{repo}/task-*.md`）と同じバケットなので、作業ツリーを切り替えても 1 か所にまとまり、git にも載らない。
 
 - `{repo}` は `~/.claude/scripts/task-file.sh dir` が出す（`basename $(git rev-parse --git-common-dir)` の `.git` を除いたもの。worktree でも同じバケット）。バケットまではスクリプトが作るが `research/` は作らないので、書く前に `mkdir -p` する
-- ファイル名は由来が分かる形にする: `{topic}-opencode.md`（実装知見）/ `{topic}-sources.md`（一次情報）
+- ファイル名は由来が分かる形にする: `{topic}-gemini.md`（実装知見）/ `{topic}-sources.md`（一次情報）
 - 記録は TASK_FILE と同居するので、後から `/team-review` や `/deploy` が同じバケットを探せば見つかる
 - **`.claude/docs/research/` は旧配置。** 2026-11-10 に git から外した（それまでの分は git の履歴で読める）。フォルダは古い道具が `>` で書き込んでも落ちないように `.gitkeep` で残してあるだけで、新規には書かない
 
 ### How to Route
 
-サブエージェントは使わず、メインセッションで二系統を同時に進める。
+サブエージェントは使わず、メインセッションで進める。
 
-1. **系統 2（実装知見）を先に起動**: `~/.claude/scripts/consult.sh --to pi -m google/gemini-4-carbon -` を Bash の `run_in_background: true` で起動し、出力を `~/.local/share/harness/tasks/{repo}/research/{topic}-gemini.md` に落とす（`{repo}` の求め方は「調べものの記録の置き場所」。stderr の `AI_MODEL` を `利用AI:` として記録する）
-2. **系統 1（一次情報）をその間に実行**: `firecrawl_search` → 公式ドキュメント／リリースノートを `firecrawl_scrape`。主張ごとに出典 URL を控える
-3. gemini の完了通知を待ち、出力ファイルを読んで firecrawl の結果と突き合わせて統合する（食い違いは firecrawl 優先）
+1. **まず gemini に聞く**: `~/.claude/scripts/consult.sh --to pi -m google/gemini-4-carbon -` を Bash で実行し、出力を `~/.local/share/harness/tasks/{repo}/research/{topic}-gemini.md` に落とす（`{repo}` の求め方は「調べものの記録の置き場所」。stderr の `AI_MODEL` を `利用AI:` として記録する）
+2. **インターネットの一次情報が要るときだけ**: `firecrawl_search` → 公式ドキュメント／リリースノートを `firecrawl_scrape`（pi は web fetch）。主張ごとに出典 URL を控え、`{topic}-sources.md` に置く
+3. 両方あるときは突き合わせて統合する（食い違いは一次情報を優先）。gemini が落ちたら一次情報だけで進み、理由を残す
 
 ### Triggers
 

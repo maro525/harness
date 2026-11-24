@@ -48,11 +48,11 @@ Phases and models per tier (how each phase is launched: `orchestrate.md` "tier �
 | **M** | best | opus | opus | haiku |
 | **L** | best | best | opus | haiku |
 
-Both tables below use their own invocation: research uses `~/.claude/scripts/consult.sh --to pi -m google/gemini-4-carbon -` (gemini for the implementation-know-how stream), while the design consultation and second opinion use `~/.claude/scripts/ai-fallback.sh {prompt_file}` (model chain and fallback rules: `$HOME/.claude/rules/tool-routing.md`「OpenCode リサーチの実行」). Always run them directly with background Bash (no subagent).
+Both tables below use their own invocation: research asks gemini first (`~/.claude/scripts/consult.sh --to pi -m google/gemini-4-carbon -`) and takes sourced facts only when the question needs internet information, while the design consultation and second opinion use `~/.claude/scripts/ai-fallback.sh {prompt_file}` (model chain and fallback rules: `$HOME/.claude/rules/tool-routing.md`「設計相談・セカンドオピニオンの連鎖」). Always run them directly with background Bash (no subagent).
 
-### External Research (firecrawl MCP + gemini)
+### External Research (gemini first)
 
-firecrawl MCP (sourced facts, run by the session itself) and gemini (implementation know-how) run in parallel.
+gemini answers first with implementation know-how. Sourced facts (firecrawl / WebFetch, or pi's web fetch) are pulled only when the question needs internet information.
 
 | Tier | Usage |
 |------|-------------|

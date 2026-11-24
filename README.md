@@ -84,9 +84,11 @@ hook の登録（`settings.json` の `hooks.UserPromptSubmit`）と `Skill(orche
 kanban は `uv tool install --editable ~/src/harness/kanban`（詳細は `kanban/README.md`）。
 `taskboard --harness --open` で、エージェントの親子・inbox・ロック・フェーズの動きも同じ画面で見られる。
 
-## 外部 AI のフォールバック
+## 設計相談のフォールバック（ai-fallback）
 
-リサーチは **自分（firecrawl / curl）＋ gemini（`consult.sh --to pi`）** の 2 人でやる（`claude/rules/tool-routing.md`「External Research」）。設計相談・セカンドオピニオン、および gemini が使えないときの代替は `ai-fallback.sh`（`sync-claude.sh` が実行ビット付きで配布）に任せ、連鎖は `claude/rules/tool-routing.md`「OpenCode リサーチの実行」が唯一の定義。
+リサーチは **gemini が先**（`consult.sh --to pi -m google/gemini-4-carbon`）。インターネットの一次情報が要るときだけ firecrawl / WebFetch（pi は web fetch）で出典を取る（`claude/rules/tool-routing.md`「External Research」）。
+
+設計相談（startproject）とセカンドオピニオン（team-review）は `ai-fallback.sh`（`sync-claude.sh` が実行ビット付きで配布）の連鎖に任せ、連鎖は `claude/rules/tool-routing.md`「設計相談・セカンドオピニオンの連鎖」が唯一の定義。
 
 | 順 | モデル | 提供元 |
 |---|---|---|

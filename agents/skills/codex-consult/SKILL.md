@@ -20,7 +20,7 @@ Cursor / pi / Cline / OpenCode などから、**別の Codex セッション**�
 - **使わない**:
   - 並行で走らせて報告で判断したい → [herdr-boss](../herdr-boss/SKILL.md) の `delegate`
   - 4 フェーズの実行 → `phase-run.sh`
-  - 外部リサーチ → `ai-fallback.sh`（codex も候補に入っている）
+  - 外部リサーチ → `consult.sh --to pi`（gemini）
 - **`herdr-agent.sh ensure` / `delegate` を直接使わない**（`consult-codex*` の tab/pane 管理はこのスクリプトが持つ）
 
 ## ラフな指示から実行まで
