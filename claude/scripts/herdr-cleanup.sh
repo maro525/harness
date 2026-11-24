@@ -35,7 +35,7 @@
 #   --yes            confirm without asking (only after the list was accepted)
 #   --include-live   also close recorded sessions that are still alive but idle
 #   --owner ID       scope to one owner (agent:NAME | pane:ID | NAME, which means
-#                    agent:NAME); default: this session's stable name
+#                    agent:NAME); default: this owner's stable name
 #   --all-owners     ignore the owner scope (every recorded session / lease)
 #   --boss NAME      whose inbox to report (default: $HERDR_BOSS, else the owner's
 #                    name, else this pane's id)
@@ -269,7 +269,7 @@ run_cleanup() {
   if [[ -z "$OWNER" ]]; then
     printf 'Scope: every recorded session (--all-owners; self %s, %s)\n' "${SELF_OWNER:--}" "$who"
   elif [[ "$OWNER" == "$SELF_OWNER" ]]; then
-    printf 'Scope: %s (this session; %s — use --all-owners to include others)\n' "$OWNER" "$who"
+    printf 'Scope: %s (this owner; %s — use --all-owners to include others)\n' "$OWNER" "$who"
   else
     printf 'Scope: %s (--owner; self %s, %s)\n' "$OWNER" "${SELF_OWNER:--}" "$who"
   fi
@@ -361,7 +361,7 @@ run_cleanup() {
     report_header "task locks ($LOCK_DIR)"
     local found=0 file key runner upd ttl_s age now lock_owner
     now=$(date +%s)
-    # Leases taken by a child this session started belong to this session too:
+    # Leases taken by a child this owner started belong to the same owner:
     # the child's own pane id is the owner, and our record for that child says so.
     local -a mine=()
     [[ -n "$OWNER" ]] && mine+=("$OWNER")
@@ -454,7 +454,7 @@ run_cleanup() {
   # layout instead: ~/.herdr/worktrees/<repo>/<branch>. A worktree that no record
   # points at is an orphan: close removed its workspace but not (for a dirty one)
   # the checkout. Ownership comes from the registry herdr-agent.sh writes next to
-  # each worktree it creates, so the default stays "the worktrees this session
+  # each worktree it creates, so the default stays "the worktrees this owner
   # made". A worktree with no record has no owner, so no flag removes it: it may
   # belong to this conversation, to another one, or to a person running git by
   # hand. Remove a known one with `git worktree remove` after checking it is clean.
@@ -482,7 +482,7 @@ run_cleanup() {
           wt_boss=$(jq -r '.boss // empty' "$WORKTREE_REGISTRY/$wt_key.json" 2>/dev/null)
         fi
         if [[ -z "$wt_owner" ]]; then
-          printf '  skip    %-52s (unregistered; remove by hand if this session created it)\n' "$wt_path"
+          printf '  skip    %-52s (unregistered; remove by hand if this chat created it)\n' "$wt_path"
           continue
         fi
         if (( ALL_OWNERS == 0 )) && ! owns "$wt_owner" "$wt_boss"; then

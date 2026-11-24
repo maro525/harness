@@ -549,7 +549,7 @@ EOF2
 
 # ─── herdr backend ───────────────────────────────────────────────────────────
 
-# Who started this session, as a name that outlives the pane (same rule as
+# Who started this agent, as a name that outlives the pane (same rule as
 # herdr-agent.sh): $HERDR_AGENT_NAME, else the agent name Herdr has for the
 # calling pane, else the pane id. Used by herdr-cleanup.sh to keep a cleanup to
 # the caller's own sessions.
