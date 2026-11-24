@@ -27,7 +27,7 @@
 #   --repo DIR      repository (default: $PWD)
 #   --base REF      base for the branches (default: origin/HEAD, else origin/main)
 #   --prefix STR    branch prefix (default: feature/)
-#   --kind KIND     agent kind for the session: claude (default) | codex | pi
+#   --kind KIND     agent kind for the session: claude (default) | codex | pi | cline
 #   --model MODEL   claude: --model (default: sonnet)
 #   --runner NAME   runner recorded in the lock and Linear (default: <kind>)
 #   --ensure-only   create the worktrees and tabs, do not send the request
@@ -63,7 +63,7 @@ Options:
   --repo DIR      repository (default: $PWD)
   --base REF      base for the branches (default: origin/HEAD, else origin/main)
   --prefix STR    branch prefix (default: feature/)
-  --kind KIND     agent kind: claude (default) | codex | pi
+  --kind KIND     agent kind: claude (default) | codex | pi | cline
   --model MODEL   claude: --model (default: sonnet)
   --runner NAME   runner recorded in the lock and Linear (default: <kind>)
   --ensure-only   create the worktrees and tabs, do not send the request
@@ -103,8 +103,8 @@ done
 [[ -x "$HERDR_AGENT" ]] || die "herdr-agent.sh not found next to this script"
 
 case "$KIND" in
-  claude|codex|pi) ;;
-  *) die "--kind must be claude, codex or pi" ;;
+  claude|codex|pi|cline) ;;
+  *) die "--kind must be claude, codex, pi or cline" ;;
 esac
 RUNNER=${RUNNER:-$KIND}
 
@@ -127,6 +127,19 @@ native_args() {
     claude) printf '%s\0' --permission-mode auto --model "$MODEL" ;;
     codex)  printf '%s\0' -s workspace-write -a never --no-alt-screen ;;
     pi)     : ;;
+  esac
+}
+
+# The request's first line depends on the kind. Cline has no command mechanism
+# (only ~/.cline/skills), so its request keeps pointing at the generic skill;
+# claude / pi / codex each have their own entry point and get that instead.
+entry_for() { # kind args
+  case "$1" in
+    claude)
+      printf 'Read ~/.claude/commands/orchestrate.md and follow it exactly as your instructions for this run.\nARGUMENTS: "%s"' "$2"
+      ;;
+    pi|codex) printf '/orchestrate "%s"' "$2" ;;
+    cline) printf 'orchestrate スキル（~/.agents/skills/orchestrate/SKILL.md）で、このタスクを最後まで回してください。' ;;
   esac
 }
 
@@ -213,21 +226,26 @@ for task in "${TASKS[@]}"; do
   echo "   worktree: (herdr worktree)"
 
   if [[ $DRY_RUN -eq 1 ]]; then
+    # Print the entry line the child will get, so the per-kind branch is visible
+    # without starting a session.
+    printf '   request: %s\n' "$(entry_for "$KIND" "--linear-id=$ID")"
     started+=("$NAME|dry-run|$BRANCH")
     continue
   fi
 
-  mapfile -d '' -t args < <(native_args)
+  mapfile -d '' -t session_args < <(native_args)
   if ! "$HERDR_AGENT" ensure "$NAME" --kind "$KIND" --repo "$repo" \
-        --topology worktree --branch "$BRANCH" --base "$BASE" -- "${args[@]}"; then
+        --topology worktree --branch "$BRANCH" --base "$BASE" -- "${session_args[@]}"; then
     printf 'error: could not start %s\n' "$NAME" >&2
     failed=1
     continue
   fi
 
   if [[ $ENSURE_ONLY -eq 0 ]]; then
+    args="--linear-id=$ID"
+    entry=$(entry_for "$KIND" "$args")
     prompt=$(cat <<EOF
-orchestrate スキル（~/.agents/skills/orchestrate/SKILL.md）で、このタスクを最後まで回してください。
+$entry
 
 - Linear: $ID
 - feature（TASK_FILE の名前に使う）: $FEATURE

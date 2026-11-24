@@ -85,10 +85,10 @@ linear: posted|skipped|unavailable
 team-review の PASS は、直近 `## team-implement` の `利用AI:` と**異なる** `--label` でレビューした場合だけ有効（独立）。
 
 - `--label` が無い / 実装者の `利用AI:` が無い / 同一 → 独立を証明できない
-- 比較はラベルの**モデル部分**（最初の `/` 以降）で行う。`auto/{model}` は実際のモデルとして読む。CLI 名だけの違いは独立とみなさない
+- 比較はラベルの**モデル部分**（最初の `/` 以降）で行う。CLI 名だけの違いは独立とみなさない
 - `--label` に `/` が無い（モデル部分が無い）→ 独立を証明できない → BLOCKED
 - 実装者の `利用AI:` に `/` が無い（モデル部分が無い）→ 独立を証明できない → BLOCKED
-- 実装フェーズが `--runner=auto` のとき、`利用AI:` が `auto` のままになることがある。orchestrator は `phase-run.sh` の `LABEL=`（`auto/{model}` の解決済みラベル）で見出し直下の `利用AI:` 行だけを上書き（日時は残す）してから team-review に渡す（本文は変えない）
+- 実装者の `利用AI:` にモデル部分が無い（`--runner=codex` など）ときは、`phase-run.sh` の `LABEL=` を正として見出し直下の `利用AI:` 行だけを上書き（日時は残す）してから team-review に渡す（本文は変えない）。上書き後もモデル部分が無ければ BLOCKED
 - 独立が取れない → `**VERDICT: BLOCKED**` + `##### 独立レビュー不可`（理由）+ RESULT `verdict: BLOCKED`。PASS にしない
 - 別ラベルのセカンドオピニオン（別モデル）が取れて、その結果を反映した場合だけ独立とみなし、`reviewer:` にそのラベルを書く
 - BLOCKED は FAIL ではない（差し戻さない）。orchestrator は deploy せず報告して停止する
@@ -111,7 +111,7 @@ team-review の PASS は、直近 `## team-implement` の `利用AI:` と**異�
 | 事象 | 扱い |
 |---|---|
 | フェーズが exit ≠ 0 / 空出力 / タイムアウト | **runner 連鎖**（`phase-run.sh --fallback`）で同じフェーズを別 CLI に再試行。落とした runner は `利用AI:` に残さない（実際に走ったものだけ書く） |
-| モデルが 429 / 認証エラー | `ai-fallback.sh` のモデル連鎖（`codex` → `ollama-cloud/deepseek-v4.1-flash`）に任せる |
+| モデルが 429 / 認証エラー | `--runner=` / `--phase-map=` で別の CLI を明示して回し直す。既定の連鎖は codex → cline → pi |
 | 全 runner 失敗 | orchestrator が報告して停止する。TASK_FILE には書き足さない（失敗の記録は報告側） |
 | team-review が FAIL | orchestrator が team-implement に差し戻す。`{m}`（回数）を進める |
 
@@ -129,13 +129,13 @@ team-review の PASS は、直近 `## team-implement` の `利用AI:` と**異�
 ~/.claude/scripts/phase-run.sh --phase=team-implement --task-file=~/.local/share/harness/tasks/{repo}/task-X.md \
   --phase-map="startproject=claude:opus,team-implement=pi:ollama-cloud/deepseek-v4.1-flash,team-review=codex:gpt-6-sol@high,deploy=claude:haiku"
 
-# モデル/エンジン連鎖に任せる
-~/.claude/scripts/phase-run.sh --phase=startproject --task-file=… --runner=auto
+# codex の既定モデルで回す
+~/.claude/scripts/phase-run.sh --phase=startproject --task-file=… --runner=codex
 ```
 
 `利用AI:` 行には**実際に走った runner とモデル**を書く（`phase-run.sh` が `--label` で渡す）。
 
-- runner spec は `{cli}:{model}[@level]`。`@level` は spec の**末尾**（model の後ろ）。`level` は `minimal|low|medium|high|xhigh|max`。`auto` は level 非対応
+- runner spec は `{cli}:{model}[@level]`。`@level` は spec の**末尾**（model の後ろ）。`level` は `minimal|low|medium|high|xhigh|max`
 - `@level` の受け渡しと**CLI ごとの有効値**（差があるので丸めるか無視する）:
 
 | cli | 渡し方 | 有効値 | 備考 |
@@ -143,7 +143,7 @@ team-review の PASS は、直近 `## team-implement` の `利用AI:` と**異�
 | `pi` | `--thinking` | `off` `minimal` `low` `medium` `high` `xhigh` `max` | 全 level が使える（`off` は spec では指定しない） |
 | `claude` | `--effort` | `low` `medium` `high` `xhigh` `max` | **`minimal` が無い**。指定すると CLI は警告を出して既定 effort で走るので、`phase-run.sh` が `@minimal` → `@low` に丸めて警告する |
 | `codex` | `-c model_reasoning_effort=` | `none` `low` `medium` `high` `xhigh` `max` | **`minimal` が無い**（gpt-6-sol では API 400 で phase ごと落ちる）。`@minimal` は `@low` に丸める。`high` / `xhigh` / `max` は使える（実測するとトークンは 7,440 / 12,110 / 12,146 と増える） |
-| `opencode2` / `opencode` / `cline` / `auto` | （渡さない） | — | `phase-run: {runner} ignores @{level}` を出して無視 |
+| `opencode2` / `opencode` / `cline` | （渡さない） | — | `phase-run: {runner} ignores @{level}` を出して無視 |
 
 - `--dry-run` は**丸めた後のコマンド**を出す（`@minimal` + claude なら `--effort low`）。指定と実行が違う場合は stderr の警告を読む
 
