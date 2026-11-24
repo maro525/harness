@@ -99,7 +99,7 @@ if [[ ! -f $(readonly_path "$dispatcher") ]]; then
   ng "ディスパッチャが無い: $dispatcher"
 else
   [[ -x $(readonly_path "$dispatcher") ]] || ng "$dispatcher に実行ビットが無い"
-  for runner in claude opencode2 opencode pi codex cline auto; do
+  for runner in claude opencode2 opencode pi codex cline; do
     grep -q "^    $runner)" "$(readonly_path "$dispatcher")" ||
       ng "$dispatcher に runner '$runner' が無い"
   done
@@ -243,10 +243,10 @@ check_tokens claude/commands/orchestrate.md '利用AI: claude/' '--label=claude/
 check_tokens claude/commands/team-review.md 'REVIEWER' 'INDEPENDENT'
 check_tokens opencode/commands/orchestrate.md 'phase-run.sh --phase=team-review' '--fallback=pi:ollama-cloud/kimi-k3'
 check_tokens agents/skills/team-review/SKILL.md 'モデル部分' '実装者の `利用AI:` に `/` が無い' '`--label` に `/` が無い'
-check_tokens docs/phase-contract.md '実装者の `利用AI:` に `/` が無い' '解決済みラベル'
+check_tokens docs/phase-contract.md '実装者の `利用AI:` に `/` が無い' '`LABEL=` を正として'
 check_tokens claude/commands/team-review.md '実装者の `利用AI:` に `/` が無い'
 check_tokens opencode/agents/team-review.md '`--label` に `/` が無い' '実装者の `利用AI:` に `/` が無い'
-check_tokens agents/skills/orchestrate/SKILL.md '解決済みラベル'
+check_tokens agents/skills/orchestrate/SKILL.md '`LABEL=`'
 
 if [[ $fail -eq 0 ]]; then
   ok "phase parity (${PHASES[*]}) / 3 系統 / orchestrator 3 本 / phase-run.sh"

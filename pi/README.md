@@ -57,6 +57,6 @@ pi は TTY が無いと未許可の bash を拒否するので、`~/.pi/agent/ex
 無ければ通常モード（STEP 0 から）になる。
 
 - フェーズの起動は `~/.claude/scripts/phase-run.sh` に一本化されている（`--runner` / `--phase-map` で
-  CLI・モデルを混在できる）。既定の失敗連鎖は claude → opencode2 → pi → auto
+  CLI・モデルを混在できる）。既定の失敗連鎖は codex → cline → pi（各 CLI の既定モデル）
 - 質問は `### QUESTIONS` に直列化される（pi に質問ツールが無いため）。回答は `--answers-file` で戻す
 - レビューは順次（Claude 版の並列レビュアーは未移植）、Linear は MCP があるときだけ

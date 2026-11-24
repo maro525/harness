@@ -41,6 +41,10 @@ harness/
 │   ├── README.md            # 配布と前提（permissions の許可リスト）
 │   └── prompts/
 │       └── orchestrate.md   # /orchestrate — agents/skills/orchestrate/SKILL.md を読む薄いラッパー
+├── codex/                   # Codex 専用 (~/.codex)
+│   ├── README.md            # 配布と前提
+│   └── prompts/
+│       └── orchestrate.md   # /orchestrate — agents/skills/orchestrate/SKILL.md を読む薄いラッパー
 ├── checks/crossrefs.sh      # dotfiles との相互参照チェック（下記「dotfiles との契約」）
 ├── kanban/                  # TASK_FILE を読む読み取り専用の kanban ボード (taskboard)
 ├── lib/sync-common.sh
@@ -48,7 +52,8 @@ harness/
 ├── sync-opencode.sh
 ├── sync-agents.sh
 ├── sync-cursor.sh            # ~/.agents/skills → Cursor のユーザー skill ディレクトリ（コピー）
-└── sync-pi.sh
+├── sync-pi.sh
+└── sync-codex.sh
 ```
 
 ## 配布
@@ -61,6 +66,7 @@ dotfiles と同じく HOME ⇄ リポジトリの双方向同期（対話モー�
 ./sync-agents.sh      # ~/.agents/skills の 4 フェーズ + orchestrate + claude-consult / codex-consult + herdr-boss + pm-mode（+ Cline 用 symlink）
 ./sync-cursor.sh      # ~/.agents/skills を Cursor のユーザー skill ディレクトリへコピー（HOME ⇄ repo ではない）
 ./sync-pi.sh          # ~/.pi/agent/prompts の /orchestrate・/pm-mode
+./sync-codex.sh       # ~/.codex/prompts の /orchestrate
 ./sync-*.sh -n        # 非対話。repo → HOME の自動コピー（初回配布にも使える）
 ./sync-*.sh -n --to-repo  # 非対話。HOME → repo の自動コピー
 ```
@@ -156,11 +162,11 @@ herdr agent rename "$HERDR_PANE_ID" boss-myrepo
 ~/.claude/scripts/phase-run.sh --phase=team-implement --task-file=~/.local/share/harness/tasks/{repo}/task-X.md \
   --phase-map="startproject=claude:opus,team-implement=pi:ollama-cloud/deepseek-v4.1-flash,team-review=codex:gpt-6-sol,deploy=claude:haiku"
 
-# モデル / エンジン連鎖に任せる（429 で次の候補へ）
-~/.claude/scripts/phase-run.sh --phase=startproject --task-file=… --runner=auto
+# codex の既定モデルで回す
+~/.claude/scripts/phase-run.sh --phase=startproject --task-file=… --runner=codex
 ```
 
-- runner: `claude` / `opencode2` / `opencode` / `pi` / `codex` / `cline` / `auto`（`ai-fallback.sh`）。既定の失敗連鎖は claude → opencode2 → pi → auto
+- runner: `claude` / `opencode2` / `opencode` / `pi` / `codex` / `cline`。既定の失敗連鎖は codex → cline → pi（各 CLI の既定モデル）
 - `--dry-run` で起動コマンドだけ確認できる（トークンを使わない）
 - 実際に走った runner / モデルは stderr の `PHASE=` / `RUNNER=` / `MODEL=` / `LABEL=` で返り、`利用AI:` 行には `--label` でそのまま入る
 - 契約（引数・書き込み規約・`### RESULT` / `### SECTION`・`### QUESTIONS`・`status:` の専権）は `docs/phase-contract.md`

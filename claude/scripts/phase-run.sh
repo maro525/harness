@@ -21,13 +21,12 @@ Usage: phase-run.sh --phase={phase} --task-file={TASK_FILE} [options]
   --repo=DIR          repository (or worktree) the phase works on
                       (default: $PWD). TASK_FILE paths are never used to guess it.
   --runner=SPEC       claude[:model][@level] | opencode2[:model][@level] | opencode[:model][@level]
-                      | pi[:model][@level] | codex[:model][@level] | cline[:model][@level] | auto
+                      | pi[:model][@level] | codex[:model][@level] | cline[:model][@level]
                       level = minimal|low|medium|high|xhigh|max
-                      auto = ~/.claude/scripts/ai-fallback.sh (model + engine chain; level 非対応)
   --phase-map=MAP     "startproject=claude:opus,team-review=pi:ollama-cloud/deepseek-v4.1-flash@high"
                       (per-phase assignment; --runner wins for a single run)
   --fallback=LIST     runners to try when the chosen one fails
-                      (default: claude:opus,opencode2,pi:ollama-cloud/deepseek-v4.1-flash,auto)
+                      (default: codex,cline,pi)
   --description=TEXT  task description passed as the first part of $ARGUMENTS
   --tier= --linear-id= --answers-file=   passed through to the phase
   --candidate         add a candidate instead of overwriting (startproject only)
@@ -97,7 +96,7 @@ REPO_DIR=${REPO_ARG:-$PWD}
 [[ -d "$REPO_DIR" ]] || die "not a directory: $REPO_DIR"
 
 [[ -n "$FALLBACK" ]] ||
-  FALLBACK="claude:opus,opencode2,pi:ollama-cloud/deepseek-v4.1-flash,auto"
+  FALLBACK="codex,cline,pi"
 
 LEVELS="minimal low medium high xhigh max"
 check_level() {
@@ -261,15 +260,11 @@ build_cmd() { # spec prompt tmpdir -> fills global CMD
       [[ -n "$model" ]] && CMD+=(-m "$model")
       CMD+=("$prompt")
       ;;
-    auto)
-      printf '%s' "$prompt" >"$tmp/prompt.txt"
-      CMD=("${HOME}/.claude/scripts/ai-fallback.sh" "$tmp/prompt.txt")
-      ;;
     *) return 1 ;;
   esac
   if [[ -n "$level" ]]; then
     case "$cli" in
-      opencode2|opencode|cline|auto)
+      opencode2|opencode|cline)
         printf 'phase-run: %s ignores @%s\n' "$cli" "$level" >&2
         ;;
     esac
@@ -304,6 +299,8 @@ if ((DRY_RUN)); then
     prompt=$(build_prompt "$label")
     if ! build_cmd "$spec" "$prompt" "$tmpdir"; then
       printf '# unknown runner: %s\n' "$spec"
+      # Same rule as the real run: the primary runner is not a guess.
+      [[ "$spec" == "${attempts[0]}" ]] && exit 2
       continue
     fi
     printf 'cd %q &&' "$REPO"
@@ -320,6 +317,12 @@ for i in "${!attempts[@]}"; do
   prompt=$(build_prompt "$label")
   if ! build_cmd "$spec" "$prompt" "$tmpdir"; then
     printf 'phase-run: unknown runner: %s\n' "$spec" >&2
+    # A retired or mistyped primary runner stops here instead of quietly running
+    # the rest of the chain.
+    if (( i == 0 )); then
+      printf 'phase-run: name a known runner (claude | opencode2 | opencode | pi | codex | cline)\n' >&2
+      exit 2
+    fi
     continue
   fi
 
@@ -332,10 +335,6 @@ for i in "${!attempts[@]}"; do
 
   if [[ $rc -eq 0 && -s "$out" ]]; then
     used_model=$(spec_model "$spec")
-    if [[ "$(spec_cli "$spec")" == "auto" ]]; then
-      used_model=$(grep -m1 '^AI_MODEL=' "$err" | cut -d= -f2-)
-      [[ -n "$used_model" ]] && label="auto/${used_model}"
-    fi
     cat "$out"
     printf 'PHASE=%s\n' "$PHASE" >&2
     printf 'RUNNER=%s\n' "$(spec_cli "$spec")" >&2

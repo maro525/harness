@@ -230,13 +230,13 @@ Linear が使えるなら、この時点で**「実行開始」コメントを 1
 
 `##` 見出しはこの 6 つだけ（kanban がこの見出しで列を判定する）。空のまま作ってよい。
 
-**tier 別の runner**（`phase-run.sh` に渡す。省略時はスクリプト既定の連鎖 claude → opencode2 → pi → auto）:
+**tier 別の runner**（`phase-run.sh` に渡す。省略時はスクリプト既定の連鎖 codex → cline → pi。各 CLI は自分の設定モデルで走る）:
 
 | tier | startproject | team-implement | team-review | deploy |
 |---|---|---|---|---|
-| S | 起動しない（自分で計画） | `--runner=auto` | 実装者と別（STEP 5 で選ぶ） | `--runner=auto` |
-| M | `--runner=auto` | `--runner=auto` | 実装者と別（STEP 5 で選ぶ） | `--runner=auto` |
-| L | `--runner=auto`（リサーチ併用） | `--runner=auto` | 実装者と別（STEP 5 で選ぶ） | `--runner=auto` |
+| S | 起動しない（自分で計画） | （既定） | 実装者と別（STEP 5 で選ぶ） | （既定） |
+| M | （既定） | （既定） | 実装者と別（STEP 5 で選ぶ） | （既定） |
+| L | （既定、リサーチ併用） | （既定） | 実装者と別（STEP 5 で選ぶ） | （既定） |
 
 `--phase-map` が渡されたら全フェーズでそれを優先する（例: `--phase-map="startproject=claude:opus,team-implement=pi:ollama-cloud/deepseek-v4.1-flash,team-review=codex:gpt-6-sol,deploy=claude:haiku"`）。
 
@@ -270,7 +270,7 @@ Linear が使えるなら、この時点で**「実行開始」コメントを 1
 - `### RESULT` に `escalation:` があれば、tier を上げて `## Meta` の `tier:` を更新し、STEP 3 からやり直す（作業ブランチの変更はそのまま）
 - `## team-implement` に `### {m}回目` が入ったことを確認して STEP 5 へ
 - 実装者の `利用AI:`（`## team-implement` の直近回）を控え、STEP 5 の独立レビュー判定に使う
-- その `利用AI:` がモデル部分を持たない（`auto` など）ときは、`phase-run.sh` の stderr `LABEL=`（または `~/.claude/scripts/task-file.sh ai show --task-file={TASK_FILE}` の `team-implement=` の値）の解決済みラベル（`auto/{model}`）で**見出し直下の `利用AI:` 行だけ**を上書き（日時は残す）してから STEP 5 へ（本文は変えない）
+- その `利用AI:` がモデル部分を持たない（`codex` など）ときも同じ規則で、`phase-run.sh` の stderr `LABEL=`（または `~/.claude/scripts/task-file.sh ai show --task-file={TASK_FILE}` の `team-implement=` の値）を正として**見出し直下の `利用AI:` 行だけ**を上書き（日時は残す）してから STEP 5 へ（本文は変えない）
 
 ## STEP 5: team-review
 
@@ -279,7 +279,6 @@ Linear が使えるなら、この時点で**「実行開始」コメントを 1
 - STEP 4 で控えた実装者の `利用AI:`（LABEL）を読む
 - `--phase-map` が渡されていればそれを優先する
 - 無ければ LABEL と違う runner を選ぶ（例: `claude/*` → `--runner=pi:ollama-cloud/kimi-k3`、`pi/*` → `--runner=claude:opus`、`opencode2/*` / `opencode/*` → `--runner=claude:opus`、`codex/*` / `cline/*` → `--runner=claude:opus`）
-- `auto/*` は phase-run の `MODEL=`（実際のモデル）を見て、別ファミリを選ぶ（実際が claude なら `--runner=pi:ollama-cloud/kimi-k3`、それ以外なら `--runner=claude:opus`）。**label の文字列だけで独立と判断しない**
 - 実装者の `利用AI:` にモデル部分（`/` 以降）が無い（例 `opencode2`）→ 独立を証明できない → BLOCKED を想定する
 - 選んだ runner が全滅して同じモデルになったら BLOCKED（推測で PASS にしない）
 - `--fallback` を渡すときもモデル付きの spec にする（モデル無しの label は BLOCKED）
@@ -360,7 +359,7 @@ git switch {base}
 
 ```bash
 ~/.claude/scripts/task-file.sh ai show --task-file={TASK_FILE}
-# startproject=claude/opus / team-implement=auto/pi/google/gemini-4-carbon
+# startproject=claude/opus / team-implement=pi/ollama-cloud/kimi-k3
 ```
 
 報告の最後に **[MUST]** 実行ロックを離す:
@@ -393,8 +392,8 @@ STEP 7 まで来ずに中止・失敗した場合も、終了前に同じ releas
 
 | 事象 | 扱い |
 |---|---|
-| フェーズが失敗 | `phase-run.sh` の fallback（claude → opencode2 → pi → auto）で自動再試行。全滅したら報告して停止（TASK_FILE へ失敗を書かない） |
-| モデルが 429 / 認証エラー | `--runner=auto` なら `ai-fallback.sh` がモデル・エンジンを切り替える |
+| フェーズが失敗 | `phase-run.sh` の fallback（codex → cline → pi）で自動再試行。全滅したら報告して停止（TASK_FILE へ失敗を書かない） |
+| モデルが 429 / 認証エラー | `--runner=` / `--phase-map=` で別の CLI を明示して回し直す。既定の連鎖は codex → cline → pi |
 | `### QUESTIONS` が返った | 回答を得て `--answers-file=` で再実行。得られないなら質問を転記して停止 |
 | TASK_FILE が書けなかった | `### SECTION` から代筆し、報告に「代筆」と書く |
 | 同一フェーズで 5 回差し戻し | 報告して停止（無限ループを避ける） |

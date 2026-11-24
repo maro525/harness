@@ -187,11 +187,11 @@ EOF
 
 | 何に移譲したか | どこから取るか |
 |---|---|
-| フェーズ（`phase-run.sh`） | `~/.claude/scripts/task-file.sh ai show --task-file={TASK_FILE}` の 1 行（`startproject=claude/opus / team-implement=auto/pi/google/gemini-4-carbon`）。`phase-run.sh` が成功のたびに `{TASK_FILE}.ai.log` へ書く（stderr の `LABEL=` を拾い損ねてもここから取れる） |
+| フェーズ（`phase-run.sh`） | `~/.claude/scripts/task-file.sh ai show --task-file={TASK_FILE}` の 1 行（`startproject=claude/opus / team-implement=pi/ollama-cloud/kimi-k3`）。`phase-run.sh` が成功のたびに `{TASK_FILE}.ai.log` へ書く（stderr の `LABEL=` を拾い損ねてもここから取れる） |
 | consult / draft（gemini・claude・codex） | stderr の `AI_MODEL=`（`draft.sh` は `文面: pi/<model>`） |
 | Herdr の子（`herdr-agent.sh`） | `delegate` / `ensure` の stderr `MODEL=` と、子の報告にある `利用AI:` |
 
-- 報告の形: `利用AI: startproject=claude/opus / team-implement=auto/pi/google/gemini-4-carbon / team-review=auto/codex/gpt-6-sol`
+- 報告の形: `利用AI: startproject=claude/opus / team-implement=pi/ollama-cloud/kimi-k3 / team-review=codex/gpt-6-sol`
 - 取れなかったときは `利用AI: （不明）` と書く（空欄や推測で埋めない）
 - 人が読むのは「どのタスクを、どのモデルが、いくらでやったか」なので、**子の名前（タブ名）だけでは足りない**
 
