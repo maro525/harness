@@ -29,12 +29,12 @@ DEST="$SCRIPT_DIR/agents/skills"
 CLINE_SKILLS="$HOME/.cline/skills"
 PI_SKILLS="$HOME/.pi/agent/skills"
 
-AGENT_SKILLS=(startproject team-implement team-review deploy orchestrate claude-consult codex-consult herdr-boss herdr-cleanup harness-daily)
+AGENT_SKILLS=(startproject team-implement team-review deploy orchestrate claude-consult codex-consult herdr-boss herdr-cleanup harness-daily harness-status)
 
 # Claude Code does not read ~/.agents/skills, and these are the ones a Claude
 # session also needs (housekeeping). consult/phase skills stay out: Claude Code
 # has its own commands and the consult skills are for *other* agents.
-CLAUDE_SKILLS=(herdr-cleanup harness-daily)
+CLAUDE_SKILLS=(herdr-cleanup harness-daily harness-status)
 CLAUDE_SKILLS_DIR="$HOME/.claude/skills"
 CURSOR_SKILLS="$HOME/.cursor/skills"
 

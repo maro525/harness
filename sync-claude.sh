@@ -32,6 +32,7 @@ HARNESS_FILES=(
   scripts/herdr-agent.sh
   scripts/claude-consult.sh
   scripts/harness-daily.py
+  scripts/harness-status.py
   scripts/codex-consult.sh
   scripts/consult.sh
   scripts/orchestrate-parallel.sh
