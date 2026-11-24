@@ -17,7 +17,7 @@ Herdr 上のエージェント・セッションは、**閉じるまで残る**�
 | `review` | team-review に入るとき | PASS して deploy に進む直前、または FAIL 対応が終わったとき |
 | `implement` | team-implement に入るとき | PR 作成（deploy 完了）後 |
 | pi / codex（`herdr-agent.sh`） | そのタスクを任せるとき | コミット・PR が終わったとき |
-| boss の子（`herdr-agent.sh delegate`） | 司令塔が最初の仕事を渡すとき（`ensure` → `delegate`） | 報告を `ack` した後、その子に続きを渡さないと決めたとき |
+| manager の子（`herdr-agent.sh delegate`） | manager が最初の仕事を渡すとき（`ensure` → `delegate`） | 報告を `ack` した後、その子に続きを渡さないと決めたとき |
 
 `consult` だけは既定で残す（同じ相談者に文脈を保ってほしい場面があるため）。
 使い捨てでよいと分かっているときは `--close` を付けて 1 回で閉じる。
@@ -37,16 +37,16 @@ Herdr の構造は workspace → tab → pane。セッションをどこに作�
 | `worktree` | git worktree を作り、その workspace と tab で起動（パスは `~/.herdr/worktrees/{repo}/{branch}`） | 同じリポジトリでタスクを隔離したいとき。ブランチも切られる（`--branch` / `--base`） |
 
 - `tab` は既定で**呼び出し元の workspace id を使う**（`HERDR_WORKSPACE_ID`）。無い・古い場合は `workspace create` に自動フォールバックする
-- `tab` は `--workspace <id|label>` も受ける。司令塔がタスク用に workspace を 1 つ作り、その id を子の `ensure` すべてに渡せば、子の tab はその workspace に相乗りする（1 タスク 1 workspace）。id でもラベルでもよく、`herdr workspace list` の結果から一意に決まるときだけ解決する（見つからない・複数一致なら何も作らずに exit 2）
+- `tab` は `--workspace <id|label>` も受ける。manager がタスク用に workspace を 1 つ作り、その id を子の `ensure` すべてに渡せば、子の tab はその workspace に相乗りする（1 タスク 1 workspace）。id でもラベルでもよく、`herdr workspace list` の結果から一意に決まるときだけ解決する（見つからない・複数一致なら何も作らずに exit 2）
 - `--workspace` で相乗りした workspace は**このツールの所有ではない**ので、`close` は tab だけを閉じ、workspace は残る（片付けは `herdr workspace close <id>`）。`--workspace` は `tab` 専用で、`workspace` / `worktree` に付けると exit 2
 - `workspace` / `worktree` で作った workspace は**このツールが所有**するので、`close` で workspace ごと閉じる
 - `worktree` のセッションは `close` で **worktree も削除**する（`herdr worktree remove`。`--force` は使わないので、未コミットの変更があれば workspace だけ閉じて警告する）。**ブランチは残る**（成果物なので意図的）
 - 手で作った workspace / tab / worktree は絶対に閉じない（所有フラグで判定）
 - **手で `git worktree add` するときも置き場所は同じ**（`$HOME/.herdr/worktrees/{repo}/{branch}`）。`../<repo>-<task>` のような相対パスで切ると、`herdr-cleanup.sh` の対象外になって残骸が溜まる（`checks/worktrees.sh` が警告する）
 
-## inbox と watcher のライフサイクル（司令塔パターン）
+## inbox と watcher のライフサイクル（manager パターン）
 
-司令塔（`herdr-boss` skill）は子の完了を待たない。子 → 司令塔の報告は **inbox ファイル（正本）+ 通知（ヒント）** の 2 段で届く。
+manager は子の完了を待たない。子 → manager の報告は **inbox ファイル（正本）+ 通知（ヒント）** の 2 段で届く。
 
 ```
 ~/.cache/harness/inbox/<boss>/          # mode 700。<boss> は [A-Za-z0-9._-] 以外を _ に（w23:p1 → w23_p1）
@@ -66,17 +66,17 @@ Herdr の構造は workspace → tab → pane。セッションをどこに作�
 | 依頼ファイル | `delegate` が委任ごとに `$TMPDIR/harness-agent/<child>-<ts>-<乱数>/request.md` を作る（ディレクトリ 700・ファイル 600。`ask` は従来どおり `<name>.request.md` を上書き） | 自動では消さない（`$TMPDIR` の掃除に任せる） |
 | `.watch/` のロック・ログ | watcher の起動時 | watcher の終了時（ロック）。プロセスが死んで残ったものとログは `clear` が消す |
 
-- 通知は `herdr agent prompt <boss>` の 1 行（`報告あり（child-a）: <path>`）。boss が agent でない・blocked のときは `herdr notification show`、Herdr に繋がらないときは stderr の warning だけ。**どの場合も inbox には残る**ので、司令塔は節目に `inbox <boss>` を見る
+- 通知は `herdr agent prompt <boss>` の 1 行（`報告あり（child-a）: <path>`）。boss が agent でない・blocked のときは `herdr notification show`、Herdr に繋がらないときは stderr の warning だけ。**どの場合も inbox には残る**ので、manager は節目に `inbox <boss>` を見る
 - `clear` は**未読を消さない**。読まずに捨てたいときは `read` してから `ack`（または `ack <file>`）し、`clear`
 - 同じ子への再委任は、送信が成功した時点で前の watcher を止めて置き換える。送信に失敗した（子が blocked など、exit 1）ときは前の watcher と委任時刻をそのまま残す
-- 通知の 1 行と inbox のヘッダからは改行・制御文字を除く（子の名前や boss 名に混ざっても司令塔の入力欄に複数行が入らない）
+- 通知の 1 行と inbox のヘッダからは改行・制御文字を除く（子の名前や boss 名に混ざってもmanager の入力欄に複数行が入らない）
 
-タスク終了時（司令塔）:
+タスク終了時（manager）:
 
 ```bash
-~/.claude/scripts/herdr-agent.sh inbox boss-<repo>          # 未読が残っていないか
+~/.claude/scripts/herdr-agent.sh inbox manager-<repo>          # 未読が残っていないか
 ~/.claude/scripts/herdr-agent.sh close child-a              # 子を閉じる（reap でまとめても可）
-~/.claude/scripts/herdr-agent.sh inbox boss-<repo> clear    # 既読と watcher の残骸を消す
+~/.claude/scripts/herdr-agent.sh inbox manager-<repo> clear    # 既読と watcher の残骸を消す
 ```
 
 ## 記録の帰属（owner と boss）
@@ -89,9 +89,9 @@ Herdr の構造は workspace → tab → pane。セッションをどこに作�
 |---|---|---|
 | `owner` | 起動元の**安定名** `agent:<name>`。名前が取れないときだけ `pane:<id>` | `herdr-agent.sh ensure`（状態ファイル・worktree レジストリ）/ `consult.sh`（状態ファイル） |
 | `owner_pane` | `owner` を解決したときの生の pane id（照合・調査用） | 同上 |
-| `boss` | 子が報告する司令塔の名前 | `herdr-agent.sh delegate`（子の状態ファイルと worktree レジストリに追記）/ `consult.sh`（`$HERDR_BOSS`、無ければ起動元の安定名。どちらも無ければ書かない） |
+| `boss` | 子が報告するmanager の名前 | `herdr-agent.sh delegate`（子の状態ファイルと worktree レジストリに追記）/ `consult.sh`（`$HERDR_BOSS`、無ければ起動元の安定名。どちらも無ければ書かない） |
 
-`boss` はどちらの記録でも**結果の受け取り手**を指す。`herdr-agent.sh` では delegate した司令塔（報告の宛先）、`consult.sh` では回答を受け取る起動元で、意味は同じ「報告先」。
+`boss` はどちらの記録でも**結果の受け取り手**を指す。`herdr-agent.sh` では delegate したmanager（報告の宛先）、`consult.sh` では回答を受け取る起動元で、意味は同じ「報告先」。
 
 - 安定名の解決順: `$HERDR_AGENT_NAME` → `herdr agent get "$HERDR_PANE_ID"` の agent 名 → `pane:$HERDR_PANE_ID`。Herdr に繋がらないときは pane id に落ちる（`report` / `inbox` / cleanup のレポートは Herdr 無しでも動く）
 - フィールドは追加だけ。`boss` の無い記録や、`owner` が `pane:<id>` の古い記録もそのまま読める
@@ -102,7 +102,7 @@ Herdr の構造は workspace → tab → pane。セッションをどこに作�
 2. 記録の `owner` が `pane:P` で、pane `P` の今の agent 名が `NAME`（名前が無かった頃の記録を拾う）
 3. 記録の `boss` が `NAME`
 
-司令塔の pane が消えた後に残りを追うときは、別の pane から `--owner boss-a` で引く（3 で拾える）。
+manager の pane が消えた後に残りを追うときは、別の pane から `--owner boss-a` で引く（3 で拾える）。
 
 2 で拾った記録は、pane id が使い回されると他人のものに当たりうるので、**閉じない**。行末に `via:pane-name` が付き、生きている記録はレポートだけ（`--include-live` でも閉じない）、実体の無い記録は記録ファイルだけ消して tab / pane には触らない。閉じたいときは `--owner pane:ID` を明示して 1 で拾わせる。3 で拾った記録には `via:boss` が付く。
 
@@ -170,11 +170,11 @@ Herdr の構造は workspace → tab → pane。セッションをどこに作�
 | 複数ロールを閉じる | `claude-consult.sh --close --roles implement,review` |
 | 全部閉じる | `claude-consult.sh --close` / `herdr-agent.sh reap` |
 | 記録を突き合わせて整理（推奨） | `herdr-cleanup.sh`（既定はレポート）/ `--apply`（確認）/ `--apply --yes`（了承後）/ `--apply --yes --include-live` |
-| pane が消えた司令塔の記録を追う | `herdr-cleanup.sh --owner BOSS`（`boss` 一致でも拾う） |
+| pane が消えた manager の記録を追う | `herdr-cleanup.sh --owner BOSS`（`boss` 一致でも拾う） |
 | 未読の報告が溜まっていないか（読むだけ） | `herdr-cleanup.sh --only inbox [--boss BOSS]` |
 | 種類で絞って閉じる | `herdr-agent.sh reap --kind pi` |
 | 作り直す（文脈リセット） | `claude-consult.sh --new --role ROLE` / `herdr-agent.sh restart NAME` |
 | ターミナルの末尾を見る | `claude-consult.sh --show ROLE` / `herdr-agent.sh read NAME` |
-| 子に仕事を渡して戻る（司令塔） | `herdr-agent.sh delegate CHILD REQUEST --boss BOSS` |
+| 子に仕事を渡して戻る（manager） | `herdr-agent.sh delegate CHILD REQUEST --boss BOSS` |
 | 子から報告する | `herdr-agent.sh report BOSS FILE --from CHILD`（`--kind question`） |
 | inbox を見る / 読む / 既読にする / 掃除 | `herdr-agent.sh inbox [BOSS] [list\|read\|ack\|clear] [CHILD\|FILE]`（BOSS を省くと `--boss` / `HERDR_BOSS` / pane の名前） |

@@ -1,7 +1,7 @@
 #!/bin/bash
 # Sync the agent-general skills (phase skills + consult + boss + cleanup) between ~/.agents/skills and this repo.
 #
-#   ~/.agents/skills/{startproject,team-implement,team-review,deploy,orchestrate,claude-consult,herdr-boss,pm-mode}
+#   ~/.agents/skills/{startproject,team-implement,team-review,deploy,orchestrate,claude-consult,manager,pm-mode}
 #     <->  agents/skills/{name}/
 #
 # ~/.agents/skills is also managed by `npx skills` (.skill-lock.json), so this
@@ -29,7 +29,7 @@ DEST="$SCRIPT_DIR/agents/skills"
 CLINE_SKILLS="$HOME/.cline/skills"
 PI_SKILLS="$HOME/.pi/agent/skills"
 
-AGENT_SKILLS=(startproject team-implement team-review deploy orchestrate claude-consult codex-consult herdr-boss herdr-cleanup harness-daily harness-status pm-mode)
+AGENT_SKILLS=(startproject team-implement team-review deploy orchestrate claude-consult codex-consult manager herdr-cleanup harness-daily harness-status pm-mode)
 
 # Claude Code does not read ~/.agents/skills, and these are the ones a Claude
 # session also needs (housekeeping). consult/phase skills stay out: Claude Code
