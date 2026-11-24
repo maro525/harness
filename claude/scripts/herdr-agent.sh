@@ -162,7 +162,7 @@ done
 
 [[ -n "$CMD" ]] || { usage >&2; exit 2; }
 
-# Who started this session, as a name that outlives the pane: $HERDR_AGENT_NAME,
+# Who started this agent, as a name that outlives the pane: $HERDR_AGENT_NAME,
 # else the agent name Herdr has for the calling pane, else the pane id (also when
 # Herdr cannot be asked). herdr-cleanup.sh uses it to keep a cleanup to the
 # sessions that the caller itself launched (same rule as consult.sh).

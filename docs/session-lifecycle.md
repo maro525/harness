@@ -81,6 +81,8 @@ Herdr の構造は workspace → tab → pane。セッションをどこに作�
 
 `herdr-cleanup.sh` は「誰が立ち上げた記録か」で片付ける範囲を決める。pane id は pane を閉じたり作り直したりすると引けなくなるので、記録には**後から名前で追える値**を残す。
 
+用語は 3 つに分ける。**session** は Herdr の agent セッション（pane / tab で動くもの）、**owner** はその起動元の安定名、**chat** は人が向き合っている会話。cleanup の既定範囲は owner で決まり、chat では決まらない。
+
 | フィールド | 書くもの | 書く場所 |
 |---|---|---|
 | `owner` | 起動元の**安定名** `agent:<name>`。名前が取れないときだけ `pane:<id>` | `herdr-agent.sh ensure`（状態ファイル・worktree レジストリ）/ `consult.sh`（状態ファイル） |
@@ -92,7 +94,7 @@ Herdr の構造は workspace → tab → pane。セッションをどこに作�
 - 安定名の解決順: `$HERDR_AGENT_NAME` → `herdr agent get "$HERDR_PANE_ID"` の agent 名 → `pane:$HERDR_PANE_ID`。Herdr に繋がらないときは pane id に落ちる（`report` / `inbox` / cleanup のレポートは Herdr 無しでも動く）
 - フィールドは追加だけ。`boss` の無い記録や、`owner` が `pane:<id>` の古い記録もそのまま読める
 
-`herdr-cleanup.sh --owner` は `agent:NAME` / `pane:ID` / 素の `NAME`（= `agent:NAME`）を受け、次のどれかに当たる記録を自分の分とみなす（省略時はこのセッションの安定名）。
+`herdr-cleanup.sh --owner` は `agent:NAME` / `pane:ID` / 素の `NAME`（= `agent:NAME`）を受け、次のどれかに当たる記録を自分の分とみなす（省略時はこの実行者（owner）の安定名）。
 
 1. 記録の `owner` が一致する
 2. 記録の `owner` が `pane:P` で、pane `P` の今の agent 名が `NAME`（名前が無かった頃の記録を拾う）
@@ -109,7 +111,7 @@ Herdr の構造は workspace → tab → pane。セッションをどこに作�
 ~/.claude/scripts/herdr-cleanup.sh --only inbox --boss boss-a  # boss-a の未読と .watch/ の残骸（読むだけ）
 ```
 
-レポートの先頭行は `Scope: agent:boss-a (this session; pane w1:p2, boss boss-a — …)` の形で、解決した安定名・pane id・inbox を見る boss を出す。各記録の行末には `boss:<name>`（無ければ `boss:-`）が付く。
+レポートの先頭行は `Scope: agent:boss-a (this owner; pane w1:p2, boss boss-a — …)` の形で、解決した安定名・pane id・inbox を見る boss を出す。各記録の行末には `boss:<name>`（無ければ `boss:-`）が付く。
 
 `inbox (<boss>)` の節は未読ファイル名と件数、`.watch/` のロック・`.since`・ログを並べるだけで、**ack も削除もしない**。片付けは従来どおり `herdr-agent.sh inbox <boss> read` → `ack` → `clear`。boss は `--boss`、`$HERDR_BOSS`、`--owner` の名前（省略時は自分の安定名）の順で決まる。
 
