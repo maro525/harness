@@ -15,7 +15,9 @@
 # carries the owner (the caller's agent name, or the pane id when it had none) at
 # start time, and the boss it works for once it was delegated to; anything else
 # is left alone. Use --all-owners to tidy records from other sessions, or
-# --owner to pick one.
+# --owner to pick one. The name is not a chat: a pane with a long-lived agent
+# name (boss-<repo>) collects records from every chat that ran in it, so narrow
+# a report with --name and --owner when you only want this conversation's tabs.
 #
 # A record is in scope when (any of):
 #   - its owner is the owner being tidied
@@ -39,8 +41,10 @@
 #                    name, else this pane's id)
 #   --only WHAT      consult | agents | locks | inbox   (repeatable; default: all)
 #   --name NAME      limit to one session name
-#   --worktrees      also handle worktrees with no recorded session (clean ones
-#                    are removed with --apply; dirty ones are only reported)
+#   --worktrees      also list and clean worktrees no live session is using (clean
+#                    ones are removed with --apply; dirty ones are only reported).
+#                    Worktrees with no record are only reported: no flag removes
+#                    them, so remove a known one by hand after checking it is clean.
 #   -h, --help       this help
 #
 # What each category means:
@@ -451,9 +455,11 @@ run_cleanup() {
   # points at is an orphan: close removed its workspace but not (for a dirty one)
   # the checkout. Ownership comes from the registry herdr-agent.sh writes next to
   # each worktree it creates, so the default stays "the worktrees this session
-  # made" - an unregistered one is left alone unless --all-owners.
+  # made". A worktree with no record has no owner, so no flag removes it: it may
+  # belong to this conversation, to another one, or to a person running git by
+  # hand. Remove a known one with `git worktree remove` after checking it is clean.
   if (( LIST_WORKTREES == 1 )); then
-    report_header "worktrees with no recorded session ($WORKTREE_ROOT)"
+    report_header "worktrees with no live session ($WORKTREE_ROOT)"
     local wt_dir wt_path wt_repo wt_key wt_owner wt_boss dirty found=0
     if [[ ! -d "$WORKTREE_ROOT" ]]; then
       echo "  (none)"
@@ -475,8 +481,12 @@ run_cleanup() {
           wt_owner=$(jq -r '.owner // empty' "$WORKTREE_REGISTRY/$wt_key.json" 2>/dev/null)
           wt_boss=$(jq -r '.boss // empty' "$WORKTREE_REGISTRY/$wt_key.json" 2>/dev/null)
         fi
-        if (( ALL_OWNERS == 0 )) && { [[ -z "$wt_owner" ]] || ! owns "$wt_owner" "$wt_boss"; }; then
-          printf '  skip    %-52s (other session: %s)\n' "$wt_path" "${wt_owner:-unregistered}"
+        if [[ -z "$wt_owner" ]]; then
+          printf '  skip    %-52s (unregistered; remove by hand if this session created it)\n' "$wt_path"
+          continue
+        fi
+        if (( ALL_OWNERS == 0 )) && ! owns "$wt_owner" "$wt_boss"; then
+          printf '  skip    %-52s (other session: %s)\n' "$wt_path" "$wt_owner"
           continue
         fi
         # Matched only by the pane's current name: never removed (as with sessions).
