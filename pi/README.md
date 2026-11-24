@@ -32,7 +32,7 @@ pi だけが読むプロンプトテンプレートで、`/orchestrate` を Clau
 
 ```bash
 ./sync-agents.sh -n   # ~/.agents/skills/{startproject,team-implement,team-review,deploy,orchestrate}
-./sync-claude.sh -n   # ~/.claude/scripts/{phase-run,ai-fallback,linear-ask}.sh
+./sync-claude.sh -n   # ~/.claude/scripts/{phase-run,linear-ask}.sh
 ./sync-pi.sh -n       # ~/.pi/agent/prompts/orchestrate.md
 ```
 

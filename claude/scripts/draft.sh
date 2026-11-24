@@ -12,8 +12,8 @@
 #   stderr : ANSWER_FILE=<path> / 文面: pi/google/gemini-4-carbon
 #   exit   : 0 = 書けた / 1 = 失敗（空出力・quota・timeout）/ 2 = 使い方
 #
-# 失敗しても ai-fallback.sh へ勝手に落ちない（下書きを別モデルが書いたことを
-# 記録できなくなる）。呼び出し側が代替を使い、`利用AI:` に codex/… と書く。
+# 失敗しても別のモデルへ落ちない（下書きを別モデルが書いたことを記録できなく
+# なる）。下書きフェーズは飛ばし、呼び出し元が自分で書く。
 
 set -uo pipefail
 
@@ -121,7 +121,7 @@ err="$tmpdir/consult.err"
 if ! "$CONSULT" --to pi -m "$model" - < "$tmpdir/prompt.md" > "$out" 2> "$err"; then
   echo "$PROG: gemini が書けなかった（下書きは作っていない）。材料かネットワークを確かめる" >&2
   sed 's/^/  /' "$err" >&2
-  echo "$PROG: 代替を使うなら ai-fallback.sh。そのときは 利用AI: に codex/… と書く" >&2
+  echo "$PROG: 下書きフェーズは飛ばす。呼び出し元が自分で書き、利用AI: に自分のモデルを書く" >&2
   exit 1
 fi
 

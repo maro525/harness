@@ -88,7 +88,7 @@ Agent ツールが無いため、リサーチはサブエージェント経由�
 `/orchestrate` の通常フローでは S で startproject は呼ばれない（orchestrate が自分で計画する）。直接呼ばれた場合はリサーチはしない。Phase 1 の理解から方針を 1-2 行で `DESIGN` に書いて Phase 3 へ進む。
 
 ### tier=M
-OpenCode に設計相談する（Bash から直接実行）。呼び出し形は `~/.claude/scripts/ai-fallback.sh {prompt_file}`（連鎖の先頭は Codex CLI で、落ちたら OpenCode のモデルに回る）。モデルのフォールバック連鎖・切替条件・記録方法は `$HOME/.claude/rules/tool-routing.md` の「設計相談・セカンドオピニオンの連鎖」に従う。全候補が失敗したときだけ OpenCode なしで設計し、`DESIGN` に「OpenCode 不可: {理由}」と書く。成功したら `DESIGN` に `利用AI: {AI_MODEL}` を残す。
+別の CLI に設計相談する（Bash から直接実行）。呼び出し形は `~/.claude/scripts/consult.sh --to codex -`（そのフェーズを実行している CLI と別ファミリから選ぶ。分からなければ codex）。1 つの CLI を名指しして 1 回聞き、連鎖は使わない。呼び出し方と記録方法は `$HOME/.claude/rules/tool-routing.md` の「設計相談・セカンドオピニオン（consult.sh）」に従う。失敗したら設計相談なしで設計し、`DESIGN` に「設計相談不可: {理由}」と書く。成功したら `DESIGN` に `利用AI: {AI_MODEL}` を残す。
 
 ### tier=L
 **gemini に先に聞く**（Bash から直接実行）。インターネットの一次情報が要るときだけ、自分で出典を取って足す。

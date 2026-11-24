@@ -26,7 +26,7 @@ PASS を出すには、実装者と別モデルの独立レビューが取れて
 
 - 実装者の `利用AI:` が無い → BLOCKED（PASS にしない）
 - 実装者の `利用AI:` に `/` が無い（モデル部分が無い）→ BLOCKED
-- OpenCode Reviewer（`ai-fallback.sh`）が動いた → `REVIEWER: {AI_MODEL}`、`INDEPENDENT: yes`（実装者と別ファミリ）
+- OpenCode Reviewer（`consult.sh --role review`）が動いた → `REVIEWER: {AI_MODEL}`、`INDEPENDENT: yes`（実装者と別ファミリ）
 - `{AI_MODEL}` が実装者と同じモデル名なら独立とみなさない（その場合は BLOCKED）
 - 動かなかった → 自分の `--label`（無ければ `claude/opus`）と実装者を比較。同じ → BLOCKED、違う → `REVIEWER: {自分の label}`、`INDEPENDENT: yes`
 - 実装者が `claude/best` のときは具体モデル名が無いので、ラベル比較で独立としない。OpenCode Reviewer があるときだけ `INDEPENDENT: yes`、無ければ BLOCKED
@@ -81,10 +81,10 @@ S は orchestrate から Skill（opus）で起動されるため、Claude レビ
 
 ### OpenCode Reviewer
 
-変更内容が長いのでプロンプトはファイルに落として渡す。呼び出し形は `~/.claude/scripts/ai-fallback.sh {prompt_file}`（連鎖の先頭は Codex CLI で、落ちたら OpenCode のモデルに回る）。モデルのフォールバック連鎖・切替条件・記録方法は `$HOME/.claude/rules/tool-routing.md` の「設計相談・セカンドオピニオンの連鎖」に従う。全候補が失敗したときだけこのレビュアーを飛ばし、結果に「OpenCode 不可: {理由}」と書く（成功したら `AI_MODEL` を「利用AI」として残す）。
+変更内容が長いのでプロンプトはファイルに落として渡す。呼び出し形は `~/.claude/scripts/consult.sh --to claude --role review -`（実装者と別ファミリの CLI を 1 つ名指しする。連鎖は使わない）。呼び出し方と記録方法は `$HOME/.claude/rules/tool-routing.md` の「設計相談・セカンドオピニオン（consult.sh）」に従う。失敗したときだけこのレビュアーを飛ばし、結果に「セカンドオピニオン不可: {理由}」と書く（成功したら `AI_MODEL` を「利用AI」として残す）。
 
 ```bash
-~/.claude/scripts/ai-fallback.sh {prompt_file}
+~/.claude/scripts/consult.sh --to claude --role review -
 ```
 
 プロンプトの中身:

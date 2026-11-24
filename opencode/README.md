@@ -59,30 +59,15 @@ Claude Code 版と完全に一致しない点:
 | TASK_FILE / Linear の書き手 | 各 command は OUTPUT を返し、orchestrator が書く | 各フェーズ agent が自分の節と Linear コメントを書く。`status` / `tier` / `#### 追加依頼 {n}` は orchestrator |
 | ブラウザ確認 | ツール指定なし | ツール指定なし |
 | `/simplify` など design skills | あり | 未移植（必要なら個別移植） |
-| OpenCode セカンドオピニオン（team-review）・設計相談（startproject） | `~/.claude/scripts/ai-fallback.sh` で別モデル（連鎖は `~/.claude/rules/tool-routing.md`「設計相談・セカンドオピニオンの連鎖」。全候補失敗時は「OpenCode 不可」） | `task` subagent（別コンテキスト）で代替。不可時は「Second Opinion 不可」/「設計相談不可」。`opencode run` の gotcha・完了通知・timeout・モデル連鎖は該当なし |
+| OpenCode セカンドオピニオン（team-review）・設計相談（startproject） | `~/.claude/scripts/consult.sh --to <cli>` で別 CLI を 1 つ名指し（連鎖は使わない。`~/.claude/rules/tool-routing.md`「設計相談・セカンドオピニオン（consult.sh）」。失敗時は「セカンドオピニオン不可」/「設計相談不可」） | `task` subagent（別コンテキスト）で代替。不可時は「Second Opinion 不可」/「設計相談不可」。`opencode run` の gotcha・完了通知・timeout・モデル連鎖は該当なし |
 | 追加修正モード（既存 PR への追加変更） | `/orchestrate` STEP 3F、`/deploy` の Ad-hoc ガード | 同じ構成で移植済み（`commands/orchestrate.md` / `agents/deploy.md` / `AGENTS.md` GIT RULES） |
 | PR / MR と issue の紐づけ（`--issue`・`## 関連`・タイトルの ID・ブランチ名） | `/orchestrate` が Meta に `issue:` を書き、`/deploy` が本文に書く。Linear への `links` 添付は orchestrate STEP 6b | 同じ規則（`commands/orchestrate.md` の「`--issue`」・`agents/deploy.md`「紐づけの規則」）。`links` 添付は deploy agent の 4-1b |
 | 共通ルール（tier 基準・Git ルール） | `~/.claude/rules/*.md` | `AGENTS.md` に集約 |
 | 質問の中継（Linear） | API キー不要。Linear MCP の `save_comment` で目印付きで投稿し、background Bash の `sleep` タイマーの完了通知で起きて `list_comments` でスレッド返信を確かめる。Linear 返信とターミナル入力の先着（`TaskStop` でタイマーを止める） | `~/.claude/scripts/linear-ask.sh`（`sync-claude.sh` で配布。Linear API キーが要る）で `--post-only` 投稿→URL 提示のあと、**フォアグラウンド**で `--timeout 540` ずつ再アームして待つ。ターミナル先着なし。実機未検証 |
 
-## モデルのフォールバック（Claude 版）
+## 外部モデルの使い分け（Claude 版）
 
-Claude 版のリサーチは **gemini（`consult.sh --to pi -m google/gemini-4-carbon`）が先**、インターネット情報が要るときだけ firecrawl で出典を取る。設計相談・セカンドオピニオンは `~/.claude/scripts/ai-fallback.sh`（`sync-claude.sh` が配布）で次の連鎖を順に試す。詳細は `../claude/rules/tool-routing.md`「External Research」/「設計相談・セカンドオピニオンの連鎖」。
-
-**Codex**: 連鎖の先頭は Codex CLI（`codex exec -s read-only`）。エンジン切替なしの単発候補で、失敗・未インストールなら下の OpenCode 連鎖に落ちる。
-
-**エンジン**（OpenCode 系の候補）: `opencode2`（v2）→ `opencode`（v1）→ `pi` の順で、入っているものを使う（1 つのエンジンで連鎖を回し、quota 以外の理由で落ちたら次のエンジンで同じモデルから再開する）。
-
-| エンジン | 実体 | この環境での状態 |
-|---|---|---|
-| v2 | `opencode2` 2.1.4 | **本線**。`run --standalone --agent plan` で動く（実測 `PONG`） |
-| v1 | `opencode` 1.14.48 | `run` が全モデルで `NOT NULL constraint failed: session_message.seq` |
-| pi | `pi -p --no-session` | 最後の砦 |
-
-| 順 | モデル | OpenCode からそのまま使えるか |
-|---|---|---|
-| 1 | `codex`（`codex/{config.toml の model}`） | OpenCode を使わない（Codex CLI で実行） |
-| 2 | `ollama-cloud/deepseek-v4.1-flash` | **provider 登録が必要**（下記）。未登録ならスクリプトが `pi -p --model` に切り替える |
+Claude 版のリサーチは **gemini（`consult.sh --to pi -m google/gemini-4-carbon`）が先**、インターネット情報が要るときだけ firecrawl で出典を取る。設計相談・セカンドオピニオンは `~/.claude/scripts/consult.sh --to <cli>` で別 CLI を 1 つ名指しして聞き、連鎖は使わない（セカンドオピニオンは `--role review`。失敗しても別モデルに切り替えない）。詳細は `../claude/rules/tool-routing.md`「External Research」/「設計相談・セカンドオピニオン（consult.sh）」。
 
 ### v1 と v2 の CLI 差分
 
@@ -96,9 +81,9 @@ Claude 版のリサーチは **gemini（`consult.sh --to pi -m google/gemini-4-c
 | サブコマンド | 限定的 | `models` / `auth`(list, login, export, import, switch) / `service` / `session` / `serve` / `debug`(agents, config, paths, heap-dump) / `plugin` / `mcp` |
 | 設定キー | `permission: "allow"` / `mcp` 直下 | `permissions[]` / `mcp.servers` に正規化（v1 形式も読める） |
 
-config / data / DB / log のパスは v1 と v2 で共通（`opencode2 debug paths` で確認）。
+config / data / DB / log のパスは v1 と v2 で共通（`opencode2 debug paths` で確認）。この環境の v1 は `run` が全モデルで `session_message.seq` で失敗するので、**v2（`opencode2`）を使う**。
 
-### フォールバック先の登録
+### ollama-cloud の provider 登録
 
 `~/.config/opencode/opencode.jsonc`（このファイルは dotfiles の持ち物なので、ここのリポジトリには置かない）:
 

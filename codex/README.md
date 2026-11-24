@@ -33,7 +33,7 @@ team-review / deploy / orchestrate）は `agents/skills/` にあり `sync-agents
 
 ```bash
 ./sync-agents.sh -n   # ~/.agents/skills/{startproject,team-implement,team-review,deploy,orchestrate}
-./sync-claude.sh -n   # ~/.claude/scripts/{phase-run,ai-fallback,linear-ask}.sh
+./sync-claude.sh -n   # ~/.claude/scripts/{phase-run,linear-ask}.sh
 ./sync-codex.sh -n    # ~/.codex/prompts/orchestrate.md
 ```
 

@@ -1,7 +1,7 @@
 # Tool Routing Rules
 
 **どの操作をどのツール・エージェントに委譲するかを定める。**
-外部リサーチは **gemini が先**。インターネットの一次情報が要るときだけ firecrawl / WebFetch（pi は web fetch）を使う。設計相談は ai-fallback（フォールバック連鎖）に振り分ける。使うかどうか自体は tier で決まる（`$HOME/.claude/rules/adaptive-execution.md` の「External Research」「OpenCode Design Consultation」）。本ファイルは「使う」となった場合の委譲先を定める。
+外部リサーチは **gemini が先**。インターネットの一次情報が要るときだけ firecrawl / WebFetch（pi は web fetch）を使う。設計相談とセカンドオピニオンは consult.sh で別の CLI を 1 つ名指しして聞く（連鎖は使わない）。使うかどうか自体は tier で決まる（`$HOME/.claude/rules/adaptive-execution.md` の「External Research」「OpenCode Design Consultation」）。本ファイルは「使う」となった場合の委譲先を定める。
 
 **単発の作業はサブエージェント（Agent ツール）に振らず、メインセッションで直接実行する。** リサーチ・OpenCode・Linear・docker/uv/ruff・スクリプト作成などすべて対象。サブエージェントを使うのは `/orchestrate` 系（startproject / team-implement / team-review / deploy）と、それらの command が自分で定めている場合だけ。
 
@@ -22,7 +22,7 @@
 | PDF (URL) / 複数ページ | **firecrawl MCP** | `firecrawl_parse` / `firecrawl_scrape` |
 | 音声・動画 | **未対応** | 委託先なし。ユーザーに扱い方を確認する |
 | Library research | **gemini（先）+ 必要時のみ firecrawl** | `consult.sh --to pi` で実装知見。一次情報が要るときだけ `firecrawl_search` |
-| Design decisions | **OpenCode（モデルはフォールバック連鎖）** | バックグラウンド Bash で直接（`~/.claude/scripts/ai-fallback.sh {prompt_file}`、下記「設計相談・セカンドオピニオンの連鎖」） |
+| Design decisions | **consult.sh（別 CLI を 1 つ指定）** | `~/.claude/scripts/consult.sh --to codex -`（下記「設計相談・セカンドオピニオン」） |
 | git（書き込み系） | **`/deploy` skill** | Ad-hoc Git モード。読み取り系は Claude が直接 |
 | `/orchestrate` で作った PR への追加変更 | **`/orchestrate` 追加修正モード** | `/orchestrate "{追加の依頼} --task-file={TASK_FILE}"`。直接編集して Ad-hoc push しない（下記「Git Operations」） |
 | docker/ruff/uv | **Direct** | Bash で直接実行（長いものは `run_in_background: true`） |
@@ -75,39 +75,27 @@ EOF
 - **gemini が 429 / 認証エラー / 無出力で落ちても、別のモデルに切り替えない。** 理由を書いて自分の知識で進む（`外部リサーチ不可: {理由}`）
 - 記録は `利用AI:` に使った方を書く（例: `利用AI: pi/google/gemini-4-carbon`。一次情報も取ったなら `+ claude/opus (firecrawl)`）
 
-### 設計相談・セカンドオピニオンの連鎖（ai-fallback）
+### 設計相談・セカンドオピニオン（consult.sh）
 
-設計相談（startproject）とセカンドオピニオン（team-review）は `ai-fallback.sh` の連鎖で回す。リサーチは上の gemini が担当するので、この節はリサーチには使わない（各ドキュメントからの「設計相談・セカンドオピニオンの連鎖」参照はこの節を指す）。
+設計相談（startproject）とセカンドオピニオン（team-review）は、`consult.sh` で **1 つの CLI を名指しして 1 回聞く**。モデルの連鎖は使わない。
 
 ```bash
-~/.claude/scripts/ai-fallback.sh {prompt_file}
+# 設計相談（実装者と別ファミリを選ぶ。分からなければ codex）
+~/.claude/scripts/consult.sh --to codex - <<'EOF'
+{設計相談の内容}
+EOF
+
+# セカンドオピニオン（レビューのロール）
+~/.claude/scripts/consult.sh --to claude --role review - <<'EOF'
+{レビュー対象と観点}
+EOF
 ```
 
-`ai-fallback.sh` は次の連鎖を上から順に試し、**最初に答えを返したモデルを採用する**。各モデルは 1 回だけ呼ぶ（同じモデルの再試行はしない）。
-
-| 順 | モデル | 提供元 | 位置づけ |
-|---|---|---|---|
-| 1 | `codex`（`AI_MODEL` は `codex/{config.toml の model}`） | Codex CLI（`codex exec`、読み取り専用） | 既定 |
-| 2 | `ollama-cloud/deepseek-v4.1-flash` | Ollama Cloud（`https://ollama.com/v1`） | 1 が quota / 認証 / タイムアウト / 空出力 / 未インストールのとき |
-
-- 候補の上書き: `AI_CHAIN="ollama-cloud/deepseek-v4.1-flash" ~/.claude/scripts/ai-fallback.sh {prompt_file}`。Codex は `codex`（`-m` なし。モデルは `${CODEX_HOME:-~/.codex}/config.toml` の `model` で、読めなければ `codex/default` と記録）か `codex:{model}`（`-m {model}` を付ける）と書く（例: `AI_CHAIN="codex:gpt-6-sol ollama-cloud/deepseek-v4.1-flash"`）
-- **Codex はエンジン切替なしの単発候補。** 失敗したら（quota / 認証 / タイムアウト / 空出力 / exit ≠ 0）そのまま次のモデルへ進む。`codex` が入っていなければ `skip: codex/{model} on codex (not installed)` を出して OpenCode 連鎖だけで動く。逆に OpenCode 系エンジンが無く `codex` だけでも動く（`provider/model` 候補は `(no engine)` で skip）
-- Codex の判定は **exit 0 かつ最終メッセージ（`-o`）が非空なら成功**で、出力は grep しない（プロンプトに「quota」等が含まれても誤判定しない）。失敗したときだけ stderr と出力を quota（`429` / `rate limit` / `usage limit` など）→ 認証（`401` / `403` / `unauthorized`）の順に見て理由を付ける
-- 切替条件（スクリプトが判定）: HTTP 429 / `insufficient_quota` / rate limit → 次の候補。401 / 403（認証エラー）→ 次の候補。`exit 124` / `137`（タイムアウト）→ 次の候補。**空出力**のときは 429 をログ（`~/.local/share/opencode/log/`）、`ERROR` を stderr（`--print-logs --log-level ERROR`）で見て、どちらも無ければ「空出力」として次の候補
-- **quota 以外の理由で落ちたときはエンジンを切り替える。** OpenCode 側の不具合（DB 破損・インストール不全）は次のモデルでも同じ壁に当たるので、その場合だけ `pi -p --no-session --model` に切り替えて連鎖を続ける（stderr に `switching to pi` を出す）。quota のときは切り替えない
-- **記録は必須。** 成果物（`DESIGN` / `## team-review` / PR 本文など）に `利用AI: {AI_MODEL}` を書き、落とした候補があれば `（{model} は {理由} で skip）` を添える（例: `利用AI: ollama-cloud/deepseek-v4.1-flash（codex/gpt-6-sol は quota で skip）`）。スクリプトは stderr に `AI_ENGINE` / `AI_MODEL` / `AI_SKIPPED` を出す
-- 全候補が失敗したときだけ OpenCode なしで続け、成果物に「OpenCode 不可: {理由}」と書く
-- エンジンも連鎖する（`provider/model` 候補のみ。Codex は対象外）: `opencode2`（v2）→ `opencode`（v1）→ `pi` の順で、入っているものを使う。1 つのエンジンでモデル連鎖を回し、**quota 以外**の理由（DB 破損・認証エラー・タイムアウトなど）で落ちたら次のエンジンで同じモデルから再開する
-- v1 と v2 の差分（`--auto`・`--standalone`・`--log-level` の大小文字・`-m provider/model#variant`）は `~/src/harness/docs/tool-commands.md` の表を参照
-- ollama-cloud（`ollama-cloud/deepseek-v4.1-flash`）を OpenCode から使うには provider 登録が要る（`../opencode/README.md`「フォールバック先の登録」）。未登録なら pi 側に切り替わる
-- 長文プロンプトはファイルに落として渡す（スクリプトはファイルパスか `-`（stdin）を受ける）
-- ツール呼び出しで止まらせたくなければ、プロンプト冒頭に `DO NOT USE ANY TOOLS`
-
-#### コマンドと壊れやすい要素
-
-手で叩くときのコマンド形・`--agent plan` / `--standalone` / `< /dev/null` などの理由・ログと疎通確認の読み方は `~/src/harness/docs/tool-commands.md` に移した（このファイルには置かない）。
-
-- OpenCode はコードを読まずに答えることがある。結論は採用してよいが**根拠は必ず自分で検証する**
+- ターゲットは **そのフェーズを実行している CLI（`--label`）と別のファミリ**から選ぶ。`--label` が分からなければ `codex`
+- CLI の答えは鵜吞みにしない。コードを読まずに答えることがあるので、根拠は自分で確かめてから採用する
+- 1 回で終わり。失敗（quota / 認証 / timeout / 空出力）したら**別モデルに切り替えない**。`設計相談不可: {理由}` / `セカンドオピニオン不可: {理由}` を書いて、そのフェーズを飛ばすか自分の判断で進む
+- `利用AI:` には `consult.sh` の stderr `AI_MODEL=` を書く
+- Herdr が無い環境では `-b print` を付ける（`consult.sh` は Herdr があれば pane を作る）
 
 ### Scope
 
@@ -217,7 +205,7 @@ EOF
 - 帰ってきた文面を**確かめてから**使う（事実・数値・固有名詞は自分で照合する）
 - 依頼したら記録に「文面: pi/google/gemini-4-carbon」を添える（`利用AI:` / `### RESULT` / PR 本文）
 - **往復は 1〜4 分**（実測 66〜232 秒）。1 行の要約・ラベル・定型文は自分で書く（往復のほうが高い）
-- 失敗したら `draft.sh` は exit 1 で止まる。代わりに `ai-fallback.sh` を使い、`利用AI:` に codex/… と書く（黙って別モデルに書かせない）
+- 失敗したら `draft.sh` は exit 1 で止まる。下書きフェーズを飛ばして自分で書く
 - 使わなかったときは理由を 1 行残す（例: 「件名だけなので自分で書いた」）
 
 ## Linear MCP Operations

@@ -401,7 +401,7 @@ role_agent_name() {
 }
 
 # AI_MODEL label for the stderr contract. codex without -m takes the model from
-# ~/.codex/config.toml, so read it the way ai-fallback.sh does (top-level
+# ~/.codex/config.toml, so read it the way the codex backend does (top-level
 # `model` key only, never anything else from the file).
 target_model_label() {
   if [[ "$TARGET" == "claude" ]]; then
@@ -1024,9 +1024,9 @@ claude_print_consult() {
   echo "SESSION_ID=$(jq -r '.session_id // empty' <<<"$result")" >&2
 }
 
-# One-shot codex exec in a read-only sandbox, modelled on ai-fallback.sh so both
-# paths use the same flags. -o writes the final message, which is the answer; the
-# transcript lands in <base>.json.
+# One-shot codex exec in a read-only sandbox, modelled on the one-shot codex call.
+# -o writes the final message, which is the answer; the transcript lands in
+# <base>.json.
 codex_print_consult() {
   local base=$1 prompt=$2
   local answer_file="${base}.answer.md" raw_file="${base}.json"
