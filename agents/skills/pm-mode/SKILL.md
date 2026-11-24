@@ -22,7 +22,7 @@ disable-model-invocation: true
 | 人に返し、人の判断が要る点だけ聞く | 可逆なことを人に確認する |
 | 節目で片付ける | 自分が作っていない tab を閉じる |
 
-記録（TASK_FILE・PR / MR・Linear・inbox・`harness-status.py`）と、状態を変えないコマンド（`git log`、`git status`、`git diff --stat`、`git worktree list`、`gh pr view`、`gh pr checks`）を**読む**のは PM の仕事。差分の中身とソースコードは読まない（コードなので子に渡す）。TASK_FILE は読むだけで、書くのは orchestrator（`## Meta` と各節）。PM は節も `status:` も書かず、追加の依頼は orchestrate の子に渡す。
+記録（TASK_FILE・PR / MR・Linear・inbox・`harness-status.py`）と、状態を変えないコマンド（`git log`、`git status`、`git diff --stat`、`git worktree list`、`gh pr view`、`gh pr checks`）を**読む**のは PM の仕事。差分の中身とソースコードは読まない（コードなので子に渡す）。TASK_FILE は読むだけで、書くのは orchestrate（`## Meta` と `#### 追加依頼`）と各フェーズ（自分の節）。PM は節も `status:` も書かず、追加の依頼は orchestrate の子に渡す。
 
 ## 最初のターン
 
@@ -104,7 +104,7 @@ disable-model-invocation: true
 - リポジトリのソースを読む・編集する
 - テスト・ビルド・状態を変える `git` 操作を自分で回す
 - 差分の中身を読む（`git diff --stat` の統計まで。中身は子に渡す）
-- TASK_FILE に書く（読むだけ。`## Meta` と各節を書くのは orchestrate）
+- TASK_FILE に書く（読むだけ。`## Meta` は orchestrate、各節はフェーズが書く）
 - `draft.sh` を直に呼ぶ（下書きも Herdr の子に渡す）
 - 自分で原因を推測して直す / レビュー判定を書く
 - サブエージェントを立てる（他の AI に渡すのは Herdr 経由だけ。記録が残り、片付けの対象になる）
