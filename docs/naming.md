@@ -23,7 +23,7 @@ Herdr のセッション名は **agent 名・tab 名・（worktree のときは�
 | 並列 orchestrate | `orchestrate-<linear-id 小文字>[-<feature>]` | `orchestrate-nsketch-1983` |
 | issue 無しの orchestrate | `orchestrate-noissue-<feature>` | `orchestrate-noissue-quick-fix` |
 | delegate の子 | `<claude\|codex\|pi>-<purpose>` | `claude-review-1983`, `codex-research-cache` |
-| boss | `boss-<repo>` | `boss-nanco-next` |
+| manager（PM の技術の脳） | `manager-<repo>` | `manager-nanco-next` |
 | PM（pm-mode） | `pm-<repo>` | `pm-nanco-next` |
 | 相談・配布以外の一時セッション | `<kind>-<purpose>-<短い id>` | `pi-repro-4f2a` |
 
@@ -54,7 +54,7 @@ Herdr の上限は 32 文字。`orchestrate-<id>-<feature>` が超えるとき�
 |---|---|---|
 | TASK_FILE | `task-<LINEAR_ID\|NOLINEAR>-<feature>.md` | `task-NSKETCH-1983-ci-cache.md` |
 | 実行ロック | `<repo>-<LINEAR_ID>.lock` / `<repo>-task-<feature>.lock` / `<repo>-repo.lock` | `nanco-next-NSKETCH-1983.lock` |
-| inbox | `~/.cache/harness/inbox/<boss>/` | `~/.cache/harness/inbox/boss-nanco-next/` |
+| inbox | `~/.cache/harness/inbox/<boss>/` | `~/.cache/harness/inbox/manager-nanco-next/` |
 | 回答ファイル（相談） | `<prompt 名>.answer.md` / インラインは `$TMPDIR/harness-consult/out/<target>-consult-<timestamp>.answer.md` | — |
 
 TASK_FILE とロックは **ID を大文字のまま**使う（ブランチだけ小文字）。既存の `task-file.sh` / `lock` の挙動に合わせている。

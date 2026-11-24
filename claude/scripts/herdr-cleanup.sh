@@ -16,7 +16,7 @@
 # start time, and the boss it works for once it was delegated to; anything else
 # is left alone. Use --all-owners to tidy records from other sessions, or
 # --owner to pick one. The name is not a chat: a pane with a long-lived agent
-# name (boss-<repo>) collects records from every chat that ran in it, so narrow
+# name (manager-<repo>) collects records from every chat that ran in it, so narrow
 # a report with --name and --owner when you only want this conversation's tabs.
 #
 # A record is in scope when (any of):

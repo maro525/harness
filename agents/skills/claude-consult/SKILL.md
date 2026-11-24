@@ -26,7 +26,7 @@ Claude Code 自身からは使わない（自分自身を呼ぶ形になる）�
 
 - **使う**: 設計相談・レビュー・実装の引き継ぎ。**同期**——回答が返るまで待ち、stdout と `<base>.answer.md` で受け取って自分で検証できる
 - **使わない**:
-  - 並行で走らせて報告で判断したい → [herdr-boss](../herdr-boss/SKILL.md) の `delegate`（非同期。子の画面は見えない）
+  - 並行で走らせて報告で判断したい → [manager](../manager/SKILL.md) の `delegate`（非同期。子の画面は見えない）
   - 4 フェーズの実行 → `phase-run.sh`（orchestrate 経由）
   - 外部リサーチ → `consult.sh --to pi`（gemini）。一次情報が要るときだけ firecrawl
 - **`herdr-agent.sh ensure` / `delegate` を直接使わない**（consult の tab/pane 管理はこのスクリプトが持つ。混ざると `consult*` と任意名のセッションが二重に残る）
@@ -66,7 +66,7 @@ Claude Code 自身からは使わない（自分自身を呼ぶ形になる）�
 | 「codex にも聞いて」 | `consult` | `codex-consult.sh --text "{同じ質問}"` |
 | 「consult と review 両方の立場で」 | `--roles consult,review` | 1 コマンドで並列。出力はロールごとの節 |
 | 「両方に聞いて」「比べて」（モデル違い） | `consult` | claude と codex を**同時に**起動 → 両方待って差分を表に |
-| 「並行で別々の仕事を進めて」「裏で走らせて」 | herdr-boss | `delegate`（非同期・子の画面は見えない。報告で判断） |
+| 「並行で別々の仕事を進めて」「裏で走らせて」 | manager | `delegate`（非同期・子の画面は見えない。報告で判断） |
 | 「終わって」「もういい」 | — | `--close --role {使ったロール}` / `close` / `reap` |
 
 並列の 3 種類は別物（混ぜない）:

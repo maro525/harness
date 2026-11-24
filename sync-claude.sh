@@ -38,7 +38,7 @@ HARNESS_FILES=(
   scripts/herdr-cleanup.sh
   scripts/preflight.sh
   scripts/draft.sh
-  skills/herdr-boss/SKILL.md
+  skills/manager/SKILL.md
 )
 
 # shellcheck source=lib/sync-common.sh

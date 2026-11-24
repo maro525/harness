@@ -107,7 +107,7 @@ fi
 
 # --- 7: sync scripts ---------------------------------------------------------
 declare -A sync_lists=(
-  [sync-claude.sh]="commands/orchestrate.md commands/team-review.md rules/tool-routing.md scripts/phase-run.sh scripts/task-file.sh scripts/herdr-agent.sh skills/herdr-boss/SKILL.md"
+  [sync-claude.sh]="commands/orchestrate.md commands/team-review.md rules/tool-routing.md scripts/phase-run.sh scripts/task-file.sh scripts/herdr-agent.sh skills/manager/SKILL.md"
   [sync-opencode.sh]="commands/orchestrate.md agents/team-review.md"
 )
 for script in "${!sync_lists[@]}"; do
@@ -157,9 +157,9 @@ pm_prompt="pi/prompts/pm-mode.md"
 grep -qF -- '~/.agents/skills/pm-mode/SKILL.md' "$(readonly_path "$pm_prompt")" 2>/dev/null ||
   ng "$pm_prompt が ~/.agents/skills/pm-mode/SKILL.md を指していない"
 
-boss_entry="claude/skills/herdr-boss/SKILL.md"
-grep -qF -- '~/.agents/skills/herdr-boss/SKILL.md' "$(readonly_path "$boss_entry")" 2>/dev/null ||
-  ng "$boss_entry が汎用版 ~/.agents/skills/herdr-boss/SKILL.md を指していない"
+manager_entry="claude/skills/manager/SKILL.md"
+grep -qF -- '~/.agents/skills/manager/SKILL.md' "$(readonly_path "$manager_entry")" 2>/dev/null ||
+  ng "$manager_entry が汎用版 ~/.agents/skills/manager/SKILL.md を指していない"
 
 # --- 8: contract -------------------------------------------------------------
 contract="docs/phase-contract.md"
