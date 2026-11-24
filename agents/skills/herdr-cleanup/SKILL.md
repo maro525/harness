@@ -16,11 +16,11 @@ harness が起動したセッションは `~/.cache/harness/` に記録を残す
 
 | ユーザーの言い方 | 実行 |
 |---|---|
-| 「herdr のセッション整理して」「溜まってない？」 | `~/.claude/scripts/herdr-cleanup.sh`（レポートだけ。既定は**このセッションが立ち上げたものだけ**） |
+| 「herdr のセッション整理して」「溜まってない？」 | `~/.claude/scripts/herdr-cleanup.sh`（レポートだけ。既定は**この実行者（安定名）の分**。長命な司令塔名の pane では別チャットも混ざるので、このチャットで作った名前を `--name` で絞る） |
 | 「全部まとめて整理して」「他のセッションのも」 | `herdr-cleanup.sh --all-owners`（他人のセッションも対象）
 | 「終わったやつは消して」 | まず `herdr-cleanup.sh` で一覧を出す → **一覧を見せて了承を得る** → `herdr-cleanup.sh --apply --yes` |
 | 「動いてないのも消していい」 | 上と同じ手順で `--include-live` を足す（了承を得てから `--apply --yes --include-live`） |
-| 「worktree も見て」 | 上に `--worktrees` を足す（**このセッションが作った孤児だけ**が対象。clean は `--apply` で削除、dirty は報告のみ。他のセッションのは `--all-owners`） |
+| 「worktree も見て」 | 上に `--worktrees` を足す（**この実行者の分だけ**が対象。clean は `--apply` で削除、dirty は報告のみ。他のセッションの登録済みは `--all-owners`）。記録の無い worktree は `skip（unregistered）` で、フラグでは消えない。このチャットで作ったと分かる clean なものだけ、了承後に `git worktree remove` で消す（ブランチは残る） |
 | 「◯◯ だけ消して」 | `herdr-cleanup.sh --name ◯◯` で一覧 → 了承 → `--apply --yes --name ◯◯` |
 | 「ロックが残ってない？」 | `herdr-cleanup.sh --only locks` |
 | 「未読の報告ある？」「inbox 溜まってない？」 | `herdr-cleanup.sh --only inbox`（別の司令塔の分は `--boss NAME`。**読むだけ**） |
@@ -36,7 +36,7 @@ harness が起動したセッションは `~/.cache/harness/` に記録を残す
 | `agents` | `~/.cache/harness/herdr-agents/*.json` | 同上（`herdr-agent.sh close` 経由なので worktree も片付く） |
 | `locks` | `~/.local/share/harness/locks/*.lock` | TTL を過ぎた実行ロックを解放する |
 | `inbox` | `~/.cache/harness/inbox/<boss>/` | **何もしない（表示だけ）**。未読の報告と件数、`.watch/` のロック・`.since`・ログを並べる。片付けは `herdr-agent.sh inbox <boss> read` → `ack` → `clear` |
-| `--worktrees` | `~/.herdr/worktrees/<repo>/` | 記録の無い worktree。**clean なら `git worktree remove`**（ブランチは残る）、dirty は報告のみ。**既定はこのセッションが作った worktree だけ**（`herdr-agent.sh` が作成時に `~/.cache/harness/herdr-worktrees/` へ owner を記録）。登録の無い古い worktree と他セッションのものは `--all-owners` を付けたときだけ対象 |
+| `--worktrees` | `~/.herdr/worktrees/<repo>/` | 記録の無い worktree。**clean なら `git worktree remove`**（ブランチは残る）、dirty は報告のみ。**既定はこの実行者の分だけ**（`herdr-agent.sh` が作成時に `~/.cache/harness/herdr-worktrees/` へ owner を記録）。他セッションの登録済みは `--all-owners`。**登録の無い worktree は `skip（unregistered）` で、どのフラグでも消さない** |
 
 ## 実行のしかた
 
@@ -58,9 +58,9 @@ harness が起動したセッションは `~/.cache/harness/` に記録を残す
 - **pane 名で拾った記録（行末 `via:pane-name`）は `--apply` でも閉じない。** 生きていればレポートだけ（`--include-live` でも閉じない）、実体が無ければ記録ファイルだけ消して tab / pane は残す。閉じるのは `--owner pane:ID` を明示して owner 一致で拾ったときだけ
 - `via:pane-name(owner:pane:w1:p2)` の括弧内が記録の owner。一覧をユーザーに見せて了承を得てから `--owner pane:w1:p2` に渡せば、owner 一致として閉じられる
 
-## 対象の範囲（既定は自分の分だけ）
+## 対象の範囲（既定はこの実行者の分。チャット単位ではない）
 
-セッションの記録には **start 時の実行者**が `owner` として書き込まれる。値は pane が消えても追える**安定名**（`$HERDR_AGENT_NAME` → Herdr が知っているその pane の agent 名 → 取れなければ `pane:<id>`）で、生の pane id は `owner_pane` に残る。`delegate` された子の記録には司令塔の名前が `boss` として追記される。`herdr-cleanup.sh` は**既定で自分の分だけ**を対象にする。自分の分とは次のどれか:
+セッションの記録には **start 時の実行者**が `owner` として書き込まれる。値は pane が消えても追える**安定名**（`$HERDR_AGENT_NAME` → Herdr が知っているその pane の agent 名 → 取れなければ `pane:<id>`）で、生の pane id は `owner_pane` に残る。`delegate` された子の記録には司令塔の名前が `boss` として追記される。`herdr-cleanup.sh` は**既定でこの実行者（安定名）の分だけ**を対象にする。範囲は次のどれか:
 
 1. `owner` が自分の安定名と一致する
 2. `owner` が `pane:P` の古い記録で、pane `P` の今の agent 名が自分の名前
@@ -68,12 +68,16 @@ harness が起動したセッションは `~/.cache/harness/` に記録を残す
 
 - `owner` が空の古い記録、他の pane/agent が作った記録は**触らない**
 - 全体を見るなら `--all-owners`、特定の実行者だけなら `--owner agent:NAME` / `--owner pane:ID` / `--owner NAME`（= `agent:NAME`）
-- 実行ロックも同じで、lease には acquire した pane が `owner` として入る。**このセッションが立ち上げた子の pane / agent が取った lease も自分の分として扱う**（`orchestrate` を子セッションで回しても、そのロックが漏れない）
+- **この範囲はチャットではなく実行者の安定名で決まる。** pane に `boss-storage` のような長命な名前が付いていると、同じ名前で走った別のチャットの tab も同じ範囲に入る。混ざったら、このチャットで作った名前だけを `--name` で絞り、その一覧を人に見せる。レポート全体に `--include-live` を付けない
+- 記録の無い worktree は owner が無いので、このツールは消さない。このチャットで作ったと分かる clean なものだけ、了承後に `git worktree remove` する（ブランチは残す）。そのために `--all-owners` を使わない
+- 実行ロックも同じで、lease には acquire した pane が `owner` として入る。**この実行者が立ち上げた子の pane / agent が取った lease も同じ範囲として扱う**（`orchestrate` を子セッションで回しても、そのロックが漏れない）
 - worktree も同じ: `herdr-agent.sh` が作成時に `~/.cache/harness/herdr-worktrees/` へ owner を記録し、cleanup はその owner で絞る
 
 ## やらないこと
 
 - **了承なしに `--apply --yes` を付けない**（`--yes` は一覧を見せてユーザーが OK した後だけ）
+- **レポート全体に `--include-live` を付けない**（長命な司令塔名の pane では他のチャットを巻き込む。`--name` で絞った 1 件ずつ）
+- **`--all-owners` を、記録の無い worktree を消すためだけに使わない**（他のチャットを巻き込む。手で消す）
 - **自分が立ち上げていないセッションを消さない**（`--all-owners` / `--owner` を付けない限り対象外。付けろと言われたときも一覧を見せる）
 - **`herdr-agent.sh reap` を無条件に使わない**（記録済みの全部を閉じる。他の作業を巻き込む）
 - 生きているセッションを勝手に閉じない（`--include-live` はユーザーが明示したときだけ）
