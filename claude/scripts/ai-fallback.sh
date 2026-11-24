@@ -10,7 +10,7 @@
 #   AI_CHAIN="codex:gpt-6-sol m2" ai-fallback.sh <prompt-file>
 #
 # The chain (and why it is in this order) is defined in
-# ~/.claude/rules/tool-routing.md > "OpenCode リサーチの実行". This script is
+# ~/.claude/rules/tool-routing.md > "設計相談・セカンドオピニオンの連鎖". This script is
 # the only executable form of that rule — do not write `opencode run` by hand
 # in skills and commands, they must call this script.
 #

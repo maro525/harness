@@ -454,14 +454,13 @@ def route_prompt(prompt: str) -> dict | None:
                 "hookEventName": "UserPromptSubmit",
                 "additionalContext": (
                     f"[Agent Routing] Detected '{trigger}' - run external "
-                    "research on two parallel tracks directly in the main session "
-                    "(no subagents): firecrawl MCP "
-                    "(firecrawl_search / firecrawl_scrape) for sourced facts, and "
-                    "`~/.claude/scripts/ai-fallback.sh {prompt_file}` "
-                    "for implementation know-how (the script walks the model chain "
-                    "starting with Codex CLI, then OpenCode models, falls back on "
-                    "429/timeout, and prints AI_MODEL on stderr). "
-                    "Prefer firecrawl when they disagree."
+                    "research directly in the main session (no subagents): ask "
+                    "gemini first with "
+                    "`~/.claude/scripts/consult.sh --to pi -m google/gemini-4-carbon -` "
+                    "for implementation know-how, and pull sourced facts with the "
+                    "firecrawl MCP (firecrawl_search / firecrawl_scrape) only when "
+                    "the question needs internet information. "
+                    "Prefer the sourced facts when they disagree."
                 ),
             }
         }

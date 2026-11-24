@@ -118,7 +118,7 @@ orchestrate のフェーズ指定モードは探索に頼らず、プロンプ�
 - cline の `--json` は 1 行 1 JSON のストリーム（`text` はエスケープ済み）。最終メッセージは `"type":"run_result"` 行の `text`（下記「最終メッセージの取り出し」）
 - どのフェーズも CLI が TASK_FILE に直接書く（`written: yes`）。サンドボックス等で書けなかったとき（`written: no`）だけ orchestrate が `### SECTION` から代筆する（STEP 3P P4）。startproject / team-review では起動前後で作業ツリー・HEAD・ref・stash を比べ、TASK_FILE 以外に変化があれば報告する（P5）
 - codex 0.80.0 は ChatGPT アカウントで使えるモデルが無く全モデル失敗する（2026-09-28 実測）。`npm i -g @openai/codex@latest` で更新してから使う（下の「実機の状態」）
-- opencode は quota 切れ（429）だと無出力に見える。ログ（`~/.local/share/opencode/log/`）の 429 を先に確認する。Claude 版のリサーチは「自分（firecrawl）+ gemini (`consult.sh --to pi`)」、設計相談・セカンドオピニオンは `~/.claude/scripts/ai-fallback.sh` のモデル連鎖に任せる（`../claude/rules/tool-routing.md` の「External Research」/「OpenCode リサーチの実行」）。**フェーズ指定モード（`--ai=opencode`）は CLI 直呼びなので連鎖は効かず、429 なら `--ai=pi:{model}` で回す**
+- opencode は quota 切れ（429）だと無出力に見える。ログ（`~/.local/share/opencode/log/`）の 429 を先に確認する。Claude 版のリサーチは「gemini (`consult.sh --to pi`) が先、インターネット情報が要るときだけ firecrawl」、設計相談・セカンドオピニオンは `~/.claude/scripts/ai-fallback.sh` のモデル連鎖に任せる（`../claude/rules/tool-routing.md` の「External Research」/「設計相談・セカンドオピニオンの連鎖」）。**フェーズ指定モード（`--ai=opencode`）は CLI 直呼びなので連鎖は効かず、429 なら `--ai=pi:{model}` で回す**
 - **v1 と v2 でフラグが違う**: v2（`opencode2`）は `--auto`（v1 は `--dangerously-skip-permissions`）、`--log-level` は小文字、モデルは `provider/model#variant`。この環境の v1 は `run` が `session_message.seq` で全滅するので、入っていれば **v2 を使う**（`--ai=opencode2`）
 - **pi の許可リストにワークフローのスクリプトを入れる**: pi は `~/.pi/agent/extensions/permissions/` の `ALLOW_PATTERNS` に無いコマンドを TTY 無しで拒否する。`"~/.claude/scripts/**"`（および `/home/dev/.claude/scripts/**`）と `git switch` を入れておかないと、`phase-run.sh` の起動やブランチ復帰で止まる（未登録の場合の回避策は `for _ in 1; do <script> ...; done`、というより追加する）
 
