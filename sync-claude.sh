@@ -26,7 +26,6 @@ HARNESS_FILES=(
   rules/tool-routing.md
   hooks/agent-router.py
   scripts/linear-ask.sh
-  scripts/ai-fallback.sh
   scripts/phase-run.sh
   scripts/task-file.sh
   scripts/herdr-agent.sh

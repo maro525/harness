@@ -15,7 +15,6 @@ harness/
 │   ├── skills/herdr-boss/   # 司令塔（boss）の Claude 用入口。手順の正本は agents/skills/herdr-boss（下記「司令塔（boss）パターン」）
 │   └── scripts/
 │       ├── linear-ask.sh   # OpenCode 版 orchestrate の質問の中継用（Linear API キーが要る）
-│       ├── ai-fallback.sh  # リサーチ・設計相談のモデル連鎖（429 で次の候補へ）
 │       ├── consult.sh      # 相談の実装（--to claude|codex）。下の 2 本は薄いラッパー
 │       ├── claude-consult.sh  # 別の Claude セッションに相談 / レビュー / 実装を投げる（Cursor / pi / Cline 用。agents/skills/claude-consult が呼ぶ。Herdr 内では常駐 pane のセッションに送る）
 │       ├── codex-consult.sh   # 同じことを Codex セッションで（agents/skills/codex-consult。codex は read-only なのでマーカーで回答）
@@ -84,31 +83,16 @@ hook の登録（`settings.json` の `hooks.UserPromptSubmit`）と `Skill(orche
 kanban は `uv tool install --editable ~/src/harness/kanban`（詳細は `kanban/README.md`）。
 `taskboard --harness --open` で、エージェントの親子・inbox・ロック・フェーズの動きも同じ画面で見られる。
 
-## 設計相談のフォールバック（ai-fallback）
+## 設計相談（consult.sh）
 
-リサーチは **gemini が先**（`consult.sh --to pi -m google/gemini-4-carbon`）。インターネットの一次情報が要るときだけ firecrawl / WebFetch（pi は web fetch）で出典を取る（`claude/rules/tool-routing.md`「External Research」）。
-
-設計相談（startproject）とセカンドオピニオン（team-review）は `ai-fallback.sh`（`sync-claude.sh` が実行ビット付きで配布）の連鎖に任せ、連鎖は `claude/rules/tool-routing.md`「設計相談・セカンドオピニオンの連鎖」が唯一の定義。
-
-| 順 | モデル | 提供元 |
-|---|---|---|
-| 1 | `codex`（記録は `codex/{config.toml の model}`） | Codex CLI（`codex exec -s read-only`） |
-| 2 | `ollama-cloud/deepseek-v4.1-flash` | Ollama Cloud（`https://ollama.com/v1`） |
+設計相談（startproject）とセカンドオピニオン（team-review）は、`consult.sh` で **1 つの CLI を名指しして 1 回聞く**。モデルの連鎖は使わない。セカンドオピニオンは `--role review` を付ける。
 
 ```bash
-~/.claude/scripts/ai-fallback.sh {prompt_file}                 # 1 → 2 の順に試す
-AI_CHAIN="ollama-cloud/deepseek-v4.1-flash" ~/.claude/scripts/ai-fallback.sh {prompt_file}
-AI_CHAIN="codex:gpt-6-sol ollama-cloud/deepseek-v4.1-flash" ~/.claude/scripts/ai-fallback.sh {prompt_file}
+~/.claude/scripts/consult.sh --to codex -                  # 設計相談（実装者と別ファミリを選ぶ）
+~/.claude/scripts/consult.sh --to claude --role review -   # セカンドオピニオン
 ```
 
-- 切替条件: 429 / `insufficient_quota` / rate limit / 401・403（認証）/ タイムアウト（exit 124・137）/ 空出力（429 はログ、`ERROR` は stderr）。同一モデルの再試行はしない
-- Codex（`codex` / `codex:{model}`）はエンジン切替なしの単発候補で、失敗したら次のモデルへ進む。未インストールなら skip して OpenCode 連鎖だけで動く
-- quota 以外の理由でエンジンが落ちたら（OpenCode 系の候補のみ）、次のエンジンで同じモデルから再開する（`opencode2`（v2）→ `opencode`（v1）→ `pi` の順。DB 破損などエンジン側の不具合で全滅しないため）
-- v1 と v2 は同じ config / data / DB を共有するが、CLI フラグが違う（v2 は `--auto`・`--standalone`・`--log-level error`・`-m provider/model#variant`）。この環境の v1 は `session_message.seq` で全滅するので **v2 が本線**
-- 成功時は stderr に `AI_MODEL`（と `AI_SKIPPED`）を出し、成果物の `利用AI:` 行に記録する
-- OpenCode が無い環境では同じスクリプトが `pi -p --no-session --model` に切り替える
-- OpenCode から ollama-cloud を使うための provider 登録は `opencode/README.md`「フォールバック先の登録」（`opencode.jsonc` は dotfiles の持ち物）
-- フェーズ指定モード（`--ai=opencode`）は CLI 直呼びなので連鎖は効かない。429 なら `--ai=pi:{model}` に切り替える。v2 が入っている環境では `--ai=opencode2` を使う（v1 はこの環境で `session_message.seq` により全滅）
+失敗しても別モデルに切り替えず、`設計相談不可: {理由}` / `セカンドオピニオン不可: {理由}` を書く。`利用AI:` には stderr の `AI_MODEL` を書く。ルールの正本は `claude/rules/tool-routing.md`「設計相談・セカンドオピニオン（consult.sh）」。
 
 ## 司令塔（boss）パターン
 

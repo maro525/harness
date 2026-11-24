@@ -443,8 +443,9 @@ def route_prompt(prompt: str) -> dict | None:
             "hookSpecificOutput": {
                 "hookEventName": "UserPromptSubmit",
                 "additionalContext": (
-                    f"[Agent Routing] Detected '{trigger}' - consider OpenCode CLI "
-                    "for deep reasoning; run it directly with background Bash (no subagent)."
+                    f"[Agent Routing] Detected '{trigger}' - consider "
+                    "`~/.claude/scripts/consult.sh --to codex -` for deep reasoning; "
+                    "run it directly with background Bash (no subagent)."
                 ),
             }
         }
