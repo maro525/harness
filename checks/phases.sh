@@ -109,8 +109,6 @@ fi
 declare -A sync_lists=(
   [sync-claude.sh]="commands/orchestrate.md commands/team-review.md rules/tool-routing.md scripts/phase-run.sh scripts/task-file.sh scripts/herdr-agent.sh skills/herdr-boss/SKILL.md"
   [sync-opencode.sh]="commands/orchestrate.md agents/team-review.md"
-  [sync-agents.sh]="startproject team-implement team-review deploy orchestrate claude-consult codex-consult herdr-boss herdr-cleanup harness-daily"
-  [sync-pi.sh]="orchestrate.md"
 )
 for script in "${!sync_lists[@]}"; do
   path=$(readonly_path "$script")
@@ -123,6 +121,27 @@ for script in "${!sync_lists[@]}"; do
   done
 done
 
+# The skill and prompt lists are derived from the filesystem, so a skill nobody
+# distributes fails here (2026-11: harness-status, pm-mode).
+agent_array=$(grep -m1 '^AGENT_SKILLS=' "$(readonly_path sync-agents.sh)" 2>/dev/null | tr '()' '  ')
+for dir in "$HARNESS"/agents/skills/*/; do
+  name=$(basename "$dir")
+  [[ -f "$dir/SKILL.md" ]] || continue
+  case " $agent_array " in
+    *" $name "*) ;;
+    *) ng "sync-agents.sh の AGENT_SKILLS に $name が無い" ;;
+  esac
+done
+
+prompt_array=$(grep -m1 '^PI_PROMPTS=' "$(readonly_path sync-pi.sh)" 2>/dev/null | tr '()' '  ')
+for prompt in "$HARNESS"/pi/prompts/*.md; do
+  name=$(basename "$prompt")
+  case " $prompt_array " in
+    *" $name "*) ;;
+    *) ng "sync-pi.sh の PI_PROMPTS に $name が無い" ;;
+  esac
+done
+
 # --- 7b: pi prompt wrapper ---------------------------------------------------
 pi_prompt="pi/prompts/orchestrate.md"
 if [[ ! -f $(readonly_path "$pi_prompt") ]]; then
@@ -133,6 +152,14 @@ else
       ng "$pi_prompt に '$token' の記述が無い"
   done
 fi
+
+pm_prompt="pi/prompts/pm-mode.md"
+grep -qF -- '~/.agents/skills/pm-mode/SKILL.md' "$(readonly_path "$pm_prompt")" 2>/dev/null ||
+  ng "$pm_prompt が ~/.agents/skills/pm-mode/SKILL.md を指していない"
+
+boss_entry="claude/skills/herdr-boss/SKILL.md"
+grep -qF -- '~/.agents/skills/herdr-boss/SKILL.md' "$(readonly_path "$boss_entry")" 2>/dev/null ||
+  ng "$boss_entry が汎用版 ~/.agents/skills/herdr-boss/SKILL.md を指していない"
 
 # --- 8: contract -------------------------------------------------------------
 contract="docs/phase-contract.md"

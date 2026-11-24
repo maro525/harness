@@ -169,8 +169,17 @@ parse_task() { # task
   FEATURE=$(slug "$feature")
   [[ -n "$FEATURE" ]] || die "feature is empty after slugging: $task"
   if [[ -n "$ID" ]]; then
-    NAME=$(session_name "$(slug "$ID")" "$FEATURE")
-    BRANCH="${PREFIX}$(slug "$ID")-$FEATURE"
+    # Task form "PROJ-573" repeats the id in the feature slot; drop it so the
+    # name and branch follow docs/naming.md (orchestrate-<id>[-<feature>]).
+    local id_slug
+    id_slug=$(slug "$ID")
+    if [[ "$FEATURE" == "$id_slug" ]]; then
+      NAME=$(session_name "$id_slug")
+      BRANCH="${PREFIX}$id_slug"
+    else
+      NAME=$(session_name "$id_slug" "$FEATURE")
+      BRANCH="${PREFIX}$id_slug-$FEATURE"
+    fi
   else
     ID="NOLINEAR"
     NAME=$(session_name "noissue-$FEATURE")
