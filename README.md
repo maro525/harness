@@ -99,12 +99,12 @@ kanban は `uv tool install --editable ~/src/harness/kanban`（詳細は `kanban
 `/pm-mode` のセッションが **PM**、PM が起こす Herdr の tab が **manager**（技術の脳）、manager が起こす tab が **worker** です。PM は人と話し、manager はコードを読んで答え、worker が実装します。
 
 ```
-PM (pm-<repo>) ──ask──▶ manager (manager-<repo>) ──delegate──▶ worker (child-a)
+PM (pm-<repo>[-<suffix>]) ──ask──▶ manager (manager-<repo>[-<suffix>]) ──delegate──▶ worker (child-a)
    ▲                        │                                   │
    └── report / inbox ◀─────┘ ◀────────── report / inbox ────────┘
 ```
 
-- PM は manager を `ensure` で 1 つだけ起こす（`--kind claude -- --permission-mode auto --model opus`）。質問も依頼も `ask` で渡す。`delegate` は使わない（protocol 節が manager のエージェント起動を禁じる）
+- PM は manager を `herdr-agent.sh manager` で 1 つだけ起こす（stdout が名前、stderr の `PM=` が自分の名前。`--kind claude -- --permission-mode auto --model opus`）。同じリポジトリに別のセッションが来ると、worktree に分かれて `manager-<repo>-<suffix>` が返るので、複数の会話が 1 つの manager を共有しない。質問も依頼も `ask` で渡す。`delegate` は使わない（protocol 節が manager のエージェント起動を禁じる）
 - manager はコードを読んで答え、実装・テスト・長い調査は `delegate` で worker に渡す。worker の報告は manager の inbox に届き、manager がまとめて `report pm-<repo>` で PM に返す
 - 手順は `agents/skills/pm-mode/SKILL.md` と `agents/skills/manager/SKILL.md`（どちらも `~/.agents/skills/` に配布）。Claude 用の入口は `claude/skills/manager/SKILL.md`
 - `delegate` / `report` / `inbox` の実体は `~/.claude/scripts/herdr-agent.sh`。inbox は `~/.cache/harness/inbox/<boss>/`、通知は `herdr agent prompt` の 1 行
@@ -112,10 +112,10 @@ PM (pm-<repo>) ──ask──▶ manager (manager-<repo>) ──delegate──�
 - セッションは Herdr の中でだけ立てる（`tmux` / `screen` / `nohup` / `claude --bg` を使わない）
 
 ```bash
-~/.claude/scripts/herdr-agent.sh ensure manager-myrepo --kind claude -- --permission-mode auto --model opus
-~/.claude/scripts/herdr-agent.sh ask manager-myrepo /tmp/question.md          # 質問は同期で答えが返る
-~/.claude/scripts/herdr-agent.sh delegate child-a /tmp/req.md --boss manager-myrepo
-~/.claude/scripts/herdr-agent.sh inbox manager-myrepo read child-a
+M=$(~/.claude/scripts/herdr-agent.sh manager -- --permission-mode auto --model opus)
+~/.claude/scripts/herdr-agent.sh ask "$M" /tmp/question.md          # 質問は同期で答えが返る
+~/.claude/scripts/herdr-agent.sh delegate child-a /tmp/req.md --boss "$M"
+~/.claude/scripts/herdr-agent.sh inbox "$M" read child-a
 ```
 
 - inbox が正本で、通知はヒント。`report` は inbox に書けた時点で成功（通知の失敗は warning）。`report` / `inbox` は Herdr サーバが止まっていても動く

@@ -26,22 +26,21 @@ disable-model-invocation: true
 ## 最初のターン
 
 1. `~/.claude/scripts/harness-status.py --repo <repo 名> --no-checks` で現況を 1 回だけ見る（ロック・未読 inbox・live なセッション）。Herdr が動いていなければ止まる（自分で代わりをやらない）
-2. Herdr の pane の中なら `herdr agent rename "$HERDR_PANE_ID" pm-<repo>` で名前を付ける。外なら以降の `--boss` に `pm-<repo>` を明示する（`~/src/harness/docs/naming.md`）
-3. **manager を 1 つ用意する。** `herdr-agent.sh ensure manager-<repo> --kind claude -- --permission-mode auto --model opus`。生きていれば再利用される（`STATE=reused`）。新しく起こしたときは、最初の `ask` で「`~/.agents/skills/manager/SKILL.md` を読め。あなたの boss は `pm-<repo>` だ」と伝える
-4. 依頼を「1 行のゴール」と「渡す単位の表」に直し、返信の冒頭に置く。単位ごとに 1 依頼。同じ issue を 2 人に渡さない
-5. 単位ごとに manager へ `ask manager-<repo> <依頼ファイル>` で渡す。**渡したらターンを終える**（自分で bg の待ちを仕込まない）
+2. **manager を 1 つ用意し、その名前で名乗る。** `herdr-agent.sh manager --repo <repo> -- --permission-mode auto --model opus` を 1 回だけ実行する。stdout が manager の名前、stderr の `PM=` がこのセッションの名前、`REPO=` が manager の居場所。同じリポジトリに別のセッションの manager がいれば、worktree を切って `manager-<repo>-<suffix>` が返る。**manager の名前・場所・worktree は自分で決めない**（決めるのはスクリプト）。Herdr の pane の中なら `herdr agent rename "$HERDR_PANE_ID" <PM=>`、外なら以降の `--boss` に `PM=` を明示する（`~/src/harness/docs/naming.md`）。セッションの識別はスクリプトが取る（pane → 呼び出し元のエージェントプロセス）ので、通常は何も渡さない。exit 2 で断られたときだけ `--session <token>` を渡す。新しく起こしたときは、最初の `ask` で「`~/.agents/skills/manager/SKILL.md` を読め。あなたの boss は `<PM=>` だ」と伝える
+3. 依頼を「1 行のゴール」と「渡す単位の表」に直し、返信の冒頭に置く。単位ごとに 1 依頼。同じ issue を 2 人に渡さない
+4. 単位ごとに manager へ `ask <manager> <依頼ファイル>` で渡す。**渡したらターンを終える**（自分で bg の待ちを仕込まない）
 
 ## 振り分け
 
 | 依頼の形 | 使う | 注意 |
 |---|---|---|
-| 人の質問・相談 | `ask manager-<repo>`（同期） | manager がコードを読んで答える。PM は答えを人に返す |
-| タスクを最後まで（1 つ・複数） | `ask manager-<repo>`（依頼ファイル） | manager が orchestrate-parallel か子で回す |
-| 外に残る文章の下書き | `ask manager-<repo>` | manager が pi の子に振る |
+| 人の質問・相談 | `ask <manager>`（同期） | manager がコードを読んで答える。PM は答えを人に返す |
+| タスクを最後まで（1 つ・複数） | `ask <manager>`（依頼ファイル） | manager が orchestrate-parallel か子で回す |
+| 外に残る文章の下書き | `ask <manager>` | manager が pi の子に振る |
 | 現況・残骸 | `harness-status.py` / [herdr-cleanup](../herdr-cleanup/SKILL.md) | 読み取り専用 |
 
 - PM は `delegate` を使わない。protocol 節が manager のエージェント起動を禁じるため
-- manager の子は manager に報告する。manager が `report pm-<repo>` で PM に返す
+- manager の子は manager に報告する。manager が `report <PM>` で PM に返す
 - セッションは Herdr の中でだけ立てる（`tmux` / `screen` / `nohup` / `claude --bg` を使わない）
 
 ## 依頼文
@@ -57,8 +56,8 @@ disable-model-invocation: true
 
 | 経路 | 正本 | 読み方 |
 |---|---|---|
-| manager が仕事を終えた | PM の inbox | 通知 → `herdr-agent.sh inbox pm-<repo> read manager-<repo>` → `ack` |
-| 途中経過 | manager の pane | `herdr-agent.sh read manager-<repo>` / `ask manager-<repo>` |
+| manager が仕事を終えた | PM の inbox | 通知 → `herdr-agent.sh inbox <PM> read <manager>` → `ack` |
+| 途中経過 | manager の pane | `herdr-agent.sh read <manager>` / `ask <manager>` |
 
 - 通知は `報告あり` / `質問あり` / `子が止まった（blocked）` / `報告なしで停止` / `子が消えた` / `監視の寿命切れ`。対応は [manager](../manager/SKILL.md) の「3. 報告を読む」と同じ
 - 報告は意見。`テストが通った` / `PR を作った` は URL・コマンド結果で確かめる。確かめられなければ manager に 1 往復で確認させる
@@ -76,7 +75,8 @@ disable-model-invocation: true
 
 ```text
 /pm-mode 2511 と 3728 をそれぞれ orchestrate
-→ ask manager-<repo> 「2511 と 3728 をそれぞれ orchestrate して」
+→ M=$(herdr-agent.sh manager --repo <repo> -- --model opus)  # 名前と居場所が返る
+→ ask $M 「2511 と 3728 をそれぞれ orchestrate して」
 → manager が orchestrate-parallel を回す
 → 返信: manager に渡した / 完了は inbox の report で来る
 ```
@@ -85,13 +85,13 @@ disable-model-invocation: true
 /pm-mode ○○を追加したい
 → 要件を 2〜3 問だけ人に聞く（これは PM の仕事）
 → 依頼文を書き、Gate 1 の答えを中に入れる
-→ ask manager-<repo> <依頼ファイル>
+→ ask <manager> <依頼ファイル>
 → 返信: 何を渡したか / 待ち方 / 次に PM がやること
 ```
 
 ## 片付け
 
-manager に「子を閉じて終われ」と `ask` し、`herdr-agent.sh close manager-<repo>` で manager を閉じる。PM の inbox を `clear`。閉じるのは**自分が作った** tab だけ。残骸は `herdr-cleanup.sh`（既定はレポートのみ）で見る。
+manager に「子を閉じて終われ」と `ask` し、`herdr-agent.sh close <manager>` で manager を閉じる。worktree の manager は worktree ごと消える（ブランチ `pm/<repo>-<suffix>` は残るので、要らなければ消す）。PM の inbox を `clear`。閉じるのは**自分が作った** tab だけ。残骸は `herdr-cleanup.sh`（既定はレポートのみ）で見る。
 
 ## やらないこと
 
@@ -101,5 +101,6 @@ manager に「子を閉じて終われ」と `ask` し、`herdr-agent.sh close m
 - `draft.sh` を直に呼ぶ
 - manager を介さず `consult` / `delegate` / `orchestrate` を直に使う
 - サブエージェントを立てる（他の AI に渡すのは Herdr 経由だけ）
+- manager の名前・居場所・worktree を自分で決める（`herdr-agent.sh manager` が決める）
 - 子の報告をそのまま貼る
 - Herdr の外でセッションを立てる

@@ -21,7 +21,7 @@ PM の技術の脳。**質問と設計相談には自分で答える**（コー�
 
 - `~/.claude/scripts/herdr-agent.sh`（`./sync-claude.sh` で配布）、`herdr`（0.9.5 以降）、`jq`
 - Herdr サーバが動いていること（`delegate` / `ensure` に必要。`report` / `inbox` はサーバ無しでも動く）
-- PM が `manager-<repo>` の名前で起こし、boss は `pm-<repo>` だと伝える
+- PM が `herdr-agent.sh manager` で起こす。名前と居場所（リポジトリ直下か、セッション専用の worktree か）はそのコマンドが決める。boss は `pm-<repo>[-<suffix>]` だと伝える
 
 ## 守ること
 
@@ -35,12 +35,13 @@ PM の技術の脳。**質問と設計相談には自分で答える**（コー�
 8. **後始末。** 委任した tab は閉じるまで残る。フローの最後に `herdr-agent.sh close {name}` / `reap`
 9. **セッションは Herdr の中でだけ立てる。** 子は `ensure` で作る。`tmux` / `screen` / `nohup` / `claude --bg` で代用しない（Herdr の記録に乗らず、`herdr-cleanup.sh` の対象外になる）
 10. **リポジトリは読むだけ。** `git` は状態を変えない読み取りだけ（`log` / `status` / `diff`）。編集も commit も子に渡す
+11. **自分の名前と居場所を変えない。** PM は `herdr-agent.sh manager` で名前と居場所を決めている（`manager-<repo>`、または同じリポジトリに別セッションがいれば `manager-<repo>-<suffix>` とその worktree）。rename も移動もしない。cwd がリポジトリ直下でないときは、それが自分の worktree だ
 
 ## 手順
 
 ### 0. 名前と boss
 
-PM が `manager-<repo>` で起こす。pane の名前が違うときは `herdr agent rename "$HERDR_PANE_ID" manager-<repo>` で合わせる。自分の boss は `pm-<repo>`（PM が最初の `ask` で伝える）。Herdr の外から使うときは `--boss manager-<repo>` を毎回明示する。
+名前と居場所は PM が決める。`herdr-agent.sh manager` が返す名前（`manager-<repo>`、同じリポジトリに別の PM がいれば `manager-<repo>-<suffix>` とその worktree）をそのまま使う。**自分で rename しない**。boss は `pm-<repo>`（複数セッションなら `pm-<repo>-<suffix>`。PM が最初の `ask` で伝える）。Herdr の外から使うときは `--boss <PM 名>` を毎回明示する。
 
 ### 1. 子を用意する
 
