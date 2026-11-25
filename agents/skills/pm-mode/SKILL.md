@@ -26,7 +26,7 @@ disable-model-invocation: true
 ## 最初のターン
 
 1. `~/.claude/scripts/harness-status.py --repo <repo 名> --no-checks` で現況を 1 回だけ見る（ロック・未読 inbox・live なセッション）。Herdr が動いていなければ止まる（自分で代わりをやらない）
-2. **manager を 1 つ用意し、その名前で名乗る。** `herdr-agent.sh manager --repo <repo> -- --permission-mode auto --model opus` を 1 回だけ実行する。stdout が manager の名前、stderr の `PM=` がこのセッションの名前、`REPO=` が manager の居場所。同じリポジトリに別のセッションの manager がいれば、worktree を切って `manager-<repo>-<suffix>` が返る。**manager の名前・場所・worktree は自分で決めない**（決めるのはスクリプト）。Herdr の pane の中なら `herdr agent rename "$HERDR_PANE_ID" <PM=>`、外なら以降の `--boss` に `PM=` を明示する（`~/src/harness/docs/naming.md`）。セッションの識別はスクリプトが取る（pane → 呼び出し元のエージェントプロセス）ので、通常は何も渡さない。exit 2 で断られたときだけ `--session <token>` を渡す。新しく起こしたときは、最初の `ask` で「`~/.agents/skills/manager/SKILL.md` を読め。あなたの boss は `<PM=>` だ」と伝える
+2. **manager を 1 つ用意し、その名前で名乗る。** `herdr-agent.sh manager --repo <repo> -- --permission-mode auto --model opus` を 1 回だけ実行する。stdout が manager の名前、stderr の `PM=` がこのセッションの名前、`REPO=` が manager の居場所。同じリポジトリに別のセッションの manager がいれば、worktree を切って `manager-<repo>-<suffix>` が返る。**manager の名前・場所・worktree は自分で決めない**（決めるのはスクリプト）。Herdr の pane の中なら `herdr agent rename "$HERDR_PANE_ID" <PM=>`、外なら以降の `--boss` に `PM=` を明示する（`~/src/harness/docs/naming.md`）。セッションの識別はスクリプトが取る（pane → 呼び出し元のエージェントプロセス）ので、通常は何も渡さない。manager が起動しないときは `herdr-agent.sh manager --explain` を先に実行し、出た `SESSION=` / `SOURCE=` / `ANCESTORS=` をそのまま人に見せる（何も作らない）。それでもだめなら `--session <token>` を渡す。新しく起こしたときは、最初の `ask` で「`~/.agents/skills/manager/SKILL.md` を読め。あなたの boss は `<PM=>` だ」と伝える
 3. 依頼を「1 行のゴール」と「渡す単位の表」に直し、返信の冒頭に置く。単位ごとに 1 依頼。同じ issue を 2 人に渡さない
 4. 単位ごとに manager へ `ask <manager> <依頼ファイル>` で渡す。**渡したらターンを終える**（自分で bg の待ちを仕込まない）
 

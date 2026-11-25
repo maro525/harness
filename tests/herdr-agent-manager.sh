@@ -126,6 +126,19 @@ fi
 out=$(run HARNESS_SESSION_PROC=0 -- manager --repo "$REPO" --plan --session chat-7f3a)
 expect "an explicit session works without a pane" 'PLAN name=manager-repo-a topology=tab' "$out"
 expect "the explicit session is used" 'session=chat-7f3a' "$out"
+
+# 2b. --explain は何も作らず、何を見たかだけ出す（起動しないときの切り分け）
+tabs_before_explain=$(grep -c 'tab create' "$FAKE/log")
+out=$(run HARNESS_SESSION_PROC=0 -- manager --explain); code=$?
+(( code == 0 )) && echo "ok   explain exits 0" || { echo "FAIL exit $code"; fails=$((fails + 1)); }
+expect "explain: no identity found" 'SESSION=（なし）' "$out"
+expect "explain: says the lookup was off" 'SOURCE=off' "$out"
+out=$(run HARNESS_SESSION_PROC=0 -- manager --explain --session chat-7f3a)
+expect "explain: shows the explicit session" 'SESSION=chat-7f3a' "$out"
+expect "explain: names the source" 'SOURCE=explicit' "$out"
+tabs_after_explain=$(grep -c 'tab create' "$FAKE/log")
+(( tabs_after_explain == tabs_before_explain )) && echo "ok   explain created nothing" ||
+  { echo "FAIL explain created a tab"; fails=$((fails + 1)); }
 out=$(run HERDR_PANE_ID=w1:p1 -- manager --repo "$REPO" --plan)
 expect "plan: first session takes the checkout" 'PLAN name=manager-repo-a topology=tab' "$out"
 

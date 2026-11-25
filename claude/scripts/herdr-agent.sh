@@ -21,7 +21,7 @@
 #   herdr-agent.sh list
 #
 # Manager placement (one manager per caller session, no name to choose):
-#   herdr-agent.sh manager [--repo DIR] [--plan] [-- ARGS...]
+#   herdr-agent.sh manager [--repo DIR] [--plan|--explain] [-- ARGS...]
 #                                                       start or reuse this session's
 #                                                       manager and print its name
 #
@@ -72,6 +72,8 @@
 #                     explicitly when neither is available
 #   --plan            manager: print the decision (PLAN name=… topology=… repo=…) and
 #                     create nothing
+#   --explain         manager: print how this caller's session is decided (SESSION=, SOURCE=,
+#                     ANCESTORS=) and create nothing — paste it when no manager starts
 #   --from CHILD      report: who is reporting (default: this pane's agent name / pane id)
 #   --kind K          report: report (default) | question
 #   --no-watch        delegate: do not start the watcher
@@ -137,6 +139,7 @@ PRESET=""
 WATCH_TIMEOUT=${HERDR_WATCH_TIMEOUT:-2h}
 SESSION_KEY=""
 PLAN=0
+EXPLAIN=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -157,6 +160,7 @@ while [[ $# -gt 0 ]]; do
     --watch-timeout) WATCH_TIMEOUT=$2; shift 2 ;;
     --session) SESSION_KEY=$2; shift 2 ;;
     --plan) PLAN=1; shift ;;
+    --explain) EXPLAIN=1; shift ;;
     --) shift; NATIVE_ARGS=("$@"); break ;;
     -h|--help) usage; exit 0 ;;
     --*) die "unknown option: $1" 2 ;;
@@ -554,22 +558,30 @@ session_suffix() {
 # The nearest ancestor that is a known agent runtime, as proc:<pid>:<starttime>.
 # A Cursor chat runs as its own `cursor-agent` process (the Herdr-independent
 # case), so that process is the session. starttime keeps the key from colliding
-# with a reused pid. Empty when no ancestor looks like an agent.
+# with a reused pid. Sets PROC_KEY (empty when nothing matches) and PROC_CHAIN
+# (what was looked at, for `manager --explain`).
+PROC_KEY=""
+PROC_CHAIN=""
 proc_session_key() {
-  local pid=$$ line rest cmd base start depth=0
+  local pid=$$ line rest comm cmd base start depth=0
+  PROC_KEY=""
+  PROC_CHAIN=""
   while ((depth < 16)); do
     [[ -r "/proc/$pid/stat" ]] || return 1
     IFS= read -r line < "/proc/$pid/stat" || return 1
+    comm=${line#*(}
+    comm=${comm%)*}
     rest=${line##*)}
     start=$(awk '{print $20}' <<<"$rest")
     cmd=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)
+    PROC_CHAIN+="$pid  $comm  ${cmd:0:70}"$'\n'
     base=${cmd%% *}
     base=${base##*/}
     case "$base $cmd" in
       # The command name decides, not the path: cursor's bundled node also sits
       # under .../cursor-agent/ and would otherwise be taken for a session.
       cursor-agent*|agent\ *|claude\ *|codex\ *|pi\ *|opencode\ *)
-        printf 'proc:%s:%s' "$pid" "$start"
+        PROC_KEY="proc:$pid:$start"
         return 0
         ;;
     esac
@@ -611,7 +623,41 @@ cmd_manager() {
   [[ -n "$KIND" ]] || KIND=claude
   [[ -z "$NAME" ]] ||
     die "manager takes no name — it decides one from the caller's session (docs/naming.md)" 2
-  local dir root main short canonical suffix name key f rec_session
+  local dir root main short canonical suffix name key f rec_session source
+
+  key=${SESSION_KEY:-${HARNESS_SESSION_KEY:-}}
+  if [[ -n "$key" ]]; then
+    source='explicit (--session / HARNESS_SESSION_KEY)'
+  elif [[ -n "${HERDR_PANE_ID:-}" ]]; then
+    key="pane:$HERDR_PANE_ID"
+    source=pane
+  elif [[ "${HARNESS_SESSION_PROC:-1}" != "0" ]]; then
+    proc_session_key || true
+    key=$PROC_KEY
+    source=process
+  else
+    source='off (HARNESS_SESSION_PROC=0)'
+  fi
+
+  # --explain: how this caller's session was decided, and what was looked at.
+  # Creates nothing. This is what to paste when a manager will not start.
+  if ((EXPLAIN)); then
+    printf 'SESSION=%s\n' "${key:-（なし）}"
+    printf 'SOURCE=%s\n' "$source"
+    printf 'PANE=%s\n' "${HERDR_PANE_ID:-（なし）}"
+    if [[ -n "$PROC_CHAIN" ]]; then
+      printf 'ANCESTORS=\n%s' "$PROC_CHAIN"
+    else
+      printf 'ANCESTORS=（探索していない）\n'
+    fi
+    return 0
+  fi
+
+  if [[ -z "$key" ]]; then
+    [[ -z "$PROC_CHAIN" ]] || printf 'herdr-agent: 先祖（自分→上へ）:\n%s' "$PROC_CHAIN" >&2
+    die "no session identity: pass --session <token> (docs/naming.md)。何を見たかは \`manager --explain\` で出る" 2
+  fi
+
   dir=${REPO:-$PWD}
   dir=$(cd "$dir" && pwd) || die "not a directory: $dir"
   root=$(checkout_root "$dir")
