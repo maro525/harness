@@ -38,6 +38,7 @@ HARNESS_FILES=(
   scripts/herdr-cleanup.sh
   scripts/preflight.sh
   scripts/draft.sh
+  scripts/firecrawl.sh
   skills/manager/SKILL.md
 )
 

@@ -111,6 +111,23 @@ EOF
 | `firecrawl_extract` | 複数ページから構造化データを抽出 |
 | `firecrawl_parse` | PDF など URL 上のドキュメントをパース |
 
+### 連続で scrape しない（無料枠は 15 req/min）
+
+firecrawl の無料枠は **15 req/min**。待たずに撃つと 429 で落ち、本文の `retry after 37s` の間は何をしても通らない。2026-11-25 は 1 日で 90 回の scrape が 429 で失敗し、その日の失敗の半分以上を占めた（待たずに連続実行しただけ）。
+
+- 続けて取るときは **4 秒あける**（15 req/min を超えない）。sitemap や静的な HTML なら `curl` で足りる
+- 429 が返ったら **本文かヘッダにある待ち時間だけ待ってから** 1 回だけ再試行する。待たずに撃ち直さない
+- 3 本以上・まとめて取るときは MCP ではなく `~/.claude/scripts/firecrawl.sh` を使う。間隔・429 の待ち・キャッシュ（6h）をスクリプトが守る
+
+```bash
+~/.claude/scripts/firecrawl.sh scrape "https://docs.example.com/api"    # markdown を stdout へ
+~/.claude/scripts/firecrawl.sh scrape "https://docs.example.com/api" --json
+~/.claude/scripts/firecrawl.sh batch /tmp/urls.txt --out /tmp/sources   # 1 本ずつ、間隔をあけて
+```
+
+- 2 回続けて 429 なら、その URL は追わない。`curl` / gemini（`consult.sh --to pi`）/ 自分の知識で進み、`外部リサーチ不可: {理由}` を残す
+- API キーは `$FIRECRAWL_API_KEY`（MCP と同じもの）。`/v1/scrape` は非推奨（2026-12-10 で停止）なので、REST を直に叩くときは `/v2/scrape` を使う
+
 ### 調べものの記録の置き場所
 
 **調べた結果はリポジトリの外、`~/.local/share/harness/tasks/{repo}/research/` に置く。** TASK_FILE（`{repo}/task-*.md`）と同じバケットなので、作業ツリーを切り替えても 1 か所にまとまり、git にも載らない。
