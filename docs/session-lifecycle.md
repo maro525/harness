@@ -36,6 +36,7 @@ PM（Cursor などの会話）は manager を `herdr-agent.sh manager` で用意
 - セッションの識別は 3 段。`--session` / `$HARNESS_SESSION_KEY` → Herdr の pane（`$HERDR_PANE_ID`。rename しても id は変わらない）→ 呼び出し元のエージェントプロセス（`proc:<pid>:<starttime>`）。Cursor は Herdr の pane を持たないが、チャットごとに `cursor-agent` のプロセスが 1 つあるのでここで分かれる
 - 3 つとも取れなければ exit 2（勝手に共有しない）。共有された親プロセス配下で動く場合は `HARNESS_SESSION_PROC=0` でプロセス探索を止め、`--session <token>` を渡す
 - うまく決まらないときは `herdr-agent.sh manager --explain` で、決まったセッション（`SESSION=` / `SOURCE=`）と見た先祖（`ANCESTORS=`）だけを出せる（何も作らない）
+- 試行は 1 回 1 行、`~/.cache/harness/manager.log` に残る（`<時刻> <結果> <session> <repo> <名前>`）。`no-session` / `no-repo` が並んでいるなら、その呼び出し元はセッションを決められていない
 - プロセスの探索は**祖先のコマンド名**で見る（`cursor-agent` / `agent` / `claude` / `codex` / `pi` / `opencode`）。パスでは見ない（cursor 同梱の node が `.../cursor-agent/` の下にある）
 - `--plan` は決まる名前と居場所だけを出す（何も作らない）。名前を先に見たいときはこれを使う
 - worktree の manager はそのセッションの作業場所。manager の cwd で子が走るので、同じセッションの子は同じ worktree を共有する。別タスクを本当に隔離したいときだけ、子に `--topology worktree` を渡す

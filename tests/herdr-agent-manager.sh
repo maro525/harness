@@ -209,6 +209,13 @@ state="$XDG_CACHE_HOME/harness/herdr-agents/manager-repo-a.json"
 expect "session recorded" '"session": "pane:w1:p1"' "$(cat "$state")"
 expect "manager_repo recorded" "\"manager_repo\": \"$REPO\"" "$(cat "$state")"
 
+# 9. 試行のログ（起動しなかった理由も残る）
+log="$XDG_CACHE_HOME/harness/manager.log"
+expect "log: the failure is recorded" 'no-session' "$(cat "$log")"
+expect "log: the checkout manager is recorded" 'started.*manager-repo-a$' "$(cat "$log")"
+expect "log: the worktree manager is recorded" 'worktree.*manager-repo-a-[0-9a-f]{4}$' "$(cat "$log")"
+expect "log: reuse is recorded" 'reused' "$(cat "$log")"
+
 echo ""
 if ((fails == 0)); then
   echo "all pass"

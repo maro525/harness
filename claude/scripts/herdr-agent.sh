@@ -527,6 +527,8 @@ cmd_ensure() {
 #
 # stdout: the manager's name — safe to capture: M=$(herdr-agent.sh manager)
 # stderr: MANAGER= / PM= / TOPOLOGY= / REPO= / SESSION= / STATE=reused|started
+# log:    every attempt appends one line to $XDG_CACHE_HOME/harness/manager.log
+#         (<time> <result> <session> <repo> <name>), failures included
 
 checkout_root() { git -C "$1" rev-parse --show-toplevel 2>/dev/null || true; }
 
@@ -619,6 +621,16 @@ manager_live() {
   herdr agent get "$1" >/dev/null 2>&1
 }
 
+# One line per attempt. A manager that does not start still leaves a mark here,
+# which matters when the caller's transcript is not readable (a Cursor chat).
+# Format: <time> <result> <session> <repo> <name>
+MANAGER_LOG="${XDG_CACHE_HOME:-$HOME/.cache}/harness/manager.log"
+manager_log() {
+  mkdir -p "$(dirname "$MANAGER_LOG")" 2>/dev/null || return 0
+  printf '%s\t%s\t%s\t%s\t%s\n' "$(date -Iseconds)" "$1" "${2:--}" "${3:--}" "${4:--}" \
+    >>"$MANAGER_LOG" 2>/dev/null || true
+}
+
 cmd_manager() {
   [[ -n "$KIND" ]] || KIND=claude
   [[ -z "$NAME" ]] ||
@@ -655,24 +667,19 @@ cmd_manager() {
 
   if [[ -z "$key" ]]; then
     [[ -z "$PROC_CHAIN" ]] || printf 'herdr-agent: 先祖（自分→上へ）:\n%s' "$PROC_CHAIN" >&2
+    manager_log no-session - "$PWD" -
     die "no session identity: pass --session <token> (docs/naming.md)。何を見たかは \`manager --explain\` で出る" 2
   fi
 
   dir=${REPO:-$PWD}
   dir=$(cd "$dir" && pwd) || die "not a directory: $dir"
   root=$(checkout_root "$dir")
-  [[ -n "$root" ]] ||
+  if [[ -z "$root" ]]; then
+    manager_log no-repo "$key" "$dir" -
     die "not a git checkout: $dir — a manager needs a repository (its worktrees come from one)" 1
+  fi
   main=$(main_checkout "$root")
   [[ -n "$main" ]] || main=$root
-
-  key=${SESSION_KEY:-${HARNESS_SESSION_KEY:-}}
-  [[ -n "$key" ]] || { [[ -n "${HERDR_PANE_ID:-}" ]] && key="pane:$HERDR_PANE_ID"; }
-  if [[ -z "$key" && "${HARNESS_SESSION_PROC:-1}" != "0" ]]; then
-    key=$(proc_session_key) || key=""
-  fi
-  [[ -n "$key" ]] ||
-    die "no session identity: pass --session <token> (Herdr pane id, the calling agent process and \$HARNESS_SESSION_KEY were all unavailable) — docs/naming.md" 2
 
   short=$(short_name "$(basename "$main")" 19)
   [[ -n "$short" ]] || die "cannot derive a manager name from $main" 2
@@ -698,6 +705,7 @@ cmd_manager() {
       else
         tag_manager "$name" "$key" "$root"
         print_manager "$name" "$key" reused
+        manager_log reused "$key" "$root" "$name"
       fi
       printf '%s\n' "$name"
       return 0
@@ -716,6 +724,7 @@ cmd_manager() {
     cmd_ensure
     tag_manager "$canonical" "$key" "$root"
     print_manager "$canonical" "$key" started
+    manager_log started "$key" "$root" "$canonical"
     printf '%s\n' "$canonical"
     return 0
   fi
@@ -728,6 +737,7 @@ cmd_manager() {
   if manager_live "$name" &&
     [[ "$(state_field "$(state_file "$name")" session)" == "$key" ]]; then
     print_manager "$name" "$key" reused
+    manager_log reused "$key" "$root" "$name"
     printf '%s\n' "$name"
     return 0
   fi
@@ -740,6 +750,7 @@ cmd_manager() {
   cmd_ensure
   tag_manager "$name" "$key" "$root"
   print_manager "$name" "$key" started
+  manager_log worktree "$key" "$root" "$name"
   printf '%s\n' "$name"
 }
 
