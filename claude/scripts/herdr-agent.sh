@@ -20,10 +20,17 @@
 #   herdr-agent.sh reap   [--kind KIND]                   close every recorded session
 #   herdr-agent.sh list
 #
-# Manager placement (one manager per caller session, no name to choose):
-#   herdr-agent.sh manager [--repo DIR] [--plan|--explain] [-- ARGS...]
+# Manager placement (no name to choose, one per caller session):
+#   herdr-agent.sh manager [--plan|--explain] [--root DIR] [-- ARGS...]
 #                                                       start or reuse this session's
-#                                                       manager and print its name
+#                                                       manager at the source root
+#                                                       (~/src) and print its name
+#
+# Worker placement (the manager picks the name):
+#   herdr-agent.sh worker <name> --kind KIND [--repo DIR] [--plan] [-- ARGS...]
+#                                                       run it in the repository, or
+#                                                       in a worktree when a worker is
+#                                                       already there
 #
 # Boss pattern (a boss delegates and never waits; children report back):
 #   herdr-agent.sh delegate <child> <request-file|-> [--boss B] [--no-watch] [--watch-timeout T]
@@ -74,6 +81,8 @@
 #                     create nothing
 #   --explain         manager: print how this caller's session is decided (SESSION=, SOURCE=,
 #                     ANCESTORS=) and create nothing — paste it when no manager starts
+#   --root DIR        manager: where it runs (default: $HARNESS_MANAGER_ROOT or ~/src).
+#                     A manager steers repositories, so it sits at their parent
 #   --from CHILD      report: who is reporting (default: this pane's agent name / pane id)
 #   --kind K          report: report (default) | question
 #   --no-watch        delegate: do not start the watcher
@@ -140,6 +149,7 @@ WATCH_TIMEOUT=${HERDR_WATCH_TIMEOUT:-2h}
 SESSION_KEY=""
 PLAN=0
 EXPLAIN=0
+MANAGER_ROOT=${HARNESS_MANAGER_ROOT:-$HOME/src}
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -159,6 +169,7 @@ while [[ $# -gt 0 ]]; do
     --no-wait) NO_WAIT=1; shift ;;
     --watch-timeout) WATCH_TIMEOUT=$2; shift 2 ;;
     --session) SESSION_KEY=$2; shift 2 ;;
+    --root) MANAGER_ROOT=$2; shift 2 ;;
     --plan) PLAN=1; shift ;;
     --explain) EXPLAIN=1; shift ;;
     --) shift; NATIVE_ARGS=("$@"); break ;;
@@ -509,15 +520,18 @@ cmd_ensure() {
   echo "STATE=started" >&2
 }
 
-# --- manager: one manager per caller session --------------------------------
+# --- manager: one manager per caller session, at the source root -------------
 #
-# A PM never names its manager. The script decides, so that two chats in the same
-# repository cannot end up sharing one manager:
+# A PM never names its manager. The script decides, and a manager always runs at
+# the source root (~/src) because it steers repositories rather than working in
+# one. It never gets a worktree. Two sessions in the same repository get two
+# managers at the same root, the second with a suffixed name:
 #
-#   1. this session already holds a manager of this repository -> reuse it
-#   2. nobody holds the checkout   -> manager-<repo>, in the checkout
-#   3. another live session holds it -> manager-<repo>-<suffix>, on a scratch
-#                                      worktree of the same repository
+#   1. this session already holds a manager -> reuse it
+#   2. the name is free                    -> manager-<repo>, at the root
+#   3. another live session holds the name  -> manager-<repo>-<suffix>, same root
+#
+# The work itself happens in the repository: see `worker` below.
 #
 # A session is the caller's Herdr pane ($HERDR_PANE_ID) when it has one, else the
 # agent process it runs in (the Cursor agent is one process per chat; a Cursor
@@ -527,7 +541,7 @@ cmd_ensure() {
 #
 # stdout: the manager's name — safe to capture: M=$(herdr-agent.sh manager)
 # stderr: MANAGER= / PM= / TOPOLOGY= / REPO= / SESSION= / STATE=reused|started
-# log:    every attempt appends one line to $XDG_CACHE_HOME/harness/manager.log
+# log:    every manager attempt appends one line to $XDG_CACHE_HOME/harness/manager.log
 #         (<time> <result> <session> <repo> <name>), failures included
 
 checkout_root() { git -C "$1" rev-parse --show-toplevel 2>/dev/null || true; }
@@ -673,16 +687,26 @@ cmd_manager() {
 
   dir=${REPO:-$PWD}
   dir=$(cd "$dir" && pwd) || die "not a directory: $dir"
-  root=$(checkout_root "$dir")
-  if [[ -z "$root" ]]; then
-    manager_log no-repo "$key" "$dir" -
-    die "not a git checkout: $dir — a manager needs a repository (its worktrees come from one)" 1
-  fi
-  main=$(main_checkout "$root")
-  [[ -n "$main" ]] || main=$root
+  # The manager is a director, not a worker: it always runs at the source root
+  # (~/src), so one manager can steer work in any repository underneath it. It
+  # never gets a worktree of its own.
+  [[ -d "$MANAGER_ROOT" ]] ||
+    die "manager root not found: $MANAGER_ROOT (set HARNESS_MANAGER_ROOT)" 1
 
-  short=$(short_name "$(basename "$main")" 19)
-  [[ -n "$short" ]] || die "cannot derive a manager name from $main" 2
+  # The name says which repository this session is about (readable in the
+  # sidebar). The caller usually sits in that repo; from the root itself the
+  # label is the root's own name.
+  local label_root label
+  label_root=$(checkout_root "$dir") || true
+  label=""
+  if [[ -n "$label_root" ]]; then
+    label_root=$(main_checkout "$label_root")
+    [[ -n "$label_root" ]] || label_root=$dir
+    label=$(basename "$label_root")
+  fi
+  [[ -n "$label" ]] || label=$(basename "$MANAGER_ROOT")
+  short=$(short_name "$label" 19)
+  [[ -n "$short" ]] || short=manager
   canonical="manager-$short"
   check_name "$canonical"
 
@@ -694,6 +718,10 @@ cmd_manager() {
     [[ -f "$f" ]] || continue
     name=$(state_field "$f" agent)
     [[ "$name" == "$canonical" || "$name" == "$canonical"-???? ]] || continue
+    # A manager from before this rule sits in a repository checkout. It is not
+    # this session's, and reusing it would put a manager back into a repo: leave
+    # it for herdr-cleanup and start a fresh one at the root.
+    [[ "$(state_field "$f" repo)" == "$MANAGER_ROOT" ]] || continue
     rec_session=$(state_field "$f" session)
     if [[ "$rec_session" != "$key" ]]; then
       [[ -z "$rec_session" ]] || continue
@@ -703,9 +731,9 @@ cmd_manager() {
         printf 'PLAN name=%s topology=%s repo=%s session=%s adopt\n' "$name" \
           "$(state_field "$f" topology)" "$(state_field "$f" repo)" "$key"
       else
-        tag_manager "$name" "$key" "$root"
+        tag_manager "$name" "$key" "$(state_field "$f" repo)"
         print_manager "$name" "$key" reused
-        manager_log reused "$key" "$root" "$name"
+        manager_log reused "$key" "$(state_field "$f" repo)" "$name"
       fi
       printf '%s\n' "$name"
       return 0
@@ -713,45 +741,108 @@ cmd_manager() {
     close_named "$name" >/dev/null 2>&1 || true
   done
 
-  # 2. the checkout is free: take it, the way a PM always has.
+  # 2. the name is free: this session gets it.
   if ! manager_live "$canonical"; then
     if ((PLAN)); then
-      printf 'PLAN name=%s topology=tab repo=%s session=%s\n' "$canonical" "$root" "$key"
+      printf 'PLAN name=%s topology=tab repo=%s session=%s\n' "$canonical" "$MANAGER_ROOT" "$key"
       printf '%s\n' "$canonical"
       return 0
     fi
-    NAME=$canonical TOPOLOGY=tab REPO=$root
+    NAME=$canonical TOPOLOGY=tab REPO=$MANAGER_ROOT
     cmd_ensure
-    tag_manager "$canonical" "$key" "$root"
+    tag_manager "$canonical" "$key" "$MANAGER_ROOT"
     print_manager "$canonical" "$key" started
-    manager_log started "$key" "$root" "$canonical"
+    manager_log started "$key" "$MANAGER_ROOT" "$canonical"
     printf '%s\n' "$canonical"
     return 0
   fi
 
-  # 3. another live session holds it: this session gets its own, on a worktree.
+  # 3. another live session holds the name: same place, a suffixed name. A
+  #    manager steers repositories, so it does not need a checkout of its own.
   suffix=$(session_suffix "$key")
   name="manager-$short-$suffix"
   check_name "$name"
-  [[ -n "$BRANCH" ]] || BRANCH="pm/$short-$suffix"
   if manager_live "$name" &&
     [[ "$(state_field "$(state_file "$name")" session)" == "$key" ]]; then
     print_manager "$name" "$key" reused
-    manager_log reused "$key" "$root" "$name"
+    manager_log reused "$key" "$MANAGER_ROOT" "$name"
     printf '%s\n' "$name"
     return 0
   fi
   if ((PLAN)); then
-    printf 'PLAN name=%s topology=worktree repo=%s branch=%s session=%s\n' "$name" "$root" "$BRANCH" "$key"
+    printf 'PLAN name=%s topology=tab repo=%s session=%s\n' "$name" "$MANAGER_ROOT" "$key"
     printf '%s\n' "$name"
     return 0
   fi
-  NAME=$name TOPOLOGY=worktree REPO=$root
+  NAME=$name TOPOLOGY=tab REPO=$MANAGER_ROOT
   cmd_ensure
-  tag_manager "$name" "$key" "$root"
+  tag_manager "$name" "$key" "$MANAGER_ROOT"
   print_manager "$name" "$key" started
-  manager_log worktree "$key" "$root" "$name"
+  manager_log started "$key" "$MANAGER_ROOT" "$name"
   printf '%s\n' "$name"
+}
+
+# --- worker: a session that does the work, in the repository ------------------
+#
+# Workers and orchestrators work inside the repository. The checkout holds one
+# of them at a time: a live worker already in it sends the next one to a
+# worktree of its own. Managers and consult sessions do not count (a manager
+# lives at the source root and only steers).
+#
+# stdout: the worker's name — safe to capture
+# stderr: AGENT= / TOPOLOGY= / REPO= / BRANCH= / STATE=
+
+# Who is already working in the checkout: live workers in it that are actually
+# running (working / blocked), minus managers and consults. An idle or done tab
+# does not hold the checkout — otherwise every finished worker would push the
+# next one into a worktree. One name per line.
+checkout_workers() {
+  local root=$1 f name repo topo state
+  for f in "$STATE_DIR"/*.json; do
+    [[ -f "$f" ]] || continue
+    name=$(state_field "$f" agent)
+    repo=$(state_field "$f" repo)
+    topo=$(state_field "$f" topology)
+    [[ -n "$name" && "$repo" == "$root" && "$topo" != "worktree" ]] || continue
+    case "$name" in manager-* | consult*) continue ;; esac
+    state=$(agent_state "$name")
+    case "$state" in working | blocked) ;; *) continue ;; esac
+    printf '%s\n' "$name"
+  done
+}
+
+cmd_worker() {
+  [[ -n "$NAME" ]] || die "worker needs a name (the manager picks it)" 2
+  check_name "$NAME"
+  [[ -n "$KIND" ]] || die "worker needs --kind" 2
+  local dir root busy="" topology=tab
+  dir=${REPO:-$PWD}
+  dir=$(cd "$dir" && pwd) || die "not a directory: $dir"
+  root=$(checkout_root "$dir")
+  [[ -n "$root" ]] || die "not a git checkout: $dir — a worker works in a repository" 2
+
+  busy=$(checkout_workers "$root" || true)
+  [[ -z "$busy" ]] || topology=worktree
+
+  if ((PLAN)); then
+    if [[ "$topology" == worktree ]]; then
+      printf 'PLAN name=%s topology=worktree repo=%s branch=%s occupied=%s\n' \
+        "$NAME" "$root" "${BRANCH:-feature/$NAME}" "$(tr '\n' ',' <<<"$busy")"
+    else
+      printf 'PLAN name=%s topology=tab repo=%s\n' "$NAME" "$root"
+    fi
+    printf '%s\n' "$NAME"
+    return 0
+  fi
+
+  REPO=$root TOPOLOGY=$topology
+  if [[ "$topology" == worktree ]]; then
+    [[ -n "$BRANCH" ]] || BRANCH="feature/$NAME"
+    echo "OCCUPIED=$(tr '\n' ',' <<<"$busy")" >&2
+  fi
+  cmd_ensure
+  echo "TOPOLOGY=$topology" >&2
+  printf '%s\n' "$NAME"
 }
 
 cmd_ask() {
@@ -1622,6 +1713,7 @@ cmd_watch() {
 case "$CMD" in
   ensure) cmd_ensure ;;
   manager) cmd_manager ;;
+  worker) cmd_worker ;;
   restart) cmd_restart ;;
   send) cmd_send ;;
   ask) cmd_ask ;;

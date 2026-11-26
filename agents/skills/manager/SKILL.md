@@ -35,25 +35,31 @@ PM の技術の脳。**質問と設計相談には自分で答える**（コー�
 8. **後始末。** 委任した tab は閉じるまで残る。フローの最後に `herdr-agent.sh close {name}` / `reap`
 9. **セッションは Herdr の中でだけ立てる。** 子は `ensure` で作る。`tmux` / `screen` / `nohup` / `claude --bg` で代用しない（Herdr の記録に乗らず、`herdr-cleanup.sh` の対象外になる）
 10. **リポジトリは読むだけ。** `git` は状態を変えない読み取りだけ（`log` / `status` / `diff`）。編集も commit も子に渡す
-11. **自分の名前と居場所を変えない。** PM は `herdr-agent.sh manager` で名前と居場所を決めている（`manager-<repo>`、または同じリポジトリに別セッションがいれば `manager-<repo>-<suffix>` とその worktree）。rename も移動もしない。cwd がリポジトリ直下でないときは、それが自分の worktree だ
+11. **自分の名前と居場所を変えない。** PM は `herdr-agent.sh manager` で名前を決めている（`manager-<repo>`、または同じリポジトリに別セッションがいれば `manager-<repo>-<suffix>`）。rename も移動もしない。cwd は `~/src` で、worktree は持たない
 
 ## 手順
 
-### 0. 名前と boss
+### 0. 名前と場所と boss
 
-名前と居場所は PM が決める。`herdr-agent.sh manager` が返す名前（`manager-<repo>`、同じリポジトリに別の PM がいれば `manager-<repo>-<suffix>` とその worktree）をそのまま使う。**自分で rename しない**。boss は `pm-<repo>`（複数セッションなら `pm-<repo>-<suffix>`。PM が最初の `ask` で伝える）。Herdr の外から使うときは `--boss <PM 名>` を毎回明示する。
+名前と場所は PM が決める。`herdr-agent.sh manager` が返す名前（`manager-<repo>`、同じリポジトリに別の PM がいれば `manager-<repo>-<suffix>`）をそのまま使う。**自分で rename しない**。あなたの cwd は `~/src`（リポジトリの親）で、worktree は持たない。リポジトリを探すときは `~/src/<repo>` を読む。boss は `pm-<repo>`（複数セッションなら `pm-<repo>-<suffix>`。PM が最初の `ask` で伝える）。Herdr の外から使うときは `--boss <PM 名>` を毎回明示する。
 
 ### 1. 子を用意する
 
+実作業（実装・テスト・調査）は**対象リポジトリの中で**動かす。どのリポジトリかは依頼文に書いてある。
+
 ```bash
-~/.claude/scripts/herdr-agent.sh ensure child-a --kind claude --topology worktree --branch feature/child-a -- --model sonnet --permission-mode auto
+# ふつうはこれ。checkout が空いていればその repo の tab、作業中の子が居れば worktree に自分で入る
+~/.claude/scripts/herdr-agent.sh worker child-a --kind claude --repo ~/src/nanco-next -- --model sonnet --permission-mode auto
+# 隔離したいときは場所を指定する
+~/.claude/scripts/herdr-agent.sh ensure child-a --kind claude --topology worktree --branch feature/child-a --repo ~/src/nanco-next
 # 文章作成・推敲・動画/画像の分析は pi + preset（google/gemini-4-carbon）
 ~/.claude/scripts/herdr-agent.sh ensure child-b --kind pi --preset writing
-~/.claude/scripts/herdr-agent.sh ensure child-b --kind pi
 ```
 
+- `worker` は配置だけを決める（名前は自分で付ける）。stderr の `TOPOLOGY=tab|worktree` と `REPO=` を見れば、どこで動くか分かる。`--plan` で先に見られる
+- checkout は**同時に 1 体**。すでに `working` / `blocked` の子がその repo に居れば、新しい子は `feature/<name>` の worktree に入る（`OCCUPIED=` に出る）
 - 名前は役割が分かるもの（`child-tests`、`child-docs` など）。同じ名前は使い回される（文脈が残る）
-- 別リポジトリ・隔離したい作業は `--topology workspace` / `--topology worktree`（`docs/session-lifecycle.md`）
+- 別リポジトリ・隔離したい作業は `ensure --topology worktree` / `--topology workspace`（`docs/session-lifecycle.md`）
 
 ### 2. 依頼を書いて渡す
 

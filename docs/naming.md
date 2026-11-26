@@ -23,8 +23,9 @@ Herdr のセッション名は **agent 名・tab 名・（worktree のときは�
 | 並列 orchestrate | `orchestrate-<linear-id 小文字>[-<feature>]` | `orchestrate-nsketch-1983` |
 | issue 無しの orchestrate | `orchestrate-noissue-<feature>` | `orchestrate-noissue-quick-fix` |
 | delegate の子 | `<claude\|codex\|pi>-<purpose>` | `claude-review-1983`, `codex-research-cache` |
-| manager（PM の技術の脳） | `manager-<repo>[-<suffix>]` | `manager-nanco-next`, `manager-nanco-next-9305` |
+| manager（PM の技術の脳。常に `~/src` で動く） | `manager-<repo>[-<suffix>]` | `manager-nanco-next`, `manager-nanco-next-9305` |
 | PM（pm-mode） | `pm-<repo>[-<suffix>]` | `pm-nanco-next`, `pm-nanco-next-9305`（manager の suffix を引き継ぐ） |
+| 実作業の子（`herdr-agent.sh worker`） | `<kind>-<purpose>`（manager が付ける。worktree に入っても名前は同じ） | `claude-review-1983`, `pi-seo-doc` |
 | 相談・配布以外の一時セッション | `<kind>-<purpose>-<短い id>` | `pi-repro-4f2a` |
 
 `<role>` は `consult` / `review` / `implement` のいずれか（`consult.sh` のロール名と一致させる）。**claude が既定**なので、codex のときだけ `-codex` を付ける。
@@ -42,8 +43,7 @@ Herdr の上限は 32 文字。`orchestrate-<id>-<feature>` が超えるとき�
 | orchestrate（並列含む） | `feature/<linear-id 小文字>-<slug>` | `feature/nsketch-1983-ci-cache` |
 | issue 無し | `feature/<slug>` | `feature/quick-fix` |
 | delegate / worktree を手で切るとき | `<type>/<slug>`（`type` は `feature` / `fix` / `chore` / `docs`） | `fix/flutter-model-path-filter` |
-| セッション専用の manager（2 つ目以降の Cursor セッション） | `pm/<repo>-<suffix>`（scratch。`close` しても残る） | `pm/nanco-next-9305` |
-| `ensure --topology worktree` で `--branch` を省いたとき | **`feature/<セッション名>`**（スクリプトの既定） | `feature/claude-help-page-access` |
+| `ensure --topology worktree` で `--branch` を省いたとき（`worker` も同じ） | **`feature/<セッション名>`**（スクリプトの既定） | `feature/claude-help-page-access` |
 
 - **Linear ID はブランチ名に小文字で入れる**（deploy が紐づけを確認する）
 - ブランチ名は `orchestrate-parallel.sh` が `feature/` ＋ ID ＋ slug で自動生成する。変えたいときは `--prefix`
@@ -62,14 +62,15 @@ Herdr の上限は 32 文字。`orchestrate-<id>-<feature>` が超えるとき�
 
 TASK_FILE とロックは **ID を大文字のまま**使う（ブランチだけ小文字）。既存の `task-file.sh` / `lock` の挙動に合わせている。
 
-状態ファイル（`~/.cache/harness/herdr-agents/<name>.json`）には `session`（起こしたセッション。`pane:<pane id>` か `proc:<pid>:<starttime>`）と `manager_repo`（その manager が担当するリポジトリの直下）が入る。`herdr-agent.sh manager` はこの 2 つで「同じセッションの manager か、別セッションの manager か」を判定する。session の無い古い記録は、最初に呼んだセッションが引き継ぐ（タグを付ける）。
+状態ファイル（`~/.cache/harness/herdr-agents/<name>.json`）には `session`（起こしたセッション。`pane:<pane id>` か `proc:<pid>:<starttime>`）と `manager_repo`（その manager が担当するリポジトリの直下。manager は常に `~/src`）が入る。`herdr-agent.sh manager` はこの 2 つで「同じセッションの manager か、別セッションの manager か」を判定する。session の無い古い記録は、最初に呼んだセッションが引き継ぐ（タグを付ける。ただし `~/src` の外に居る古い manager は引き継がない）。
 
 ## 5. 誰が守るか
 
 | 場面 | 守る仕組み |
 |---|---|
 | `herdr-agent.sh ensure` / `restart` / `delegate` | 名前を検証する。空白・`/` はエラー、小文字でない・32 文字超は警告 |
-| `herdr-agent.sh manager` | manager の名前と居場所を自分で決める（checkout が空いていれば `manager-<repo>`、埋まっていれば worktree の `manager-<repo>-<suffix>`） |
+| `herdr-agent.sh manager` | manager の名前を自分で決める（常に `~/src` の tab。名前が埋まっていれば `-<suffix>`） |
+| `herdr-agent.sh worker` | 実作業の子の居場所を決める（checkout が空いていれば tab、作業中の子が居れば worktree） |
 | `consult.sh` | `consult` / `consult-<role>`（codex は `consult-codex[-<role>]`）を自動で作る（`--name` で上書き可） |
 | `orchestrate-parallel.sh` | `orchestrate-<id>[-<feature>]` と `feature/<id>-<feature>` を自動生成 |
 | 手で `ensure` するとき | この文書の表に従う |

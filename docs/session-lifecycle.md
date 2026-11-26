@@ -22,25 +22,38 @@ Herdr 上のエージェント・セッションは、**閉じるまで残る**�
 `consult` だけは既定で残す（同じ相談者に文脈を保ってほしい場面があるため）。
 使い捨てでよいと分かっているときは `--close` を付けて 1 回で閉じる。
 
-## manager は 1 セッションに 1 つ
+## manager は 1 セッションに 1 つ（常に `~/src`）
 
-PM（Cursor などの会話）は manager を `herdr-agent.sh manager` で用意する。名前も居場所も自分で決めない。同じリポジトリを 2 つのセッションが使っても、manager は共有されない。
+PM（Cursor などの会話）は manager を `herdr-agent.sh manager` で用意する。名前も居場所も自分で決めない。manager は**リポジトリをまたいで指示する役**なので、どのリポジトリにも入らず、常に `~/src`（`$HARNESS_MANAGER_ROOT`）で動く。**manager は worktree を作らない。**
 
-| そのリポジトリの状態 | 返るもの |
+| 状態 | 返るもの |
 |---|---|
-| 空いている（live な manager がいない） | `manager-<repo>`（リポジトリ直下の tab） |
-| 別のセッションの manager がいる | `manager-<repo>-<suffix>`（worktree。ブランチ `pm/<repo>-<suffix>`） |
+| 名前が空いている | `manager-<repo>`（`~/src` の tab） |
+| 別のセッションが同じ名前を持っている | `manager-<repo>-<suffix>`（同じ `~/src` の別 tab） |
 | 同じセッションの manager がいる | それを再利用（`STATE=reused`） |
-| session の無い古い記録 | 最初に呼んだセッションが引き継ぐ（`session` を書き込む） |
+| `~/src` の外に居る古い記録 | 引き継がない（新しい manager が `~/src` に立つ。古いものは `close` する） |
 
 - セッションの識別は 3 段。`--session` / `$HARNESS_SESSION_KEY` → Herdr の pane（`$HERDR_PANE_ID`。rename しても id は変わらない）→ 呼び出し元のエージェントプロセス（`proc:<pid>:<starttime>`）。Cursor は Herdr の pane を持たないが、チャットごとに `cursor-agent` のプロセスが 1 つあるのでここで分かれる
 - 3 つとも取れなければ exit 2（勝手に共有しない）。共有された親プロセス配下で動く場合は `HARNESS_SESSION_PROC=0` でプロセス探索を止め、`--session <token>` を渡す
 - うまく決まらないときは `herdr-agent.sh manager --explain` で、決まったセッション（`SESSION=` / `SOURCE=`）と見た先祖（`ANCESTORS=`）だけを出せる（何も作らない）
-- 試行は 1 回 1 行、`~/.cache/harness/manager.log` に残る（`<時刻> <結果> <session> <repo> <名前>`）。`no-session` / `no-repo` が並んでいるなら、その呼び出し元はセッションを決められていない
+- 試行は 1 回 1 行、`~/.cache/harness/manager.log` に残る（`<時刻> <結果> <session> <repo> <名前>`）。`no-session` が並んでいるなら、その呼び出し元はセッションを決められていない
 - プロセスの探索は**祖先のコマンド名**で見る（`cursor-agent` / `agent` / `claude` / `codex` / `pi` / `opencode`）。パスでは見ない（cursor 同梱の node が `.../cursor-agent/` の下にある）
-- `--plan` は決まる名前と居場所だけを出す（何も作らない）。名前を先に見たいときはこれを使う
-- worktree の manager はそのセッションの作業場所。manager の cwd で子が走るので、同じセッションの子は同じ worktree を共有する。別タスクを本当に隔離したいときだけ、子に `--topology worktree` を渡す
-- 片付けは PM の終わりに `close <manager>`（worktree の manager は worktree ごと消える。`pm/` ブランチは残る）、まとめて閉じるなら `reap`。既存の `manager-<repo>` は session が無いので、移行時に捨てずに引き継がれる
+- `--plan` は決まる名前と居場所だけを出す（何も作らない）
+- 片付けは PM の終わりに `close <manager>`、まとめて閉じるなら `reap`
+
+## 実作業はリポジトリの中で（`worker`）
+
+manager は子を `herdr-agent.sh worker <name> --kind claude --repo ~/src/<repo>` で起こす。**置く場所だけスクリプトが決める。**
+
+| その checkout の状態 | 置き場所 |
+|---|---|
+| 作業中の子（`working` / `blocked` の tab）がいない | そのリポジトリの checkout（tab） |
+| 作業中の子がいる | `feature/<name>` の worktree（`OCCUPIED=` に出る） |
+
+- 同じ checkout を 2 体が同時に触らない。並行させたいときは両方 worktree になる
+- `done` / `idle` の tab と manager・consult は「作業中」に数えない（finished の tab が並んでいるだけで worktree が増えないように）
+- `--plan` でどちらになるか先に見られる
+- 場所を自分で決めたいときは `ensure --topology tab|workspace|worktree` をそのまま使う（隔離・別リポジトリ・文章作成など）
 
 ## どこに開くか（topology）
 

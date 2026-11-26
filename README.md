@@ -22,7 +22,7 @@ harness/
 │       ├── herdr-cleanup.sh   # 記録済みセッション・期限切れロックを突き合わせて整理し、未読 inbox も表示（既定はレポートのみ）
 │       ├── harness-daily.py   # その日のセッション・コマンド・失敗・役割逸脱・残骸を突き合わせて出す
 │       ├── harness-status.py  # Herdr・セッション記録・ロック・タスク・worktree・inbox・checks を読み取り専用で一望する
-│       ├── herdr-agent.sh  # Herdr の tab / workspace / worktree で任意のエージェント (pi / codex 等) を起動して依頼する。manager / PM 用の delegate / report / inbox も持つ
+│       ├── herdr-agent.sh  # Herdr の tab / workspace / worktree で任意のエージェント (pi / codex 等) を起動して依頼する。manager（~/src で名前を決める）/ worker（リポジトリか worktree）/ delegate / report / inbox
 │       ├── task-file.sh    # TASK_FILE の置き場所を解決（dir / new / find / resolve。リポジトリ外）
 │       ├── firecrawl.sh    # URL を間隔をあけて取る（無料枠 15 req/min、429 は retry-after だけ待つ、6h キャッシュ）
 │       └── phase-run.sh    # フェーズを任意の CLI / モデルで実行するディスパッチャ
@@ -100,21 +100,22 @@ kanban は `uv tool install --editable ~/src/harness/kanban`（詳細は `kanban
 `/pm-mode` のセッションが **PM**、PM が起こす Herdr の tab が **manager**（技術の脳）、manager が起こす tab が **worker** です。PM は人と話し、manager はコードを読んで答え、worker が実装します。
 
 ```
-PM (pm-<repo>[-<suffix>]) ──ask──▶ manager (manager-<repo>[-<suffix>]) ──delegate──▶ worker (child-a)
-   ▲                        │                                   │
-   └── report / inbox ◀─────┘ ◀────────── report / inbox ────────┘
+PM (pm-<repo>[-<suffix>]) ──ask──▶ manager (manager-<repo>[-<suffix>]、cwd は ~/src)
+   ▲                        │
+   └── report / inbox ◀─────┴──delegate──▶ worker (child-a、対象リポジトリかその worktree)
 ```
 
-- PM は manager を `herdr-agent.sh manager` で 1 つだけ起こす（stdout が名前、stderr の `PM=` が自分の名前。`--kind claude -- --permission-mode auto --model opus`）。同じリポジトリに別のセッションが来ると、worktree に分かれて `manager-<repo>-<suffix>` が返るので、複数の会話が 1 つの manager を共有しない。質問も依頼も `ask` で渡す。`delegate` は使わない（protocol 節が manager のエージェント起動を禁じる）
-- manager はコードを読んで答え、実装・テスト・長い調査は `delegate` で worker に渡す。worker の報告は manager の inbox に届き、manager がまとめて `report pm-<repo>` で PM に返す
+- PM は manager を `herdr-agent.sh manager` で 1 つだけ起こす（stdout が名前、stderr の `PM=` が自分の名前。`--kind claude -- --permission-mode auto --model opus`）。**manager は常に `~/src` で動き、worktree を持たない**（リポジトリをまたいで指示する役なので）。同じリポジトリの別セッションが先に manager を持っていれば、同じ `~/src` に `manager-<repo>-<suffix>` が立つ。質問も依頼も `ask` で渡す。`delegate` は使わない（protocol 節が manager のエージェント起動を禁じる）
+- manager はコードを読んで答え、実装・テスト・長い調査は `delegate` で worker に渡す。worker は対象リポジトリの中で動かす（`herdr-agent.sh worker` が、その checkout で作業中の子がいれば worktree に自分で入る）。worker の報告は manager の inbox に届き、manager がまとめて `report <PM>` で PM に返す
 - 手順は `agents/skills/pm-mode/SKILL.md` と `agents/skills/manager/SKILL.md`（どちらも `~/.agents/skills/` に配布）。Claude 用の入口は `claude/skills/manager/SKILL.md`
 - `delegate` / `report` / `inbox` の実体は `~/.claude/scripts/herdr-agent.sh`。inbox は `~/.cache/harness/inbox/<boss>/`、通知は `herdr agent prompt` の 1 行
 - bg で待たない。待つのは「報告あり」と watcher の停止通知だけ
 - セッションは Herdr の中でだけ立てる（`tmux` / `screen` / `nohup` / `claude --bg` を使わない）
 
 ```bash
-M=$(~/.claude/scripts/herdr-agent.sh manager -- --permission-mode auto --model opus)
+M=$(~/.claude/scripts/herdr-agent.sh manager -- --permission-mode auto --model opus)   # 常に ~/src
 ~/.claude/scripts/herdr-agent.sh ask "$M" /tmp/question.md          # 質問は同期で答えが返る
+~/.claude/scripts/herdr-agent.sh worker child-a --kind claude --repo ~/src/nanco-next
 ~/.claude/scripts/herdr-agent.sh delegate child-a /tmp/req.md --boss "$M"
 ~/.claude/scripts/herdr-agent.sh inbox "$M" read child-a
 ```
