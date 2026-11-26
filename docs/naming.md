@@ -23,7 +23,7 @@ Herdr のセッション名は **agent 名・tab 名・（worktree のときは�
 | 並列 orchestrate | `orchestrate-<linear-id 小文字>[-<feature>]` | `orchestrate-nsketch-1983` |
 | issue 無しの orchestrate | `orchestrate-noissue-<feature>` | `orchestrate-noissue-quick-fix` |
 | delegate の子 | `<claude\|codex\|pi>-<purpose>` | `claude-review-1983`, `codex-research-cache` |
-| manager（PM の技術の脳。常に `~/src` で動く） | `manager-<repo>[-<suffix>]` | `manager-nanco-next`, `manager-nanco-next-9305` |
+| manager（PM の技術の脳。常に `~/src` で動く） | `manager-<label>[-<suffix>]`（`<label>` は既定で呼び出し元のリポジトリ名、`--label` で指定） | `manager-nanco-next`, `manager-nanco-next-9305` |
 | PM（pm-mode） | `pm-<repo>[-<suffix>]` | `pm-nanco-next`, `pm-nanco-next-9305`（manager の suffix を引き継ぐ） |
 | 実作業の子（`herdr-agent.sh worker`） | `<kind>-<purpose>`（manager が付ける。worktree に入っても名前は同じ） | `claude-review-1983`, `pi-seo-doc` |
 | 相談・配布以外の一時セッション | `<kind>-<purpose>-<短い id>` | `pi-repro-4f2a` |
@@ -34,7 +34,7 @@ Herdr のセッション名は **agent 名・tab 名・（worktree のときは�
 
 Herdr の上限は 32 文字。`orchestrate-<id>-<feature>` が超えるときは **feature を先に落とす**（`orchestrate-nsketch-1983`）。それでも超えるなら末尾の単語単位で切る。
 
-`manager-<repo>-<suffix>` は `-` と 4 桁の suffix が入るので、repo 部分は 19 文字で切る（`herdr-agent.sh manager` がやる。切った名前は自分で組み立てない）。
+`manager-<label>-<suffix>` は `-` と 4 桁の suffix が入るので、リポジトリ名から作るときは label 部分を 19 文字で切る（`herdr-agent.sh manager` がやる。切った名前は自分で組み立てない）。**`--label` で渡したものは切らない** — そのまま名前になるので、`-<suffix>` の余地を残して 19 文字以内にする（name 自体が 32 文字を超えるラベルはエラーになる）。
 
 ## 3. ブランチ
 
@@ -69,7 +69,7 @@ TASK_FILE とロックは **ID を大文字のまま**使う（ブランチだ�
 | 場面 | 守る仕組み |
 |---|---|
 | `herdr-agent.sh ensure` / `restart` / `delegate` | 名前を検証する。空白・`/` はエラー、小文字でない・32 文字超は警告 |
-| `herdr-agent.sh manager` | manager の名前を自分で決める（常に `~/src` の tab。名前が埋まっていれば `-<suffix>`） |
+| `herdr-agent.sh manager` | manager の名前を自分で決める（常に `~/src` の tab。名前が埋まっていれば `-<suffix>`）。`--label` で指定できるのは対象だけ（居場所・topology・suffix はスクリプトが決める） |
 | `herdr-agent.sh worker` | 実作業の子の居場所を決める（checkout が空いていれば tab、作業中の子が居れば worktree） |
 | `consult.sh` | `consult` / `consult-<role>`（codex は `consult-codex[-<role>]`）を自動で作る（`--name` で上書き可） |
 | `orchestrate-parallel.sh` | `orchestrate-<id>[-<feature>]` と `feature/<id>-<feature>` を自動生成 |

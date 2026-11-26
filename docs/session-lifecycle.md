@@ -24,15 +24,16 @@ Herdr 上のエージェント・セッションは、**閉じるまで残る**�
 
 ## manager は 1 セッションに 1 つ（常に `~/src`）
 
-PM（Cursor などの会話）は manager を `herdr-agent.sh manager` で用意する。名前も居場所も自分で決めない。manager は**リポジトリをまたいで指示する役**なので、どのリポジトリにも入らず、常に `~/src`（`$HARNESS_MANAGER_ROOT`）で動く。**manager は worktree を作らない。**
+PM（Cursor などの会話）は manager を `herdr-agent.sh manager` で用意する。名前も居場所も自分で組み立てない（決めるのはスクリプト）。manager は**リポジトリをまたいで指示する役**なので、どのリポジトリにも入らず、常に `~/src`（`$HARNESS_MANAGER_ROOT`）で動く。**manager は worktree を作らない。**
 
 | 状態 | 返るもの |
 |---|---|
-| 名前が空いている | `manager-<repo>`（`~/src` の tab） |
-| 別のセッションが同じ名前を持っている | `manager-<repo>-<suffix>`（同じ `~/src` の別 tab） |
+| 名前が空いている | `manager-<label>`（`~/src` の tab） |
+| 別のセッションが同じ名前を持っている | `manager-<label>-<suffix>`（同じ `~/src` の別 tab） |
 | 同じセッションの manager がいる | それを再利用（`STATE=reused`） |
 | `~/src` の外に居る古い記録 | 引き継がない（新しい manager が `~/src` に立つ。古いものは `close` する） |
 
+- `<label>` は既定で呼び出し元のリポジトリ名。**`--label <name>` を渡せば、どのディレクトリからでもその名前で立つ**（リポジトリが手元に無い、このチャットの主題が今居るリポジトリと違う、1 つのチャットで複数のリポジトリをまたぐ、といったとき）。`--label` が変えるのは名前だけ
 - セッションの識別は 3 段。`--session` / `$HARNESS_SESSION_KEY` → Herdr の pane（`$HERDR_PANE_ID`。rename しても id は変わらない）→ 呼び出し元のエージェントプロセス（`proc:<pid>:<starttime>`）。Cursor は Herdr の pane を持たないが、チャットごとに `cursor-agent` のプロセスが 1 つあるのでここで分かれる
 - 3 つとも取れなければ exit 2（勝手に共有しない）。共有された親プロセス配下で動く場合は `HARNESS_SESSION_PROC=0` でプロセス探索を止め、`--session <token>` を渡す
 - うまく決まらないときは `herdr-agent.sh manager --explain` で、決まったセッション（`SESSION=` / `SOURCE=`）と見た先祖（`ANCESTORS=`）だけを出せる（何も作らない）
