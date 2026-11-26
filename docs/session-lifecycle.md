@@ -18,13 +18,16 @@ Herdr 上のエージェント・セッションは、**閉じるまで残る**�
 | `implement` | team-implement に入るとき | PR 作成（deploy 完了）後 |
 | pi / codex（`herdr-agent.sh`） | そのタスクを任せるとき | コミット・PR が終わったとき |
 | manager の子（`herdr-agent.sh delegate`） | manager が最初の仕事を渡すとき（`ensure` → `delegate`） | 報告を `ack` した後、その子に続きを渡さないと決めたとき |
+| 子 manager（`herdr-agent.sh manager --parent`） | 親 manager が自分の範囲を分けたとき（子 manager からさらに子へも同じ） | 子 manager の報告を `ack` して、その範囲が終わったとき（親が `close` する） |
 
 `external-review` のセッションは既定で残す（同じ論点に文脈を保って続けて聞けるように）。
 使い捨てでよいなら回答を受けたら `close` する。
 
-## manager は 1 セッションに 1 つ（常に `~/src`）
+## manager は 1 セッションに 1 つ、manager は子を複数持てる（常に `~/src`）
 
 PM（Cursor などの会話）は manager を `herdr-agent.sh manager` で用意する。名前も居場所も自分で組み立てない（決めるのはスクリプト）。manager は**リポジトリをまたいで指示する役**なので、どのリポジトリにも入らず、常に `~/src`（`$HARNESS_MANAGER_ROOT`）で動く。**manager は worktree を作らない。**
+
+同じ規則が子 manager にも当てはまる。1 体の manager は範囲を分けて子 manager を**複数**起こせる（1 チャット 1 manager は PM 直下の話）。
 
 | 状態 | 返るもの |
 |---|---|
@@ -41,6 +44,25 @@ PM（Cursor などの会話）は manager を `herdr-agent.sh manager` で用意
 - プロセスの探索は**祖先のコマンド名**で見る（`cursor-agent` / `agent` / `claude` / `codex` / `pi` / `opencode`）。パスでは見ない（cursor 同梱の node が `.../cursor-agent/` の下にある）
 - `--plan` は決まる名前と居場所だけを出す（何も作らない）
 - 片付けは PM の終わりに `close <manager>`、まとめて閉じるなら `reap`
+
+### 子 manager（`--parent`）
+
+```bash
+M=$(~/.claude/scripts/herdr-agent.sh manager)                       # PM 直下（depth 0）
+~/.claude/scripts/herdr-agent.sh manager --parent "$M" --label api  # 子（depth 1）
+~/.claude/scripts/herdr-agent.sh manager --parent "$M" --label web  # もう 1 体（1 体で複数持てる）
+```
+
+| 決めごと | 振る舞い |
+|---|---|
+| 名前 | `manager-<label>`。`--label` は必須で、親の名前は入らない（名前の階層を作らず、サイドバーを浅く保つ）。埋まっていれば `(親, ラベル)` のハッシュで `-<suffix>` が付く |
+| 居場所 | 親と同じ `~/src` の別 tab。worktree は作らない |
+| 報告先 | 記録に `parent` / `boss` が入り、子の報告はその子 manager の inbox に届く。子 manager がまとめて親に 1 回返す |
+| 同じ（親, ラベル） | 同じ子を再利用（`STATE=reused`）。聞き直しても tab は増えない |
+| 深さ | `depth` = 親 + 1。`HARNESS_MANAGER_MAX_DEPTH`（既定 3 段）を超える `--parent` は exit 2。それ以上は worker に振る |
+| 親になれるのは manager だけ | `--parent` は `manager-*` の記録が生きていることを確かめる（PM が子 manager を直に作らない） |
+| 自分自身の起動 | manager の pane から `--parent` 無しの `manager` は exit 2（自分の記録が返るだけで子が増えない）。`--parent <自分>` を促す |
+| 片付け | 親を `herdr-cleanup.sh --owner <親>` で見ると、子 manager と worker が `via:boss` で並ぶ |
 
 ## 実作業はリポジトリの中で（`worker`）
 

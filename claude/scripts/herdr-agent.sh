@@ -21,11 +21,15 @@
 #   herdr-agent.sh reap   [--kind KIND]                   close every recorded session
 #   herdr-agent.sh list
 #
-# Manager placement (the label, not the full name; one per caller session):
-#   herdr-agent.sh manager [--label NAME] [--plan|--explain] [--root DIR] [-- ARGS...]
+# Manager placement (the label, not the full name; one per caller session, plus
+# the child managers a manager starts for itself):
+#   herdr-agent.sh manager [--label NAME] [--parent MANAGER] [--plan|--explain] [--root DIR] [-- ARGS...]
 #                                                       start or reuse this session's
 #                                                       manager at the source root
-#                                                       (~/src) and print its name
+#                                                       (~/src) and print its name.
+#                                                       --parent starts it as a child
+#                                                       of that manager instead, and a
+#                                                       manager can hold several children
 #
 # Worker placement (the manager picks the name):
 #   herdr-agent.sh worker <name> --kind KIND [--repo DIR] [--plan] [-- ARGS...]
@@ -89,6 +93,13 @@
 #                     manager-NAME whatever directory the caller sits in, so a
 #                     subject with no checkout here stays nameable. Keep it within
 #                     19 chars: a second session appends -<suffix> to that name
+#                     (a child manager keeps the label as given and needs one)
+#   --parent MANAGER  manager: start this manager as a child of MANAGER — a manager
+#                     holds several children, one per labelled part of its scope.
+#                     A child runs at the root like any manager, records parent,
+#                     depth and boss (so it reports to its parent and cleanup can
+#                     follow it), and may hold children of its own up to
+#                     $HARNESS_MANAGER_MAX_DEPTH levels (default 3)
 #   --from CHILD      report: who is reporting (default: this pane's agent name / pane id)
 #   --kind K          report: report (default) | question
 #   --no-watch        delegate: do not start the watcher
@@ -105,6 +116,8 @@
 # stdout: ask prints the answer (the --answer-file content, else the pane tail);
 #         report prints the inbox file; inbox prints the list / the reports
 # stderr: AGENT= / PANE= / KIND= / MODEL= / REPO= / STATE=
+#         manager: MANAGER= / PM= (top-level only) / PARENT= / DEPTH= / TOPOLOGY= /
+#                  REPO= / SESSION= / STATE=
 #         delegate: AGENT= / BOSS= / REQUEST= / WATCH=<pid|none> / STATE=
 #         report:   INBOX= / NOTIFY=<prompt|notification|none>
 # exit:   0 = ok, 1 = failed, 2 = usage error
@@ -154,9 +167,13 @@ PRESET=""
 WATCH_TIMEOUT=${HERDR_WATCH_TIMEOUT:-2h}
 SESSION_KEY=""
 MANAGER_LABEL=""
+PARENT=""
 PLAN=0
 EXPLAIN=0
 MANAGER_ROOT=${HARNESS_MANAGER_ROOT:-$HOME/src}
+# How many manager levels may exist (top-level counts as 0). A manager deep in the
+# tree that wants more hands delegates to workers instead of another manager.
+MANAGER_MAX_DEPTH=${HARNESS_MANAGER_MAX_DEPTH:-3}
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -178,6 +195,7 @@ while [[ $# -gt 0 ]]; do
     --session) SESSION_KEY=$2; shift 2 ;;
     --root) MANAGER_ROOT=$2; shift 2 ;;
     --label) MANAGER_LABEL=$2; shift 2 ;;
+    --parent) PARENT=$2; shift 2 ;;
     --plan) PLAN=1; shift ;;
     --explain) EXPLAIN=1; shift ;;
     --) shift; NATIVE_ARGS=("$@"); break ;;
@@ -631,12 +649,17 @@ tag_manager() {
 }
 
 # <name> <session> <state>. PM= mirrors the manager's suffix, so the PM and its
-# manager sort next to each other in the sidebar.
+# manager sort next to each other in the sidebar. A child manager has no PM of its
+# own: it reports to PARENT, so PM= would name a session that does not exist.
 print_manager() {
-  local f
+  local f parent depth
   f=$(state_file "$1")
+  parent=$(state_field "$f" parent)
+  depth=$(state_field "$f" depth)
   printf 'MANAGER=%s\n' "$1" >&2
-  printf 'PM=pm-%s\n' "${1#manager-}" >&2
+  [[ -n "$parent" ]] || printf 'PM=pm-%s\n' "${1#manager-}" >&2
+  printf 'PARENT=%s\n' "${parent:--}" >&2
+  printf 'DEPTH=%s\n' "${depth:--}" >&2
   printf 'TOPOLOGY=%s\n' "$(state_field "$f" topology)" >&2
   printf 'REPO=%s\n' "$(state_field "$f" repo)" >&2
   printf 'SESSION=%s\n' "$2" >&2
@@ -648,6 +671,13 @@ print_manager() {
 manager_live() {
   [[ -f "$(state_file "$1")" ]] || return 1
   herdr agent get "$1" >/dev/null 2>&1
+}
+
+# A positive number of manager levels, or die with what to change.
+manager_depth_limit() {
+  [[ "$MANAGER_MAX_DEPTH" =~ ^[0-9]+$ ]] && ((MANAGER_MAX_DEPTH >= 1)) ||
+    die "invalid HARNESS_MANAGER_MAX_DEPTH: $MANAGER_MAX_DEPTH (a positive number of manager levels)" 2
+  printf '%s' "$MANAGER_MAX_DEPTH"
 }
 
 # One line per attempt. A manager that does not start still leaves a mark here,
@@ -664,7 +694,8 @@ cmd_manager() {
   [[ -n "$KIND" ]] || KIND=claude
   [[ -z "$NAME" ]] ||
     die "manager takes no name — pass --label <name> to choose what it is about, and it decides the rest (docs/naming.md)" 2
-  local dir root main short canonical suffix name key f rec_session source
+  local dir root main short canonical suffix_name suffixed suffix name key f rec_session source
+  local parent=${PARENT:-} parent_file parent_depth=0 depth limit self_name
 
   key=${SESSION_KEY:-${HARNESS_SESSION_KEY:-}}
   if [[ -n "$key" ]]; then
@@ -708,6 +739,41 @@ cmd_manager() {
   [[ -d "$MANAGER_ROOT" ]] ||
     die "manager root not found: $MANAGER_ROOT (set HARNESS_MANAGER_ROOT)" 1
 
+  # A child manager is one labelled part of a manager's scope. It sits at the root
+  # like any manager and reports to the manager that started it, which is recorded
+  # here so `inbox`, the watcher and herdr-cleanup.sh need no new rules.
+  #
+  # The caller's own name is only needed to catch two mistakes: a manager starting
+  # a top-level manager (it would get its own record back), and a manager naming
+  # itself as its parent (a cycle that reports to itself).
+  self_name=$(pane_agent_name "${HERDR_PANE_ID:-}")
+  [[ -n "$self_name" ]] || self_name=${HERDR_AGENT_NAME:-}
+  if [[ -n "$parent" ]]; then
+    check_name "$parent"
+    [[ "$parent" == manager-* ]] ||
+      die "--parent must be a manager name (got '$parent') — a manager starts child managers, PMs start managers" 2
+    [[ "$parent" != "$self_name" ]] ||
+      die "$self_name cannot be its own parent — pass the manager above you, and --label for the part you are splitting off" 2
+    parent_file=$(state_file "$parent")
+    [[ -f "$parent_file" ]] ||
+      die "no manager named $parent is recorded — start it first (manager --label <name>)" 2
+    manager_live "$parent" ||
+      die "$parent is not running — herdr-agent.sh list, then start it again" 2
+    parent_depth=$(state_field "$parent_file" depth)
+    [[ "$parent_depth" =~ ^[0-9]+$ ]] || parent_depth=0
+    limit=$(manager_depth_limit)
+    ((parent_depth + 1 < limit)) ||
+      die "manager depth limit reached: $parent is level $parent_depth and HARNESS_MANAGER_MAX_DEPTH is $limit — delegate to workers instead of another manager" 2
+  else
+    # Running plain `manager` from a manager would hand it its own record back and
+    # never start the child it meant to. Name the command instead.
+    case "$self_name" in
+      manager-*) die "you are already $self_name: pass --parent $self_name --label <purpose> to start a child manager" 2 ;;
+    esac
+  fi
+  [[ -z "$parent" || -n "$MANAGER_LABEL" ]] ||
+    die "manager --parent needs --label <purpose>: the child is named manager-<label>" 2
+
   # The name says what this session is about (readable in the sidebar). The
   # caller usually sits in that repo; from the root itself the label is the
   # root's own name. --label wins over both: a PM sometimes knows the subject
@@ -734,14 +800,81 @@ cmd_manager() {
   canonical="manager-$short"
   check_name "$canonical"
 
+  # 0. a child manager: the same (parent, label) is the same child, so a manager
+  #    may ask twice without piling up tabs, and two managers may own children of
+  #    the same label. The name carries no parent (the sidebar stays readable);
+  #    the record and the `--parent` call carry the tree.
+  if [[ -n "$parent" ]]; then
+    depth=$((parent_depth + 1))
+    # The only two names this (parent, label) can have. Exact names, not a glob:
+    # "manager-billing-????" would also match the child labelled billing-2026 and
+    # hand one manager's work to another.
+    suffixed="manager-$short-$(session_suffix "$parent:$short")"
+    [[ "$suffixed" =~ ^[a-z][a-z0-9_-]{0,31}$ ]] || suffixed=""
+    for name in "$canonical" ${suffixed:+"$suffixed"}; do
+      f=$(state_file "$name")
+      [[ -f "$f" ]] || continue
+      [[ "$(state_field "$f" parent)" == "$parent" ]] || continue
+      [[ "$(state_field "$f" repo)" == "$MANAGER_ROOT" ]] || continue
+      if manager_live "$name"; then
+        if ((PLAN)); then
+          printf 'PLAN name=%s topology=%s repo=%s parent=%s depth=%s session=%s\n' "$name" \
+            "$(state_field "$f" topology)" "$(state_field "$f" repo)" "$parent" \
+            "$(state_field "$f" depth)" "$key"
+        else
+          tag_manager "$name" "$key" "$(state_field "$f" repo)"
+          print_manager "$name" "$key" reused
+          manager_log reused "$key" "$(state_field "$f" repo)" "$name"
+        fi
+        printf '%s\n' "$name"
+        return 0
+      fi
+      close_named "$name" >/dev/null 2>&1 || true
+    done
+    name=$canonical
+    # A top-level manager, or another manager's child, already holds the name: the
+    # suffixed name hashes (parent, label), so the same manager gets the same child
+    # back. If that one is live and not ours, there is no free name left.
+    if manager_live "$canonical"; then
+      [[ -n "$suffixed" ]] ||
+        die "$canonical is taken and its fallback name would be over 32 chars — choose a shorter --label" 2
+      name=$suffixed
+      manager_live "$name" &&
+        die "$canonical and $name are both taken — choose another --label" 1
+    fi
+    if ((PLAN)); then
+      printf 'PLAN name=%s topology=tab repo=%s parent=%s depth=%s session=%s\n' \
+        "$name" "$MANAGER_ROOT" "$parent" "$depth" "$key"
+      printf '%s\n' "$name"
+      return 0
+    fi
+    NAME=$name TOPOLOGY=tab REPO=$MANAGER_ROOT
+    cmd_ensure
+    tag_manager "$name" "$key" "$MANAGER_ROOT"
+    f=$(state_file "$name")
+    set_record_field "$f" parent "$parent"
+    set_record_field "$f" boss "$parent"
+    set_record_field "$f" depth "$depth"
+    print_manager "$name" "$key" started
+    manager_log started "$key" "$MANAGER_ROOT" "$name"
+    printf '%s\n' "$name"
+    return 0
+  fi
+
   # 1. this session already holds a manager with this name: keep it, even
   #    when it lives on a worktree (REPO= then differs from the checkout).
   #    A record from before sessions were written down has no session: the first
   #    caller adopts it, so existing managers are neither abandoned nor shared.
+  #    Only the two names this session can have are looked at (a "-????" glob
+  #    would also match another label that is four characters longer).
+  suffix_name="manager-$short-$(session_suffix "$key")"
   for f in "$STATE_DIR"/manager-*.json; do
     [[ -f "$f" ]] || continue
     name=$(state_field "$f" agent)
-    [[ "$name" == "$canonical" || "$name" == "$canonical"-???? ]] || continue
+    [[ "$name" == "$canonical" || "$name" == "$suffix_name" ]] || continue
+    # A child manager belongs to the manager that started it, never to a session
+    # that happens to share a pane: the session rule is for top-level managers.
+    [[ -z "$(state_field "$f" parent)" ]] || continue
     # A manager from before this rule sits in a repository checkout. It is not
     # this session's, and reusing it would put a manager back into a repo: leave
     # it for herdr-cleanup and start a fresh one at the root.
@@ -775,6 +908,7 @@ cmd_manager() {
     NAME=$canonical TOPOLOGY=tab REPO=$MANAGER_ROOT
     cmd_ensure
     tag_manager "$canonical" "$key" "$MANAGER_ROOT"
+    set_record_field "$(state_file "$canonical")" depth 0
     print_manager "$canonical" "$key" started
     manager_log started "$key" "$MANAGER_ROOT" "$canonical"
     printf '%s\n' "$canonical"
@@ -783,11 +917,11 @@ cmd_manager() {
 
   # 3. another live session holds the name: same place, a suffixed name. A
   #    manager steers repositories, so it does not need a checkout of its own.
-  suffix=$(session_suffix "$key")
-  name="manager-$short-$suffix"
+  name=$suffix_name
   check_name "$name"
   if manager_live "$name" &&
-    [[ "$(state_field "$(state_file "$name")" session)" == "$key" ]]; then
+    [[ "$(state_field "$(state_file "$name")" session)" == "$key" ]] &&
+    [[ -z "$(state_field "$(state_file "$name")" parent)" ]]; then
     print_manager "$name" "$key" reused
     manager_log reused "$key" "$MANAGER_ROOT" "$name"
     printf '%s\n' "$name"
@@ -801,6 +935,7 @@ cmd_manager() {
   NAME=$name TOPOLOGY=tab REPO=$MANAGER_ROOT
   cmd_ensure
   tag_manager "$name" "$key" "$MANAGER_ROOT"
+  set_record_field "$(state_file "$name")" depth 0
   print_manager "$name" "$key" started
   manager_log started "$key" "$MANAGER_ROOT" "$name"
   printf '%s\n' "$name"
@@ -1143,9 +1278,9 @@ cmd_reap() {
 
 cmd_list() {
   [[ -d "$STATE_DIR" ]] || { echo "no agents registered" >&2; return 0; }
-  local f name pane tab kind repo state
-  printf '%-14s %-8s %-10s %-10s %-8s %-25s %-14s %s\n' \
-    NAME KIND STATE PANE TAB CREATED SESSION REPO
+  local f name pane tab kind repo state parent
+  printf '%-14s %-8s %-10s %-10s %-8s %-25s %-14s %-24s %s\n' \
+    NAME KIND STATE PANE TAB CREATED SESSION PARENT REPO
   for f in "$STATE_DIR"/*.json; do
     [[ -f "$f" ]] || continue
     name=$(state_field "$f" agent)
@@ -1153,10 +1288,11 @@ cmd_list() {
     tab=$(state_field "$f" tab)
     kind=$(state_field "$f" kind)
     repo=$(state_field "$f" repo)
+    parent=$(state_field "$f" parent)
     state=$(agent_state "$name")
-    printf '%-14s %-8s %-10s %-10s %-8s %-25s %-14s %s\n' \
+    printf '%-14s %-8s %-10s %-10s %-8s %-25s %-14s %-24s %s\n' \
       "$name" "$kind" "$state" "$pane" "$tab" "$(state_field "$f" created)" \
-      "$(state_field "$f" session)" "$repo"
+      "$(state_field "$f" session)" "${parent:--}" "$repo"
   done
 }
 
@@ -1342,8 +1478,36 @@ replace_watcher() {
   rm -rf -- "$(watch_dir "$boss")/$(safe_name "$child").lock"
 }
 
-protocol_section() {
+# A child manager gets the director's section instead: it may start children of
+# its own, it does not edit, and it answers to the manager that started it.
+manager_protocol_section() {
   local boss=$1 child=$2 self=$3
+  cat <<EOF
+
+---
+
+## あなたの役割（herdr-agent.sh delegate が自動で付けた節）
+
+あなたは \`$boss\` の下に付いた manager（技術のディレクター）\`$child\` です。自分では実装しません。コードは読み、判断し、依頼文を書いて子に渡します。
+
+- 子は自分で用意する（依頼文も自分で書く。親に書かせない）:
+  - 実作業: \`$self worker <kind>-<purpose> --kind claude --repo ~/src/<repo>\`、続いて \`$self delegate <子の名前> <依頼ファイル> --boss $child\`
+  - さらに子 manager: \`$self manager --parent $child --label <purpose>\` で起こしてから、同じ \`delegate\` で渡す。深さの上限は \`HARNESS_MANAGER_MAX_DEPTH\`（既定 3 段）
+- 1 子 1 委任。同じ子に並行して 2 件渡さない（報告が来てから次を渡す）。同じファイルを 2 人に同時に触らせない
+- 子の報告は自分の inbox に来る: \`$self inbox $child\`（一覧）→ \`read\` → \`ack\`。節目で必ず見る（通知はヒントで、取りこぼしても inbox は残る）
+- \`$boss\` へは、仕事が終わったら 1 回だけ \`$self report $boss <報告ファイル> --from $child\`。子の報告をそのまま貼らず、結論 / 変わったファイル / 確認したこと / 未解決 / 使った AI（モデル名）にまとめる
+- 自分で決められることは自分で決める。上（\`$boss\`）に戻すのは、要件の取捨・不可逆な操作・承認ダイアログだけ
+- リポジトリは読むだけ（\`git log\` / \`status\` / \`diff\`）。編集・テスト・commit は子の仕事
+- 依頼された範囲の外のファイルは変えない。子の承認ダイアログに人の確認なしで答えない
+EOF
+}
+
+protocol_section() {
+  local boss=$1 child=$2 self=$3 role=${4:-worker}
+  if [[ "$role" == "manager" ]]; then
+    manager_protocol_section "$boss" "$child" "$self"
+    return 0
+  fi
   cat <<EOF
 
 ---
@@ -1378,6 +1542,15 @@ cmd_delegate() {
   [[ -n "$prompt" ]] || die "empty request" 2
   boss=$(resolve_boss) || die "delegate needs --boss (or HERDR_BOSS, or run it inside a Herdr pane)" 2
   [[ "$boss" != "$NAME" ]] || die "$NAME cannot report to itself — pass --boss" 2
+  # Who the child reports to, and what it may start. A manager-* child is a child
+  # manager (it may hold children of its own); anything else is a worker. A child
+  # manager can only report to the manager that started it: the record says who.
+  local role rec_parent
+  role=worker
+  case "$NAME" in manager-*) role=manager ;; esac
+  rec_parent=$(state_field "$(state_file "$NAME")" parent)
+  [[ -z "$rec_parent" || "$rec_parent" == "$boss" ]] ||
+    die "$NAME is a child manager of $rec_parent — delegate with --boss $rec_parent" 2
   if ((WATCH)); then
     valid_watch_duration "$WATCH_TIMEOUT" ||
       die "invalid --watch-timeout / HERDR_WATCH_TIMEOUT: $WATCH_TIMEOUT (e.g. 2h, 90m)" 2
@@ -1402,7 +1575,7 @@ cmd_delegate() {
   request_path=$(umask 077 && mktemp -d "$request_dir/$child_safe-$(date +%Y%m%d-%H%M%S)-XXXXXX") ||
     { rm -f "$since_new"; die "cannot create a request file in $request_dir" 1; }
   request_path="$request_path/request.md"
-  if ! (umask 077 && { printf '%s\n' "$prompt"; protocol_section "$boss" "$NAME" "$self"; } >"$request_path"); then
+  if ! (umask 077 && { printf '%s\n' "$prompt"; protocol_section "$boss" "$NAME" "$self" "$role"; } >"$request_path"); then
     rm -f "$since_new"
     die "cannot write $request_path" 1
   fi

@@ -37,6 +37,7 @@
 |---|---|---|
 | 別エージェントに相談 | `external-review`（Herdr の別ファミリ 1 セッション）／草案は `external-ask.sh --to pi` | `tmux new-session` で `claude`/`codex` を起動 |
 | PM の manager を用意する（1 セッション 1 つ、名前と居場所は任せる） | `herdr-agent.sh manager` | `ensure manager-<repo>` を自分で組み立てる（同じリポジトリの別セッションと共有してしまう） |
+| manager が自分の範囲を子 manager に分ける（複数可） | `herdr-agent.sh manager --parent <自分> --label <purpose>` ＋ `delegate` | `ensure manager-<purpose>` を自分で組み立てる（記録に `parent` が入らず、報告も片付けも親に繋がらない） |
 | 子に仕事を配る | `herdr-agent.sh ensure` ＋ `delegate` | `tmux` / `screen` / `nohup` / `claude --bg` |
 | 実作業の子を対象リポジトリで起こす | `herdr-agent.sh worker <name> --kind K --repo <repo>`（空いていれば checkout、作業中なら worktree） | `ensure --topology tab` を自分で選ぶ（2 体が同じ checkout を触る） |
 | 並列に回す（manager のみ。PM は manager に `ask` する） | `orchestrate-parallel.sh`（worktree 分け） | ターミナルを手で並べる |

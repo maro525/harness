@@ -23,6 +23,7 @@ Herdr のセッション名は **agent 名・tab 名・（worktree のときは�
 | issue 無しの orchestrate | `orchestrate-noissue-<feature>` | `orchestrate-noissue-quick-fix` |
 | delegate の子 | `<claude\|codex\|pi>-<purpose>` | `claude-review-1983`, `codex-research-cache` |
 | manager（PM の技術の脳。常に `~/src` で動く） | `manager-<label>[-<suffix>]`（`<label>` は既定で呼び出し元のリポジトリ名、`--label` で指定） | `manager-nanco-next`, `manager-nanco-next-9305` |
+| 子 manager（manager が `--parent` で起こす。複数可） | `manager-<label>[-<suffix>]`（`<label>` は `--label` で必ず指定。親の名前は入らない） | `manager-api`, `manager-web-4f2a` |
 | PM（pm-mode） | `pm-<repo>[-<suffix>]` | `pm-nanco-next`, `pm-nanco-next-9305`（manager の suffix を引き継ぐ） |
 | 実作業の子（`herdr-agent.sh worker`） | `<kind>-<purpose>`（manager が付ける。worktree に入っても名前は同じ） | `claude-review-1983`, `pi-seo-doc` |
 | 相談・配布以外の一時セッション | `<kind>-<purpose>-<短い id>` | `pi-repro-4f2a` |
@@ -33,7 +34,7 @@ external-review のセッション名には CLI 名（`codex`、`pi`、`claude`�
 
 Herdr の上限は 32 文字。`orchestrate-<id>-<feature>` が超えるときは **feature を先に落とす**（`orchestrate-nsketch-1983`）。それでも超えるなら末尾の単語単位で切る。
 
-`manager-<label>-<suffix>` は `-` と 4 桁の suffix が入るので、リポジトリ名から作るときは label 部分を 19 文字で切る（`herdr-agent.sh manager` がやる。切った名前は自分で組み立てない）。**`--label` で渡したものは切らない** — そのまま名前になるので、`-<suffix>` の余地を残して 19 文字以内にする（name 自体が 32 文字を超えるラベルはエラーになる）。
+`manager-<label>-<suffix>` は `-` と 4 桁の suffix が入るので、リポジトリ名から作るときは label 部分を 19 文字で切る（`herdr-agent.sh manager` がやる。切った名前は自分で組み立てない）。**`--label` で渡したものは切らない** — そのまま名前になるので、`-<suffix>` の余地を残して 19 文字以内にする（name 自体が 32 文字を超えるラベルはエラーになる）。子 manager のラベルも同じ扱い（切らない）。
 
 ## 3. ブランチ
 
@@ -63,12 +64,14 @@ TASK_FILE とロックは **ID を大文字のまま**使う（ブランチだ�
 
 状態ファイル（`~/.cache/harness/herdr-agents/<name>.json`）には `session`（起こしたセッション。`pane:<pane id>` か `proc:<pid>:<starttime>`）と `manager_repo`（その manager が担当するリポジトリの直下。manager は常に `~/src`）が入る。`herdr-agent.sh manager` はこの 2 つで「同じセッションの manager か、別セッションの manager か」を判定する。session の無い古い記録は、最初に呼んだセッションが引き継ぐ（タグを付ける。ただし `~/src` の外に居る古い manager は引き継がない）。
 
+子 manager の記録はさらに 3 つを持つ。`parent`（起こした manager の名前）、`boss`（報告先。`parent` と同じで `delegate` / watcher / `herdr-cleanup.sh` が読む）、`depth`（0 = PM 直下、1 = その子。`HARNESS_MANAGER_MAX_DEPTH`、既定 3 段まで）。**`parent` の無い manager 記録が PM 直下**で、セッションによる再利用の対象になる。
+
 ## 5. 誰が守るか
 
 | 場面 | 守る仕組み |
 |---|---|
 | `herdr-agent.sh ensure` / `restart` / `delegate` | 名前を検証する。空白・`/` はエラー、小文字でない・32 文字超は警告 |
-| `herdr-agent.sh manager` | manager の名前を自分で決める（常に `~/src` の tab。名前が埋まっていれば `-<suffix>`）。`--label` で指定できるのは対象だけ（居場所・topology・suffix はスクリプトが決める） |
+| `herdr-agent.sh manager` | manager の名前を自分で決める（常に `~/src` の tab。名前が埋まっていれば `-<suffix>`）。`--label` で指定できるのは対象だけ（居場所・topology・suffix はスクリプトが決める）。`--parent <manager>` は子 manager を作る（`--label` 必須、深さは `HARNESS_MANAGER_MAX_DEPTH` まで） |
 | `herdr-agent.sh worker` | 実作業の子の居場所を決める（checkout が空いていれば tab、作業中の子が居れば worktree） |
 | `herdr-agent.sh ensure`（external-review） | セッション名は呼び出し側が決める（`<kind>-review-<id>`）。`ask --answer-file` で同期に受ける |
 | `orchestrate-parallel.sh` | `orchestrate-<id>[-<feature>]` と `feature/<id>-<feature>` を自動生成 |

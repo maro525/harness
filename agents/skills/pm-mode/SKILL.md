@@ -43,8 +43,9 @@ disable-model-invocation: true
 | 外に残る文章の下書き | `ask <manager>` | manager が pi の子に振る |
 | 現況・残骸 | `harness-status.py` / [herdr-cleanup](../herdr-cleanup/SKILL.md) | 読み取り専用 |
 
-- PM は `delegate` を使わない。protocol 節が manager のエージェント起動を禁じるため
+- PM は `delegate` を使わない。下の階層（worker / 子 manager）を作るのは manager の仕事で、PM は `ask` で 1 つの manager とだけ話す
 - PM は `orchestrate-parallel.sh` を回さない（manager の道具。スクリプトも `pm-*` の名前を検知して断る）。PM は `ask` で渡し、どう回すかは manager が決める
+- manager の下の階層は manager が決める。manager は自分の範囲を子 manager（`manager --parent <自分> --label <purpose>`、複数可）に分けられる。PM は子 manager を直接作らず、名前も覚えない（`ask <manager>` だけ）
 - manager の子は manager に報告する。manager が `report <PM>` で PM に返す
 - セッションは Herdr の中でだけ立てる（`tmux` / `screen` / `nohup` / `claude --bg` を使わない）
 
