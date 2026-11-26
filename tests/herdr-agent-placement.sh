@@ -321,9 +321,22 @@ expect "the new top-level manager has no parent" '^PARENT=-$' "$out"
 out=$(cd "$REPO" && run HERDR_PANE_ID=w1:p1 HERDR_AGENT_NAME=manager-repo-a -- manager --plan); code=$?
 ((code == 2)) && echo "ok   a manager cannot start a top-level manager" || { echo "FAIL exit $code"; fails=$((fails + 1)); }
 expect "the manager is told to pass --parent" 'pass --parent manager-repo-a --label' "$out"
-out=$(cd "$REPO" && run HERDR_PANE_ID=w1:p1 HERDR_AGENT_NAME=manager-repo-a -- manager --parent manager-repo-a --label self); code=$?
-((code == 2)) && echo "ok   a manager cannot be its own parent" || { echo "FAIL exit $code"; fails=$((fails + 1)); }
-expect "own-parent is refused" 'cannot be its own parent' "$out"
+
+# 21b. 通常の呼び方: manager は自分を親にして子を分ける
+out=$(cd "$REPO" && run HERDR_PANE_ID=w1:p1 HERDR_AGENT_NAME=manager-repo-a -- manager --parent manager-repo-a --label split)
+expect "a manager starts a child under itself" 'MANAGER=manager-split' "$out"
+expect "the child names the caller as its parent" 'PARENT=manager-repo-a' "$out"
+expect "the child is level 1" 'DEPTH=1' "$out"
+me="$XDG_CACHE_HOME/harness/herdr-agents/manager-repo-a.json"
+expect_not "the caller keeps no parent" '"parent"' "$(cat "$me")"
+expect "the caller stays at depth 0" '"depth": "0"' "$(cat "$me")"
+out=$(cd "$REPO" && run HERDR_PANE_ID=w1:p1 HERDR_AGENT_NAME=manager-repo-a -- manager --parent manager-repo-a --label split)
+expect "the child under itself is reused" 'STATE=reused' "$out"
+
+# 21c. 子の名前が親と同じになるラベルだけは断る
+out=$(cd "$REPO" && run HERDR_PANE_ID=w1:p1 HERDR_AGENT_NAME=manager-repo-a -- manager --parent manager-repo-a --label repo-a --plan); code=$?
+((code == 2)) && echo "ok   a child named after its parent exits 2" || { echo "FAIL exit $code"; fails=$((fails + 1)); }
+expect "the same-name refusal names the fix" 'cannot be named after its parent' "$out"
 
 # 22. delegate の protocol 節: 子 manager は子を持てる、worker は持てない
 printf 'child request\n' >"$TMP/req.md"
