@@ -17,7 +17,7 @@ harness/
 │       ├── linear-ask.sh   # OpenCode 版 orchestrate の質問の中継用（Linear API キーが要る）
 │       ├── external-ask.sh  # 別のモデルに 1 回だけ聞く（pi / codex、セッションを作らない）。調べものと下書き
 │       ├── draft.sh        # 対外文書の下書きを gemini に 1 回だけ投げる（external-ask.sh のラッパー）
-│       ├── orchestrate-parallel.sh  # 複数タスクを worktree 分けで並列に orchestrate（1 タスク 1 ラン）
+│       ├── orchestrate-parallel.sh  # 複数タスクを worktree 分けで並列に orchestrate（1 タスク 1 ラン。manager 専用、PM は回さない）
 │       ├── herdr-cleanup.sh   # 記録済みセッション・期限切れロックを突き合わせて整理し、未読 inbox も表示（既定はレポートのみ）
 │       ├── harness-daily.py   # その日のセッション・コマンド・失敗・役割逸脱・残骸を突き合わせて出す
 │       ├── harness-status.py  # Herdr・セッション記録・ロック・タスク・worktree・inbox・checks を読み取り専用で一望する

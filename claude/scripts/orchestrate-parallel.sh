@@ -17,6 +17,10 @@
 # Usage:
 #   orchestrate-parallel.sh [OPTIONS] TASK...
 #
+# The manager runs this, not a PM. A PM hands the task over with `ask` and the
+# manager decides how it runs. A caller whose Herdr agent name starts with `pm-`
+# is refused (best effort: the agent name is the only signal available).
+#
 # TASK forms:
 #   PROJ-573            Linear id; feature slug = lower-cased id
 #   PROJ-573:coupon     Linear id + feature slug
@@ -52,6 +56,8 @@ usage() {
 Usage: orchestrate-parallel.sh [OPTIONS] TASK...
 
   One orchestrate run per task, each in its own git worktree and Herdr tab.
+
+  Run by the manager (a PM hands the task over with `ask <manager>`).
 
 TASK forms:
   PROJ-573            Linear id; feature slug = lower-cased id
@@ -101,6 +107,26 @@ done
 
 [[ ${#TASKS[@]} -gt 0 ]] || die "no tasks given"
 [[ -x "$HERDR_AGENT" ]] || die "herdr-agent.sh not found next to this script"
+
+# The manager owns this command. It picks the tasks, the branch names and the
+# runner, and it is the one that reads the results back. A PM that runs it
+# starts work the manager cannot see, which is the opposite of the PM's job
+# (hand the task over and let the manager decide how it runs).
+# Best effort: the caller's Herdr agent name is the only signal there is.
+caller_agent() {
+  local name=${HERDR_AGENT_NAME:-}
+  if [[ -n "$name" ]]; then printf '%s' "$name"; return 0; fi
+  [[ -n "${HERDR_PANE_ID:-}" ]] || return 0
+  command -v herdr >/dev/null 2>&1 || return 0
+  command -v jq >/dev/null 2>&1 || return 0
+  herdr agent get "$HERDR_PANE_ID" 2>/dev/null |
+    jq -r '.result.agent.name // empty' 2>/dev/null || true
+}
+
+case "$(caller_agent)" in
+  pm-*)
+    die "this is the manager's command — a PM hands the task over with \`ask <manager>\` and the manager runs it" 2 ;;
+esac
 
 case "$KIND" in
   claude|codex|pi|cline) ;;

@@ -107,9 +107,9 @@ Hard Trigger（DB スキーマ変更・認証認可・決済・公開 API の変
 
 - ユーザーに質問できる環境なら質問してよい。できない（非対話実行・応答が返らない）なら止まらず妥当な推定で続行し、置いた前提を Brief の `**前提（推定）**` 項目に残す
 - サブエージェント・Web 検索・設計相談・Linear 連携は「使えるなら使う、無ければ自分で行い、その旨を Design に書く」
-- **リサーチ（L / 条件付き M）は gemini が先**: `~/.claude/scripts/external-ask.sh --to pi -m google/gemini-4-carbon -` に質問を投げて実装知見を取る（`$HOME/.claude/rules/tool-routing.md`「External Research」）。一発だけでセッションを作らない。往復は 1〜4 分。**インターネットの一次情報が要るときだけ**、自分で `firecrawl` MCP（pi なら web fetch）で出典を取って足す
+- **リサーチ（L / 条件付き M）は gemini が先**: `~/.claude/scripts/external-ask.sh --to pi -m google/gemini-3-flash-preview -` に質問を投げて実装知見を取る（`$HOME/.claude/rules/tool-routing.md`「External Research」）。一発だけでセッションを作らない。往復は 1〜4 分。**インターネットの一次情報が要るときだけ**、自分で `firecrawl` MCP（pi なら web fetch）で出典を取って足す
 - **設計相談**は `~/.agents/skills/external-review/SKILL.md` の手順で、Herdr に別ファミリのモデルを 1 つ立てて `ask` で聞く（連鎖は使わない。呼び出し方は `tool-routing.md`「external-review（独立レビュー）」）。manager が居る対話の文脈なら manager に `ask` してもよい
-- 使ったモデルは `利用AI:` に書く（一次情報も取ったなら `利用AI: pi/google/gemini-4-carbon + claude/opus (firecrawl)` のように併記）。設計相談が失敗したら `設計相談不可: {理由}` と書き、別モデルに切り替えない
+- 使ったモデルは `利用AI:` に書く（一次情報も取ったなら `利用AI: pi/google/gemini-3-flash-preview + claude/opus (firecrawl)` のように併記）。設計相談が失敗したら `設計相談不可: {理由}` と書き、別モデルに切り替えない
 - Linear: 連携ツールがあれば LINEAR_ID に計画完了コメントを投稿し、無ければ投稿しない。Linear のステータスは変えない
 
 ## PHASE 1: UNDERSTAND
@@ -129,7 +129,7 @@ Design に書く内容: **採用した方針とその理由** / **検討して�
 |---|---|
 | S | リサーチはしない。PHASE 1 の理解から方針を 1〜2 行で書く |
 | M | 設計相談（`external-review` の別ファミリ 1 セッション）が使えれば行い、結果を統合して書く。gemini（`external-ask.sh --to pi`）に実装知見を聞いてもよい。使えなければ自分で設計し「設計相談不可: {理由}」と書く |
-| L | **gemini に先に聞く**（`external-ask.sh --to pi -m google/gemini-4-carbon`）。インターネットの一次情報が要るときだけ、自分で `firecrawl` MCP（pi なら web fetch）で出典を取って足す。gemini が落ちたら自分の知識で設計し「外部リサーチ不可: {理由}」と書く |
+| L | **gemini に先に聞く**（`external-ask.sh --to pi -m google/gemini-3-flash-preview`）。インターネットの一次情報が要るときだけ、自分で `firecrawl` MCP（pi なら web fetch）で出典を取って足す。gemini が落ちたら自分の知識で設計し「外部リサーチ不可: {理由}」と書く |
 
 リサーチ結果と自分の理解が食い違ったら、**出典のある一次情報を優先**し、相違点と採用した方を Design に残す。
 

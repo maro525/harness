@@ -52,7 +52,7 @@ PM の技術の脳。**質問と設計相談には自分で答える**（コー�
 ~/.claude/scripts/herdr-agent.sh worker child-a --kind claude --repo ~/src/nanco-next -- --model sonnet --permission-mode auto
 # 隔離したいときは場所を指定する
 ~/.claude/scripts/herdr-agent.sh ensure child-a --kind claude --topology worktree --branch feature/child-a --repo ~/src/nanco-next
-# 文章作成・推敲・動画/画像の分析は pi + preset（google/gemini-4-carbon）
+# 文章作成・推敲・動画/画像の分析は pi + preset（google/gemini-3-flash-preview）
 ~/.claude/scripts/herdr-agent.sh ensure child-b --kind pi --preset writing
 ```
 
@@ -60,6 +60,7 @@ PM の技術の脳。**質問と設計相談には自分で答える**（コー�
 - checkout は**同時に 1 体**。すでに `working` / `blocked` の子がその repo に居れば、新しい子は `feature/<name>` の worktree に入る（`OCCUPIED=` に出る）
 - 名前は役割が分かるもの（`child-tests`、`child-docs` など）。同じ名前は使い回される（文脈が残る）
 - 別リポジトリ・隔離したい作業は `ensure --topology worktree` / `--topology workspace`（`docs/session-lifecycle.md`）
+- 複数タスクを issue ごとの worktree で並列に回すのは**あなたの仕事**。`~/.claude/scripts/orchestrate-parallel.sh <TASK>...` を回し、PM には結果だけ返す。PM が回そうとするとスクリプトが断る（`pm-*` の名前を見る）
 
 ### 2. 依頼を書いて渡す
 

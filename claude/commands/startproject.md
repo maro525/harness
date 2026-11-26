@@ -95,7 +95,7 @@ Agent ツールが無いため、リサーチはサブエージェント経由�
 
 | 系統 | 実行方法 | 役割 |
 |---|---|---|
-| 実装知見 | `~/.claude/scripts/external-ask.sh --to pi -m google/gemini-4-carbon -`（Bash。一発だけで、セッションを作らない） | 設計上の勘所・落とし穴を解釈する。まずこれ |
+| 実装知見 | `~/.claude/scripts/external-ask.sh --to pi -m google/gemini-3-flash-preview -`（Bash。一発だけで、セッションを作らない） | 設計上の勘所・落とし穴を解釈する。まずこれ |
 | 一次情報 | `firecrawl_search` → `firecrawl_scrape`（無ければ `WebFetch` / `curl`） | 出典 URL が要るとき / 最新版・公式仕様を確かめるときだけ |
 
 結果はファイルに保存せず統合して `DESIGN` にまとめる。**食い違いは一次情報を優先**し、相違点と採用した方を `DESIGN` に残す。gemini が落ちたら別モデルに切り替えず、`DESIGN` に「外部リサーチ不可: {理由}」と書いて自分の知識で進む。
