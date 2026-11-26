@@ -24,6 +24,7 @@ harness/
 │       ├── harness-status.py  # Herdr・セッション記録・ロック・タスク・worktree・inbox・checks を読み取り専用で一望する
 │       ├── herdr-agent.sh  # Herdr の tab / workspace / worktree で任意のエージェント (pi / codex 等) を起動して依頼する。manager / PM 用の delegate / report / inbox も持つ
 │       ├── task-file.sh    # TASK_FILE の置き場所を解決（dir / new / find / resolve。リポジトリ外）
+│       ├── firecrawl.sh    # URL を間隔をあけて取る（無料枠 15 req/min、429 は retry-after だけ待つ、6h キャッシュ）
 │       └── phase-run.sh    # フェーズを任意の CLI / モデルで実行するディスパッチャ
 ├── docs/
 │   ├── phase-contract.md   # 4 フェーズが満たす契約（引数・書き込み・RESULT/QUESTIONS・status）
