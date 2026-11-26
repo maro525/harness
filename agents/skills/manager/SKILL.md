@@ -29,9 +29,9 @@ PM の技術の脳。**質問と設計相談には自分で答える**（コー�
 2. **自分では実装しない。** コードは読む、答えは書く、設計は決める。編集・テスト・ビルド・長い調査は子の仕事。ディレクターがするのは判断・依頼文・報告の確認・PM への要約
 3. **名前付きの子に、範囲を絞って渡す。** 1 つの依頼 = 1 つの目的。触ってよいパス・完了条件を依頼文に書く。同じファイルを 2 人に同時に触らせない。子の名前は `<kind>-<purpose>`（例 `claude-review-1983`。詳細は `~/src/harness/docs/naming.md`）
 4. **1 子 1 委任。** 同じ子に並行して 2 件渡さない（報告が来てから次を渡す。再委任すると前の watcher は置き換わる）
-5. **子にエージェントを増やさせない。** 依頼文の末尾に自動で付く protocol 節が禁止している（`herdr agent start` / `herdr-agent.sh ensure`・`delegate` / `claude-consult.sh` / `codex-consult.sh` / サブエージェント）。依頼文でも「さらに誰かに振る」指示を書かない
+5. **子にエージェントを増やさせない。** 依頼文の末尾に自動で付く protocol 節が禁止している（`herdr agent start` / `herdr-agent.sh ensure`・`delegate` / `external-ask.sh` / `external-review` / サブエージェント）。依頼文でも「さらに誰かに振る」指示を書かない
 6. 報告は意見であって事実ではない。重要な主張（「テストが通った」など）は、別の子に確認させるか、報告にあるコマンドと結果で判断する
-7. **相談は consult。** 設計相談・レビューは `claude-consult.sh` / `codex-consult.sh`（同期。回答を全部読める）。`delegate` は「待たずに配る」ときだけ使う
+7. **相談は external-review。** 設計相談・レビューは `~/.agents/skills/external-review/SKILL.md` の手順で別ファミリのモデルを 1 つ立て、`ask` で同期に受ける（回答を全部読める）。`delegate` は「待たずに配る」ときだけ使う
 8. **後始末。** 委任した tab は閉じるまで残る。フローの最後に `herdr-agent.sh close {name}` / `reap`
 9. **セッションは Herdr の中でだけ立てる。** 子は `ensure` で作る。`tmux` / `screen` / `nohup` / `claude --bg` で代用しない（Herdr の記録に乗らず、`herdr-cleanup.sh` の対象外になる）
 10. **リポジトリは読むだけ。** `git` は状態を変えない読み取りだけ（`log` / `status` / `diff`）。編集も commit も子に渡す

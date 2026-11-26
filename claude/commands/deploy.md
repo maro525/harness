@@ -129,7 +129,7 @@ Related to #34
 **任意: コミットメッセージの下書きを `draft.sh` に依頼してよい。** 本文が 3 行以上になるときは、`## team-implement` の要約を渡して書かせ、内容を確かめてから使う（モデル名を記憶しない）。依頼した場合は報告の `利用AI:` に「メッセージ: pi/{model}」のように併記する。件名だけなら自分で書いてよい。
 
 ```bash
-~/.claude/scripts/consult.sh --to pi -m google/gemini-4-carbon - <<'EOF'
+~/.claude/scripts/external-ask.sh --to pi -m google/gemini-3-flash-preview - <<'EOF'
 次の変更の git コミットメッセージを conventional commit で 1 つ書いて。件名 72 文字以内、本文は変更点を 2〜4 行。
 {## team-implement の要約}
 EOF

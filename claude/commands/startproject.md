@@ -88,14 +88,14 @@ Agent ツールが無いため、リサーチはサブエージェント経由�
 `/orchestrate` の通常フローでは S で startproject は呼ばれない（orchestrate が自分で計画する）。直接呼ばれた場合はリサーチはしない。Phase 1 の理解から方針を 1-2 行で `DESIGN` に書いて Phase 3 へ進む。
 
 ### tier=M
-別の CLI に設計相談する（Bash から直接実行）。呼び出し形は `~/.claude/scripts/consult.sh --to codex -`（そのフェーズを実行している CLI と別ファミリから選ぶ。分からなければ codex）。1 つの CLI を名指しして 1 回聞き、連鎖は使わない。呼び出し方と記録方法は `$HOME/.claude/rules/tool-routing.md` の「設計相談・セカンドオピニオン（consult.sh）」に従う。失敗したら設計相談なしで設計し、`DESIGN` に「設計相談不可: {理由}」と書く。成功したら `DESIGN` に `利用AI: {AI_MODEL}` を残す。
+別の CLI に設計相談する（Bash から直接実行）。`~/.agents/skills/external-review/SKILL.md` の手順で、Herdr に**そのフェーズを実行している CLI と別ファミリのモデルを 1 つ**立てて `ask` で聞く（連鎖は使わない）。呼び出し方と記録方法は `$HOME/.claude/rules/tool-routing.md` の「external-review（独立レビュー）」に従う。失敗したら設計相談なしで設計し、`DESIGN` に「設計相談不可: {理由}」と書く。成功したら `DESIGN` に `利用AI: {MODEL=}` を残す。
 
 ### tier=L
 **gemini に先に聞く**（Bash から直接実行）。インターネットの一次情報が要るときだけ、自分で出典を取って足す。
 
 | 系統 | 実行方法 | 役割 |
 |---|---|---|
-| 実装知見 | `~/.claude/scripts/consult.sh --to pi -m google/gemini-4-carbon -`（Bash） | 設計上の勘所・落とし穴を解釈する。まずこれ |
+| 実装知見 | `~/.claude/scripts/external-ask.sh --to pi -m google/gemini-4-carbon -`（Bash。一発だけで、セッションを作らない） | 設計上の勘所・落とし穴を解釈する。まずこれ |
 | 一次情報 | `firecrawl_search` → `firecrawl_scrape`（無ければ `WebFetch` / `curl`） | 出典 URL が要るとき / 最新版・公式仕様を確かめるときだけ |
 
 結果はファイルに保存せず統合して `DESIGN` にまとめる。**食い違いは一次情報を優先**し、相違点と採用した方を `DESIGN` に残す。gemini が落ちたら別モデルに切り替えず、`DESIGN` に「外部リサーチ不可: {理由}」と書いて自分の知識で進む。

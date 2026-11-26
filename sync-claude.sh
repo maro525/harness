@@ -29,11 +29,9 @@ HARNESS_FILES=(
   scripts/phase-run.sh
   scripts/task-file.sh
   scripts/herdr-agent.sh
-  scripts/claude-consult.sh
+  scripts/external-ask.sh
   scripts/harness-daily.py
   scripts/harness-status.py
-  scripts/codex-consult.sh
-  scripts/consult.sh
   scripts/orchestrate-parallel.sh
   scripts/herdr-cleanup.sh
   scripts/preflight.sh

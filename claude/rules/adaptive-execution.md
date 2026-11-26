@@ -48,7 +48,7 @@ Phases and models per tier (how each phase is launched: `orchestrate.md` "tier å
 | **M** | best | opus | opus | haiku |
 | **L** | best | best | opus | haiku |
 
-Both tables below use their own invocation: research asks gemini first (`~/.claude/scripts/consult.sh --to pi -m google/gemini-4-carbon -`) and takes sourced facts only when the question needs internet information, while the design consultation and second opinion use `~/.claude/scripts/consult.sh --to <cli> -` (one named target and no chain; `--role review` for the second opinion). Always run them directly with background Bash (no subagent).
+Both tables below use their own invocation: research asks gemini first (`~/.claude/scripts/external-ask.sh --to pi -m google/gemini-3-flash-preview -`) and takes sourced facts only when the question needs internet information, while the design consultation and second opinion use the `external-review` skill (`herdr-agent.sh ensure` + `ask --answer-file`, one named target and no chain; read-only for a review). Always run them directly with background Bash (no subagent).
 
 ### External Research (gemini first)
 
