@@ -338,6 +338,17 @@ out=$(cd "$REPO" && run HERDR_PANE_ID=w1:p1 HERDR_AGENT_NAME=manager-repo-a -- m
 ((code == 2)) && echo "ok   a child named after its parent exits 2" || { echo "FAIL exit $code"; fails=$((fails + 1)); }
 expect "the same-name refusal names the fix" 'cannot be named after its parent' "$out"
 
+# 21d. suffix 付きの名前でも親と同じ名前は exit 2（hash が親名に落ちる場合）
+# sha1("manager-x-64cb:x") の先頭 4 文字は 64cb なので、fallback 名が親そのものになる。
+for n in manager-x manager-x-64cb; do
+  echo idle > "$FAKE/agents/$n"
+  printf '{"agent":"%s","pane":"w1:p9","tab":"t9","kind":"claude","topology":"tab","repo":"%s","depth":"0"}\n' \
+    "$n" "$HARNESS_MANAGER_ROOT" > "$XDG_CACHE_HOME/harness/herdr-agents/$n.json"
+done
+out=$(cd "$REPO" && run HERDR_PANE_ID=w1:p1 -- manager --parent manager-x-64cb --label x --plan); code=$?
+((code == 2)) && echo "ok   a suffixed name equal to the parent exits 2" || { echo "FAIL exit $code"; fails=$((fails + 1)); }
+expect "the suffixed same-name refusal names the fix" 'cannot be named after its parent' "$out"
+
 # 22. delegate の protocol 節: 子 manager は子を持てる、worker は持てない
 printf 'child request\n' >"$TMP/req.md"
 out=$(cd "$REPO" && run HERDR_PANE_ID=w1:p1 -- delegate manager-api "$TMP/req.md" --boss manager-repo-a --no-watch)
