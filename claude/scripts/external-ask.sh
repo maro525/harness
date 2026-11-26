@@ -7,7 +7,7 @@
 # follow up, a design discussion), use the external-review skill instead.
 #
 #   external-ask.sh --to pi|codex [-m MODEL] [-t TIMEOUT] [-o FILE] <prompt-file> | -
-#   echo "question" | external-ask.sh --to pi -m google/gemini-4-carbon -
+#   echo "question" | external-ask.sh --to pi -m google/gemini-3-flash-preview -
 #
 # Why the flags for pi: a draft or a research answer does not need the caller's
 # AGENTS.md, skills, MCP servers or tools. Loading them made the same request
@@ -37,7 +37,7 @@ usage() {
 usage: external-ask.sh --to pi|codex [-m MODEL] [-t TIMEOUT] [-o FILE] <prompt-file> | -
 
   --to TARGET     pi | codex（別ファミリを名指しする）
-  -m, --model M   モデル。pi は必須（例 google/gemini-4-carbon）、codex は省略可
+  -m, --model M   モデル。pi は必須（例 google/gemini-3-flash-preview）、codex は省略可
   -t, --timeout T 期限（既定 20m。20m / 600s / 600）
   -o, --out FILE  回答の置き場所（既定: $TMPDIR/external-ask-<target>-<日時>.md）
   --tools         pi にツールを渡す（既定は外す: 下書き・調べものには要らない）
@@ -71,7 +71,7 @@ case "$TARGET" in
   *) die "unknown --to: $TARGET (pi | codex)" 2 ;;
 esac
 [[ -n "$MODEL" || "$TARGET" == "codex" ]] ||
-  die "--model is required for pi (e.g. google/gemini-4-carbon)" 2
+  die "--model is required for pi (e.g. google/gemini-3-flash-preview)" 2
 
 prompt=""
 if [[ "${1:-}" == "-" || $# -eq 0 ]]; then

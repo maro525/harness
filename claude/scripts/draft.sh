@@ -9,7 +9,7 @@
 # 手で書かせない（heredoc・モデル名・空出力の検査をここに閉じる）。
 #
 #   stdout : 下書きの本文（そのまま貼れる）
-#   stderr : ANSWER_FILE=<path> / 文面: pi/google/gemini-4-carbon
+#   stderr : ANSWER_FILE=<path> / 文面: pi/google/gemini-3-flash-preview
 #   exit   : 0 = 書けた / 1 = 失敗（空出力・quota・timeout）/ 2 = 使い方
 #
 # 失敗しても別のモデルへ落ちない（下書きを別モデルが書いたことを記録できなく

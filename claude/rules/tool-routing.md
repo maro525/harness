@@ -39,7 +39,7 @@
 | PM の manager を用意する（1 セッション 1 つ、名前と居場所は任せる） | `herdr-agent.sh manager` | `ensure manager-<repo>` を自分で組み立てる（同じリポジトリの別セッションと共有してしまう） |
 | 子に仕事を配る | `herdr-agent.sh ensure` ＋ `delegate` | `tmux` / `screen` / `nohup` / `claude --bg` |
 | 実作業の子を対象リポジトリで起こす | `herdr-agent.sh worker <name> --kind K --repo <repo>`（空いていれば checkout、作業中なら worktree） | `ensure --topology tab` を自分で選ぶ（2 体が同じ checkout を触る） |
-| 並列に回す | `orchestrate-parallel.sh`（worktree 分け） | ターミナルを手で並べる |
+| 並列に回す（manager のみ。PM は manager に `ask` する） | `orchestrate-parallel.sh`（worktree 分け） | ターミナルを手で並べる |
 | フェーズ実行 | `phase-run.sh`（tab を作らない設計） | 手で `claude -p` を並べる |
 
 理由: 名前・状態・報告（inbox）・後始末（`close` / `reap` / `herdr-cleanup.sh`）が **Herdr の記録に一本化**されているため。tmux 等で立てると記録が残らず、片付けの対象外になる。
@@ -63,7 +63,7 @@
 まず gemini に聞く（材料がまだ無くてもよい）:
 
 ```bash
-~/.claude/scripts/external-ask.sh --to pi -m google/gemini-4-carbon - <<'EOF'
+~/.claude/scripts/external-ask.sh --to pi -m google/gemini-3-flash-preview - <<'EOF'
 {リサーチ質問}
 EOF
 ```
@@ -75,7 +75,7 @@ EOF
 - 取った材料は、添えて gemini にもう一度聞いてよい（gemini は同期）
 - gemini 側は既定で**ツールを持たない**（`pi -p --no-session --no-tools`。呼び出し元の AGENTS.md / skills / MCP も読ませない。実測 232s → 66s）。不足の裏取りをさせたいときだけ `CONSULT_PI_TOOLS=1` を付ける
 - **gemini が 429 / 認証エラー / 無出力で落ちても、別のモデルに切り替えない。** 理由を書いて自分の知識で進む（`外部リサーチ不可: {理由}`）
-- 記録は `利用AI:` に使った方を書く（例: `利用AI: pi/google/gemini-4-carbon`。一次情報も取ったなら `+ claude/opus (firecrawl)`）
+- 記録は `利用AI:` に使った方を書く（例: `利用AI: pi/google/gemini-3-flash-preview`。一次情報も取ったなら `+ claude/opus (firecrawl)`）
 
 ### external-review（独立レビュー・設計相談）
 
@@ -221,7 +221,7 @@ firecrawl の無料枠は **15 req/min**。待たずに撃つと 429 で落ち�
 - kind は `pr` / `comment` / `commit` / `section` / `reply`。stdout が本文、stderr に `ANSWER_FILE=` と `文面: pi/<model>`
 - **作成・投稿は自分（メインセッション）が行う。** 下書きモデルには MCP もツールも渡さない（`draft.sh` が固定する）
 - 帰ってきた文面を**確かめてから**使う（事実・数値・固有名詞は自分で照合する）
-- 依頼したら記録に「文面: pi/google/gemini-4-carbon」を添える（`利用AI:` / `### RESULT` / PR 本文）
+- 依頼したら記録に「文面: pi/google/gemini-3-flash-preview」を添える（`利用AI:` / `### RESULT` / PR 本文）
 - **往復は 1〜4 分**（実測 66〜232 秒）。1 行の要約・ラベル・定型文は自分で書く（往復のほうが高い）
 - 失敗したら `draft.sh` は exit 1 で止まる。下書きフェーズを飛ばして自分で書く
 - 使わなかったときは理由を 1 行残す（例: 「件名だけなので自分で書いた」）

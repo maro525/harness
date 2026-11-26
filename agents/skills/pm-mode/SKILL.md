@@ -19,9 +19,13 @@ disable-model-invocation: true
 | manager に依頼文を渡す | リポジトリを編集する、テスト・ビルド、状態を変える `git` を回す |
 | manager の報告を読み、人に返す | 設計・原因・レビュー判定を自分で下す（manager の仕事） |
 | 人に返し、人の判断が要る点だけ聞く | 子の報告をそのまま人に貼る |
-| 節目で manager と子を片付ける | 自分が作っていない tab を閉じる |
+| Linear にコメントを書き、Slack に進捗・判断待ち・完了を書く | Linear の `status:` と description を書く（orchestrate の担当） |
+| 節目で manager と子を片付ける | `orchestrate-parallel.sh` を自分で回す（manager の道具） |
+|  | 自分が作っていない tab を閉じる |
 
 記録（TASK_FILE・PR / MR・Linear・inbox・`harness-status.py`）と、状態を変えないコマンド（`git log`、`git status`、`git diff --stat`、`git worktree list`、`gh pr view`、`gh pr checks`）を**読む**のは PM の仕事。差分の中身とソースコードは読まない（manager に渡す）。TASK_FILE は読むだけで、書くのは orchestrate（`## Meta` と `#### 追加依頼`）と各フェーズ（自分の節）。PM は節も `status:` も書かず、追加の依頼は manager 経由で orchestrate の子に渡す。
+
+**Linear と Slack への書き込みは PM の仕事。** コメントと Slack のメッセージは自分で書いてよい（進捗・判断待ち・完了）。Linear の `status:` と description だけは orchestrate が持つ — 実行中の状態遷移を PM が触ると二重管理になる。長い文章（PR / MR 本文、コメントで 3 行以上になるもの）は manager に下書きさせる。
 
 ## 最初のターン
 
@@ -40,6 +44,7 @@ disable-model-invocation: true
 | 現況・残骸 | `harness-status.py` / [herdr-cleanup](../herdr-cleanup/SKILL.md) | 読み取り専用 |
 
 - PM は `delegate` を使わない。protocol 節が manager のエージェント起動を禁じるため
+- PM は `orchestrate-parallel.sh` を回さない（manager の道具。スクリプトも `pm-*` の名前を検知して断る）。PM は `ask` で渡し、どう回すかは manager が決める
 - manager の子は manager に報告する。manager が `report <PM>` で PM に返す
 - セッションは Herdr の中でだけ立てる（`tmux` / `screen` / `nohup` / `claude --bg` を使わない）
 
@@ -98,7 +103,9 @@ manager に「子を閉じて終われ」と `ask` し、`herdr-agent.sh close <
 - リポジトリのソースと差分の中身を読む
 - テスト・ビルド・状態を変える `git` 操作を自分で回す
 - TASK_FILE に書く（読むだけ。`## Meta` は orchestrate、各節はフェーズが書く）
+- Linear の `status:` と description を書く（コメントは書いてよい）
 - `draft.sh` を直に呼ぶ
+- `orchestrate-parallel.sh` を自分で回す（manager の道具。`ask` で渡す）
 - manager を介さず `external-review` / `delegate` / `orchestrate` を直に使う
 - サブエージェントを立てる（他の AI に渡すのは Herdr 経由だけ）
 - manager の名前・居場所・worktree を自分で決める（`herdr-agent.sh manager` が決める）
