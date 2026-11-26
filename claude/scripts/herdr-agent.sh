@@ -843,6 +843,10 @@ cmd_manager() {
       [[ -n "$suffixed" ]] ||
         die "$canonical is taken and its fallback name would be over 32 chars — choose a shorter --label" 2
       name=$suffixed
+      # The fallback can land on the parent's own name (the hash makes it so).
+      # Same refusal as the canonical name, and the same exit code.
+      [[ "$name" != "$parent" ]] ||
+        die "a child manager cannot be named after its parent ($parent) — choose another --label for the part you are splitting off" 2
       manager_live "$name" &&
         die "$canonical and $name are both taken — choose another --label" 1
     fi
