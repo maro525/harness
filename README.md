@@ -105,7 +105,7 @@ PM (pm-<repo>[-<suffix>]) ──ask──▶ manager (manager-<repo>[-<suffix>]�
    └── report / inbox ◀─────┴──delegate──▶ worker (child-a、対象リポジトリかその worktree)
 ```
 
-- PM は manager を `herdr-agent.sh manager` で 1 つだけ起こす（stdout が名前、stderr の `PM=` が自分の名前。`--kind claude -- --permission-mode auto --model opus`）。**manager は常に `~/src` で動き、worktree を持たない**（リポジトリをまたいで指示する役なので）。同じリポジトリの別セッションが先に manager を持っていれば、同じ `~/src` に `manager-<repo>-<suffix>` が立つ。質問も依頼も `ask` で渡す。`delegate` は使わない（protocol 節が manager のエージェント起動を禁じる）
+- PM は manager を `herdr-agent.sh manager` で 1 つだけ起こす（stdout が名前、stderr の `PM=` が自分の名前。`--kind claude -- --permission-mode auto --model opus`）。**manager は常に `~/src` で動き、worktree を持たない**（リポジトリをまたいで指示する役なので）。名前は `manager-<label>` で、label は既定で呼び出し元のリポジトリ名（主題が違うときは `--label <repo>`。同じ label の別セッションが先に居れば、同じ `~/src` に `manager-<label>-<suffix>` が立つ）。質問も依頼も `ask` で渡す。`delegate` は使わない（protocol 節が manager のエージェント起動を禁じる）
 - manager はコードを読んで答え、実装・テスト・長い調査は `delegate` で worker に渡す。worker は対象リポジトリの中で動かす（`herdr-agent.sh worker` が、その checkout で作業中の子がいれば worktree に自分で入る）。worker の報告は manager の inbox に届き、manager がまとめて `report <PM>` で PM に返す
 - 手順は `agents/skills/pm-mode/SKILL.md` と `agents/skills/manager/SKILL.md`（どちらも `~/.agents/skills/` に配布）。Claude 用の入口は `claude/skills/manager/SKILL.md`
 - `delegate` / `report` / `inbox` の実体は `~/.claude/scripts/herdr-agent.sh`。inbox は `~/.cache/harness/inbox/<boss>/`、通知は `herdr agent prompt` の 1 行

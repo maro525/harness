@@ -20,8 +20,8 @@
 #   herdr-agent.sh reap   [--kind KIND]                   close every recorded session
 #   herdr-agent.sh list
 #
-# Manager placement (no name to choose, one per caller session):
-#   herdr-agent.sh manager [--plan|--explain] [--root DIR] [-- ARGS...]
+# Manager placement (the label, not the full name; one per caller session):
+#   herdr-agent.sh manager [--label NAME] [--plan|--explain] [--root DIR] [-- ARGS...]
 #                                                       start or reuse this session's
 #                                                       manager at the source root
 #                                                       (~/src) and print its name
@@ -83,6 +83,11 @@
 #                     ANCESTORS=) and create nothing — paste it when no manager starts
 #   --root DIR        manager: where it runs (default: $HARNESS_MANAGER_ROOT or ~/src).
 #                     A manager steers repositories, so it sits at their parent
+#   --label NAME      manager: what the name is about (default: the caller's
+#                     repository, else the root's own name). The manager becomes
+#                     manager-NAME whatever directory the caller sits in, so a
+#                     subject with no checkout here stays nameable. Keep it within
+#                     19 chars: a second session appends -<suffix> to that name
 #   --from CHILD      report: who is reporting (default: this pane's agent name / pane id)
 #   --kind K          report: report (default) | question
 #   --no-watch        delegate: do not start the watcher
@@ -147,6 +152,7 @@ NO_WAIT=0
 PRESET=""
 WATCH_TIMEOUT=${HERDR_WATCH_TIMEOUT:-2h}
 SESSION_KEY=""
+MANAGER_LABEL=""
 PLAN=0
 EXPLAIN=0
 MANAGER_ROOT=${HARNESS_MANAGER_ROOT:-$HOME/src}
@@ -170,6 +176,7 @@ while [[ $# -gt 0 ]]; do
     --watch-timeout) WATCH_TIMEOUT=$2; shift 2 ;;
     --session) SESSION_KEY=$2; shift 2 ;;
     --root) MANAGER_ROOT=$2; shift 2 ;;
+    --label) MANAGER_LABEL=$2; shift 2 ;;
     --plan) PLAN=1; shift ;;
     --explain) EXPLAIN=1; shift ;;
     --) shift; NATIVE_ARGS=("$@"); break ;;
@@ -531,6 +538,11 @@ cmd_ensure() {
 #   2. the name is free                    -> manager-<repo>, at the root
 #   3. another live session holds the name  -> manager-<repo>-<suffix>, same root
 #
+# <repo> is the caller's checkout, or --label when the caller knows the subject
+# better than the directory does (a repository that is not checked out here, or
+# one chat that spans several). The label changes the name and nothing else: the
+# root, the topology and the session rules above stay as they are.
+#
 # The work itself happens in the repository: see `worker` below.
 #
 # A session is the caller's Herdr pane ($HERDR_PANE_ID) when it has one, else the
@@ -648,7 +660,7 @@ manager_log() {
 cmd_manager() {
   [[ -n "$KIND" ]] || KIND=claude
   [[ -z "$NAME" ]] ||
-    die "manager takes no name — it decides one from the caller's session (docs/naming.md)" 2
+    die "manager takes no name — pass --label <name> to choose what it is about, and it decides the rest (docs/naming.md)" 2
   local dir root main short canonical suffix name key f rec_session source
 
   key=${SESSION_KEY:-${HARNESS_SESSION_KEY:-}}
@@ -693,24 +705,33 @@ cmd_manager() {
   [[ -d "$MANAGER_ROOT" ]] ||
     die "manager root not found: $MANAGER_ROOT (set HARNESS_MANAGER_ROOT)" 1
 
-  # The name says which repository this session is about (readable in the
-  # sidebar). The caller usually sits in that repo; from the root itself the
-  # label is the root's own name.
+  # The name says what this session is about (readable in the sidebar). The
+  # caller usually sits in that repo; from the root itself the label is the
+  # root's own name. --label wins over both: a PM sometimes knows the subject
+  # better than its own checkout does (work it cannot see from here, a subject
+  # whose repository is not checked out, one chat spanning several repos).
   local label_root label
-  label_root=$(checkout_root "$dir") || true
-  label=""
-  if [[ -n "$label_root" ]]; then
-    label_root=$(main_checkout "$label_root")
-    [[ -n "$label_root" ]] || label_root=$dir
-    label=$(basename "$label_root")
+  label=$MANAGER_LABEL
+  if [[ -n "$label" ]]; then
+    # Taken as given: no truncation, so the caller gets the name it asked for
+    # and check_name refuses one that cannot fit instead of shortening it.
+    short=$(short_name "$label" 32)
+    [[ -n "$short" ]] || die "empty --label: name what this manager is about (docs/naming.md)" 2
+  else
+    label_root=$(checkout_root "$dir") || true
+    if [[ -n "$label_root" ]]; then
+      label_root=$(main_checkout "$label_root")
+      [[ -n "$label_root" ]] || label_root=$dir
+      label=$(basename "$label_root")
+    fi
+    [[ -n "$label" ]] || label=$(basename "$MANAGER_ROOT")
+    short=$(short_name "$label" 19)
+    [[ -n "$short" ]] || short=manager
   fi
-  [[ -n "$label" ]] || label=$(basename "$MANAGER_ROOT")
-  short=$(short_name "$label" 19)
-  [[ -n "$short" ]] || short=manager
   canonical="manager-$short"
   check_name "$canonical"
 
-  # 1. this session already holds a manager of this repository: keep it, even
+  # 1. this session already holds a manager with this name: keep it, even
   #    when it lives on a worktree (REPO= then differs from the checkout).
   #    A record from before sessions were written down has no session: the first
   #    caller adopts it, so existing managers are neither abandoned nor shared.

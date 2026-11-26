@@ -7,12 +7,13 @@
 #   2. 常に ~/src（$HARNESS_MANAGER_ROOT）で起動し、worktree を作らない
 #   3. 名前が埋まっていれば suffix 付き。場所は同じ root
 #   4. 同じセッションは同じ manager を再利用する
-#   5. root 以外（リポジトリ直下）に居る古い記録は引き継がない
+#   5. --label で名前の対象を選べる（リポジトリの外からでも効く。切り詰めはしない）
+#   6. root 以外（リポジトリ直下）に居る古い記録は引き継がない
 #
 # worker の規則:
-#   6. そのリポジトリで作業中の worker がいなければ checkout の tab
-#   7. working / blocked の worker がいれば worktree（feature/<name>）
-#   8. idle / done の tab と manager は数えない
+#   7. そのリポジトリで作業中の worker がいなければ checkout の tab
+#   8. working / blocked の worker がいれば worktree（feature/<name>）
+#   9. idle / done の tab と manager は数えない
 #
 # Usage: tests/herdr-agent-placement.sh   Exit: 0 = all pass
 
@@ -162,7 +163,28 @@ out=$(cd "$REPO" && run HERDR_PANE_ID=w1:p2 -- manager)
 expect "second session reuses its own" 'STATE=reused' "$out"
 grep -q 'worktree create' "$FAKE/log" && { echo "FAIL a manager created a worktree"; fails=$((fails + 1)); } || echo "ok   still no worktree"
 
-# 6. root の外（リポジトリ直下）に居る古い記録は引き継がない
+# 6. --label: リポジトリと関係なく名前を決める
+out=$(cd "$REPO" && run HERDR_PANE_ID=w1:p4 -- manager --plan --label nanco-ads)
+expect "an explicit label names the manager" 'PLAN name=manager-nanco-ads topology=tab' "$out"
+expect "the label does not move the manager out of the root" "repo=$HARNESS_MANAGER_ROOT" "$out"
+out=$(cd "$TMP" && run HERDR_PANE_ID=w1:p4 -- manager --plan --label Nanco_Hp)
+expect "a label is normalized like a repository name" 'PLAN name=manager-nanco-hp' "$out"
+out=$(cd "$TMP" && run HERDR_PANE_ID=w1:p4 -- manager --label nanco-ads)
+expect "the label works outside a repository" 'MANAGER=manager-nanco-ads' "$out"
+expect "the PM mirrors the label" 'PM=pm-nanco-ads' "$out"
+expect "the labelled manager is at the root" "REPO=$HARNESS_MANAGER_ROOT" "$out"
+out=$(cd "$TMP" && run HERDR_PANE_ID=w1:p4 -- manager --label nanco-ads)
+expect "the labelled manager is reused" 'STATE=reused' "$out"
+out=$(cd "$TMP" && run HERDR_PANE_ID=w1:p5 -- manager --plan --label nanco-ads)
+expect "a taken label still gets a suffix" 'PLAN name=manager-nanco-ads-[0-9a-f]{4}' "$out"
+out=$(cd "$TMP" && run HERDR_PANE_ID=w1:p6 -- manager --plan --label aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa); code=$?
+((code == 2)) && echo "ok   an over-long label exits 2" || { echo "FAIL exit $code"; fails=$((fails + 1)); }
+expect "an over-long label is refused, not shortened" "invalid name 'manager-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'" "$out"
+out=$(cd "$TMP" && run HERDR_PANE_ID=w1:p7 -- manager nanco-ads --plan); code=$?
+((code == 2)) && echo "ok   a positional name exits 2" || { echo "FAIL exit $code"; fails=$((fails + 1)); }
+expect "the positional-name hint points at --label" 'pass --label' "$out"
+
+# 7. root の外（リポジトリ直下）に居る古い記録は引き継がない
 mkdir -p "$XDG_CACHE_HOME/harness/herdr-agents"
 old="$XDG_CACHE_HOME/harness/herdr-agents/manager-repo-b.json"
 printf '{"agent":"manager-repo-b","pane":"w9:p9","tab":"t9","kind":"claude","topology":"tab","repo":"%s"}\n' \
@@ -175,11 +197,11 @@ expect "an old checkout manager is not adopted" 'STATE=started' "$out"
 expect "the new one is at the root" "REPO=$HARNESS_MANAGER_ROOT" "$out"
 expect "the new one has a suffix" 'MANAGER=manager-repo-b-[0-9a-f]{4}' "$out"
 
-# 7. worker: 空いている checkout は tab
+# 8. worker: 空いている checkout は tab
 out=$(cd "$REPO" && run HERDR_PANE_ID=w1:p1 -- worker child-a --kind claude --plan)
 expect "worker takes the free checkout" "PLAN name=child-a topology=tab repo=$REPO" "$out"
 
-# 8. working の worker が居れば worktree（branch は feature/<name>）
+# 9. working の worker が居れば worktree（branch は feature/<name>）
 echo working > "$FAKE/agents/child-busy"
 printf '{"agent":"child-busy","pane":"w1:p9","tab":"t9","kind":"claude","topology":"tab","repo":"%s"}\n' \
   "$REPO" > "$XDG_CACHE_HOME/harness/herdr-agents/child-busy.json"
@@ -193,7 +215,7 @@ expect "worker reports the worktree" 'TOPOLOGY=worktree' "$out"
 grep -Eq -- 'worktree create .*--branch feature/child-b' "$FAKE/log" && echo "ok   worktree created for the worker" ||
   { echo "FAIL no worktree for the worker"; fails=$((fails + 1)); }
 
-# 9. idle / done の tab と manager は数えない
+# 10. idle / done の tab と manager は数えない
 echo done > "$FAKE/agents/child-busy"
 out=$(cd "$REPO" && run HERDR_PANE_ID=w1:p1 -- worker child-c --kind claude --plan)
 expect "a done worker does not block the checkout" "PLAN name=child-c topology=tab repo=$REPO" "$out"
@@ -201,17 +223,17 @@ echo working > "$FAKE/agents/manager-repo-a"
 out=$(cd "$REPO" && run HERDR_PANE_ID=w1:p1 -- worker child-d --kind claude --plan)
 expect "a working manager does not block the checkout" "PLAN name=child-d topology=tab repo=$REPO" "$out"
 
-# 10. リポジトリの外では worker を作らない
+# 11. リポジトリの外では worker を作らない
 out=$(cd "$TMP" && run HERDR_PANE_ID=w1:p1 -- worker child-e --kind claude --plan); code=$?
 ((code == 2)) && echo "ok   worker outside a repo exits 2" || { echo "FAIL exit $code"; fails=$((fails + 1)); }
 expect "worker says why" 'not a git checkout' "$out"
 
-# 11. 記録: manager は root、worker はリポジトリ
+# 12. 記録: manager は root、worker はリポジトリ
 state="$XDG_CACHE_HOME/harness/herdr-agents/manager-repo-a.json"
 expect "manager session recorded" '"session": "pane:w1:p1"' "$(cat "$state")"
 expect "manager repo is the root" "\"repo\": \"$HARNESS_MANAGER_ROOT\"" "$(cat "$state")"
 
-# 12. 試行のログ（起動しなかった理由も残る）
+# 13. 試行のログ（起動しなかった理由も残る）
 log="$XDG_CACHE_HOME/harness/manager.log"
 expect "log: the failure is recorded" 'no-session' "$(cat "$log")"
 expect "log: a started manager is recorded" 'started.*manager-repo-a$' "$(cat "$log")"
