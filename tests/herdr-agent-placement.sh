@@ -120,6 +120,17 @@ expect() { # name pattern text
   fi
 }
 
+expect_not() { # name pattern text
+  local name=$1 pattern=$2 text=$3
+  if grep -Eq -- "$pattern" <<<"$text"; then
+    echo "FAIL $name (found /$pattern/)"
+    sed 's/^/     | /' <<<"$text"
+    fails=$((fails + 1))
+  else
+    echo "ok   $name"
+  fi
+}
+
 # 1. 識別子が無い: 何も作らず exit 2
 out=$(run HARNESS_SESSION_PROC=0 -- manager --plan); code=$?
 ((code == 2)) && echo "ok   manager exits 2 without a session" || { echo "FAIL exit $code"; fails=$((fails + 1)); }
@@ -238,6 +249,97 @@ log="$XDG_CACHE_HOME/harness/manager.log"
 expect "log: the failure is recorded" 'no-session' "$(cat "$log")"
 expect "log: a started manager is recorded" 'started.*manager-repo-a$' "$(cat "$log")"
 expect "log: reuse is recorded" 'reused' "$(cat "$log")"
+
+# 14. 子 manager: --parent で親を指定し、ラベルが名前になる（場所は同じ root）
+out=$(cd "$REPO" && run HERDR_PANE_ID=w1:p1 -- manager --plan --parent manager-repo-a --label api)
+expect "a child manager is planned under its parent" \
+  "PLAN name=manager-api topology=tab .*parent=manager-repo-a depth=1" "$out"
+out=$(cd "$REPO" && run HERDR_PANE_ID=w1:p1 -- manager --parent manager-repo-a --label api)
+expect "the child manager starts" 'MANAGER=manager-api' "$out"
+expect "the child names its parent" 'PARENT=manager-repo-a' "$out"
+expect "the child is level 1" 'DEPTH=1' "$out"
+expect "the child is at the root too" "REPO=$HARNESS_MANAGER_ROOT" "$out"
+expect_not "a child has no PM of its own" '^PM=' "$out"
+state="$XDG_CACHE_HOME/harness/herdr-agents/manager-api.json"
+expect "the child records its parent" '"parent": "manager-repo-a"' "$(cat "$state")"
+expect "the child records its boss" '"boss": "manager-repo-a"' "$(cat "$state")"
+expect "the child records its depth" '"depth": "1"' "$(cat "$state")"
+
+# 15. 1 体の manager は複数の子 manager を持てる
+out=$(cd "$REPO" && run HERDR_PANE_ID=w1:p1 -- manager --parent manager-repo-a --label web)
+expect "a manager holds several children" 'MANAGER=manager-web' "$out"
+expect "the second child is level 1 as well" 'DEPTH=1' "$out"
+expect "the second child names the same parent" 'PARENT=manager-repo-a' "$out"
+
+# 16. 同じ (親, ラベル) は同じ子（聞き直しても増えない）
+tabs=$(grep -c 'tab create' "$FAKE/log")
+out=$(cd "$REPO" && run HERDR_PANE_ID=w1:p1 -- manager --parent manager-repo-a --label api)
+expect "the same parent and label is the same child" 'STATE=reused' "$out"
+(( $(grep -c 'tab create' "$FAKE/log") == tabs )) && echo "ok   no extra tab for the known child" ||
+  { echo "FAIL another tab for a known child"; fails=$((fails + 1)); }
+
+# 16b. 別のラベルの子を名前の形で取り違えない（billing-2026 と billing）
+out=$(cd "$REPO" && run HERDR_PANE_ID=w1:p1 -- manager --parent manager-repo-a --label billing-2026)
+expect "a longer label starts its own child" 'MANAGER=manager-billing-2026' "$out"
+out=$(cd "$REPO" && run HERDR_PANE_ID=w1:p1 -- manager --parent manager-repo-a --label billing)
+expect "a label that is another's prefix is its own child" 'MANAGER=manager-billing' "$out"
+expect "the prefix label is started fresh" 'STATE=started' "$out"
+
+# 17. 子 manager の下にさらに子（既定 3 段まで）
+out=$(cd "$REPO" && run HERDR_PANE_ID=w1:p1 -- manager --parent manager-api --label ui)
+expect "a child manager can hold children" 'MANAGER=manager-ui' "$out"
+expect "the grandchild names its parent" 'PARENT=manager-api' "$out"
+expect "the grandchild is level 2" 'DEPTH=2' "$out"
+out=$(cd "$REPO" && run HERDR_PANE_ID=w1:p1 HARNESS_MANAGER_MAX_DEPTH=2 -- manager --parent manager-api --label deep); code=$?
+((code == 2)) && echo "ok   the depth limit exits 2" || { echo "FAIL exit $code"; fails=$((fails + 1)); }
+expect "the depth limit says why" 'depth limit' "$out"
+
+# 18. 子 manager には --label が要る（名前の元が無い）
+out=$(cd "$REPO" && run HERDR_PANE_ID=w1:p1 -- manager --parent manager-repo-a); code=$?
+((code == 2)) && echo "ok   a child without a label exits 2" || { echo "FAIL exit $code"; fails=$((fails + 1)); }
+expect "the child without a label is told what to add" 'needs --label' "$out"
+
+# 19. 親は manager だけ（PM が子 manager を直に作らない）
+out=$(cd "$TMP" && run HERDR_PANE_ID=w1:p4 -- manager --plan --parent pm-nanco-ads); code=$?
+((code == 2)) && echo "ok   a non-manager parent exits 2" || { echo "FAIL exit $code"; fails=$((fails + 1)); }
+expect "a non-manager parent is refused" 'must be a manager name' "$out"
+
+# 20. 同じラベルが他所で埋まっていれば、子には suffix が付く
+out=$(cd "$REPO" && run HERDR_PANE_ID=w1:p1 -- manager --plan --parent manager-repo-a --label nanco-ads)
+expect "a taken label suffixes the child" 'PLAN name=manager-nanco-ads-[0-9a-f]{4} .*parent=manager-repo-a depth=1' "$out"
+
+# 20b. top-level の suffix 経路でも子 manager は引き継がない
+clash="manager-clash-$(printf 'pane:w1:p1' | sha1sum | cut -c1-4)"
+echo idle > "$FAKE/agents/$clash"
+printf '{"agent":"%s","pane":"w1:p9","tab":"t9","kind":"claude","topology":"tab","repo":"%s","parent":"manager-repo-a","boss":"manager-repo-a","depth":"1","session":"pane:w1:p1"}\n' \
+  "$clash" "$HARNESS_MANAGER_ROOT" > "$XDG_CACHE_HOME/harness/herdr-agents/$clash.json"
+out=$(cd "$REPO" && run HERDR_PANE_ID=w1:p1 -- manager --label clash)
+expect "a top-level manager does not adopt a child" 'STATE=started' "$out"
+expect "the new top-level manager has no parent" '^PARENT=-$' "$out"
+
+# 21. manager 自身は --parent 無しで manager を起こさない（自分が返るのを防ぐ）
+out=$(cd "$REPO" && run HERDR_PANE_ID=w1:p1 HERDR_AGENT_NAME=manager-repo-a -- manager --plan); code=$?
+((code == 2)) && echo "ok   a manager cannot start a top-level manager" || { echo "FAIL exit $code"; fails=$((fails + 1)); }
+expect "the manager is told to pass --parent" 'pass --parent manager-repo-a --label' "$out"
+out=$(cd "$REPO" && run HERDR_PANE_ID=w1:p1 HERDR_AGENT_NAME=manager-repo-a -- manager --parent manager-repo-a --label self); code=$?
+((code == 2)) && echo "ok   a manager cannot be its own parent" || { echo "FAIL exit $code"; fails=$((fails + 1)); }
+expect "own-parent is refused" 'cannot be its own parent' "$out"
+
+# 22. delegate の protocol 節: 子 manager は子を持てる、worker は持てない
+printf 'child request\n' >"$TMP/req.md"
+out=$(cd "$REPO" && run HERDR_PANE_ID=w1:p1 -- delegate manager-api "$TMP/req.md" --boss manager-repo-a --no-watch)
+request=$(sed -n 's/^REQUEST=//p' <<<"$out")
+[[ -f "$request" ]] && echo "ok   delegate wrote the request" || { echo "FAIL no request file"; fails=$((fails + 1)); }
+expect "a child manager may start its own children" 'manager --parent manager-api --label' "$(cat "$request")"
+expect "a child manager is told to report once" 'report manager-repo-a' "$(cat "$request")"
+expect_not "the manager section expands its names" '[$]child|[$]boss|[$]self' "$(cat "$request")"
+expect_not "a child manager is not told to stop starting agents" '他のエージェントを起動しない' "$(cat "$request")"
+out=$(cd "$REPO" && run HERDR_PANE_ID=w1:p1 -- delegate manager-api "$TMP/req.md" --boss manager-web --no-watch); code=$?
+((code == 2)) && echo "ok   a child manager refuses another boss" || { echo "FAIL exit $code"; fails=$((fails + 1)); }
+expect "the child manager names its real boss" 'delegate with --boss manager-repo-a' "$out"
+out=$(cd "$REPO" && run HERDR_PANE_ID=w1:p1 -- delegate child-b "$TMP/req.md" --boss manager-repo-a --no-watch)
+request=$(sed -n 's/^REQUEST=//p' <<<"$out")
+expect "a worker keeps the no-agents rule" '他のエージェントを起動しない' "$(cat "$request")"
 
 echo ""
 if ((fails == 0)); then

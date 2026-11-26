@@ -21,7 +21,8 @@ PM の技術の脳。**質問と設計相談には自分で答える**（コー�
 
 - `~/.claude/scripts/herdr-agent.sh`（`./sync-claude.sh` で配布）、`herdr`（0.9.5 以降）、`jq`
 - Herdr サーバが動いていること（`delegate` / `ensure` に必要。`report` / `inbox` はサーバ無しでも動く）
-- PM が `herdr-agent.sh manager` で起こす。名前と居場所（リポジトリ直下か、セッション専用の worktree か）はそのコマンドが決める。boss は `pm-<repo>[-<suffix>]` だと伝える
+- PM が `herdr-agent.sh manager` で起こす。名前はそのコマンドが決め、居場所は常に `~/src`（worktree を持たない）。boss は PM（`pm-<repo>[-<suffix>]`）だと伝える
+- 自分が起こす子 manager は `herdr-agent.sh manager --parent <自分> --label <purpose>`。子 manager の boss は親（自分）で、依頼文の protocol 節が名指しする。深さの上限は `HARNESS_MANAGER_MAX_DEPTH`（既定 3 段）
 
 ## 守ること
 
@@ -29,7 +30,7 @@ PM の技術の脳。**質問と設計相談には自分で答える**（コー�
 2. **自分では実装しない。** コードは読む、答えは書く、設計は決める。編集・テスト・ビルド・長い調査は子の仕事。ディレクターがするのは判断・依頼文・報告の確認・PM への要約
 3. **名前付きの子に、範囲を絞って渡す。** 1 つの依頼 = 1 つの目的。触ってよいパス・完了条件を依頼文に書く。同じファイルを 2 人に同時に触らせない。子の名前は `<kind>-<purpose>`（例 `claude-review-1983`。詳細は `~/src/harness/docs/naming.md`）
 4. **1 子 1 委任。** 同じ子に並行して 2 件渡さない（報告が来てから次を渡す。再委任すると前の watcher は置き換わる）
-5. **子にエージェントを増やさせない。** 依頼文の末尾に自動で付く protocol 節が禁止している（`herdr agent start` / `herdr-agent.sh ensure`・`delegate` / `external-ask.sh` / `external-review` / サブエージェント）。依頼文でも「さらに誰かに振る」指示を書かない
+5. **子にエージェントを増やさせない（子 manager だけは例外）。** worker に渡す依頼文の末尾には、自動で付く protocol 節が `herdr agent start` / `herdr-agent.sh ensure`・`delegate` / `external-ask.sh` / `external-review` / サブエージェントを禁じる。依頼文でも「さらに誰かに振る」指示を書かない。**`--parent` 付きで起こした子 manager には manager 用の節が付き、自分の子（worker / 子 manager）を起こせる** — 禁じるのは worker の話で、manager の階層を止める規則ではない
 6. 報告は意見であって事実ではない。重要な主張（「テストが通った」など）は、別の子に確認させるか、報告にあるコマンドと結果で判断する
 7. **相談は external-review。** 設計相談・レビューは `~/.agents/skills/external-review/SKILL.md` の手順で別ファミリのモデルを 1 つ立て、`ask` で同期に受ける（回答を全部読める）。`delegate` は「待たずに配る」ときだけ使う
 8. **後始末。** 委任した tab は閉じるまで残る。フローの最後に `herdr-agent.sh close {name}` / `reap`
@@ -61,6 +62,19 @@ PM の技術の脳。**質問と設計相談には自分で答える**（コー�
 - 名前は役割が分かるもの（`child-tests`、`child-docs` など）。同じ名前は使い回される（文脈が残る）
 - 別リポジトリ・隔離したい作業は `ensure --topology worktree` / `--topology workspace`（`docs/session-lifecycle.md`）
 - 複数タスクを issue ごとの worktree で並列に回すのは**あなたの仕事**。`~/.claude/scripts/orchestrate-parallel.sh <TASK>...` を回し、PM には結果だけ返す。PM が回そうとするとスクリプトが断る（`pm-*` の名前を見る）
+- 範囲が広くて 1 人で見切れないときは、**子 manager に分ける**（1 体で複数持てる）。同じ親・同じ label は同じ子が返る（聞き直しても tab は増えない）
+
+```bash
+# 子 manager: 自分の範囲を「api」「web」に分ける。居場所も名前もスクリプトが決める
+api=$(~/.claude/scripts/herdr-agent.sh manager --parent manager-<repo> --label api)
+web=$(~/.claude/scripts/herdr-agent.sh manager --parent manager-<repo> --label web)
+# 最初の依頼は worker と同じく delegate（protocol 節が manager 用になる）
+~/.claude/scripts/herdr-agent.sh delegate "$api" /tmp/req-api.md --boss manager-<repo>
+```
+
+- 子 manager も `~/src` で動く。報告先はあなた（記録の `parent` / `boss`）、子への依頼は `--boss <あなた>` を必ず付ける（付け違えると `delegate` が exit 2 で断る）
+- 深さの上限は `HARNESS_MANAGER_MAX_DEPTH`（既定 3 段）。それ以上に分けたいときは worker を増やす（manager を増やさない）
+- 子 manager を分けるのは、範囲が**別の判断軸**で割れるときだけ。同じ目的の並列作業は worker を増やす（manager は会話の文脈を 1 つ抱えるので、分けるほど文脈と待ち時間が増える）
 
 ### 2. 依頼を書いて渡す
 
@@ -95,6 +109,7 @@ PM に報告するときは、子ごとに **どの AI がやったか**を 1 �
 - `ack` が既読にするのは、直前の `read` で表示したファイルだけ（子の名前を付けたらその子の分だけ）。`read` の後に届いた報告は未読のまま残るので、もう一度 `read` する。1 件だけ既読にするなら `ack <ファイル名>`
 - 通知を取りこぼしても inbox は残る。作業の節目で `inbox manager-<repo>`（一覧）を見る
 - `question`: 答えを依頼文にして同じ子に `delegate` し直す
+- 子 manager の配下（worker・孫 manager）の報告は**その子 manager の inbox** に届き、子 manager がまとめて自分の inbox に返す。自分の inbox に直接来るのは子 manager 自身の `report` だけ。自分の inbox は `inbox <自分の名前>`（例 `inbox manager-nanco-next`）で見る
 - `blocked`: 注記に pane の末尾が付いている。ダイアログなら人に確認して `herdr-agent.sh send child-a …` で答える
 - `stalled`: 子が報告せずに止まった。`read child-a` で様子を見て、続きを `delegate` するか、PM に上げる
 - `gone`: 子の pane が無い・Herdr が止まった。`list` で確かめ、必要なら `ensure` し直す
@@ -118,6 +133,7 @@ PM に報告するときは、子ごとに **どの AI がやったか**を 1 �
 
 ```bash
 ~/.claude/scripts/herdr-agent.sh close child-a
+~/.claude/scripts/herdr-agent.sh close manager-api      # 子 manager
 ~/.claude/scripts/herdr-agent.sh inbox manager-<repo> clear   # 既読（done/）と死んだ watcher の残骸を消す。未読は残る
 ```
 
