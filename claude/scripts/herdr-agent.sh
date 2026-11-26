@@ -743,17 +743,17 @@ cmd_manager() {
   # like any manager and reports to the manager that started it, which is recorded
   # here so `inbox`, the watcher and herdr-cleanup.sh need no new rules.
   #
-  # The caller's own name is only needed to catch two mistakes: a manager starting
-  # a top-level manager (it would get its own record back), and a manager naming
-  # itself as its parent (a cycle that reports to itself).
+  # A manager starts its children by naming itself as the parent (`--parent
+  # <itself>`), so that call is normal, not a cycle: the record of the caller is
+  # left alone and only the child gets `parent`. The caller's own name is needed
+  # only to catch a manager starting a top-level manager by mistake (it would get
+  # its own record back).
   self_name=$(pane_agent_name "${HERDR_PANE_ID:-}")
   [[ -n "$self_name" ]] || self_name=${HERDR_AGENT_NAME:-}
   if [[ -n "$parent" ]]; then
     check_name "$parent"
     [[ "$parent" == manager-* ]] ||
       die "--parent must be a manager name (got '$parent') — a manager starts child managers, PMs start managers" 2
-    [[ "$parent" != "$self_name" ]] ||
-      die "$self_name cannot be its own parent — pass the manager above you, and --label for the part you are splitting off" 2
     parent_file=$(state_file "$parent")
     [[ -f "$parent_file" ]] ||
       die "no manager named $parent is recorded — start it first (manager --label <name>)" 2
@@ -799,6 +799,10 @@ cmd_manager() {
   fi
   canonical="manager-$short"
   check_name "$canonical"
+  # A child is named after the part it owns, never after the manager that started
+  # it: manager-x must not hand off to another manager-x.
+  [[ -z "$parent" || "$canonical" != "$parent" ]] ||
+    die "a child manager cannot be named after its parent ($parent) — choose another --label for the part you are splitting off" 2
 
   # 0. a child manager: the same (parent, label) is the same child, so a manager
   #    may ask twice without piling up tabs, and two managers may own children of
