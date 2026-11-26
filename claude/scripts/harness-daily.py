@@ -9,9 +9,10 @@
   ~/.cache/harness/herdr-*/、locks     harness が残した記録（誰がいつ立てたか）
 
 出すもの:
-  ・セッション一覧（親 / 子）
+  ・セッション一覧（役割: PM / manager / orchestrator / worker / consult / 役割なし）
+  ・誰が誰を起こしたか（harness の記録から。PM が Cursor でも出る）
   ・失敗したコマンド
-  ・役割の逸脱（親が実行したが、本来は子に渡すべきもの）
+  ・役割の逸脱（PM / manager が実行したが、本来は worker に渡すべきもの）
   ・指示フローの効率（委譲比率、ensure/delegate/consult の回数、繰り返し）
   ・残骸（記録・worktree・ロック）
 
@@ -109,10 +110,10 @@ class Session:
         self.cwd = cwd or ''
         self.start = start
         self.cmds: list[dict] = []
-
-    @property
-    def child(self) -> bool:
-        return WORKTREE_MARK in self.cwd or is_linked_worktree(self.cwd)
+        # harness の記録から引いた名前と役割（名前が無ければコマンドから推定）
+        self.name = ''
+        self.role = ''
+        self.role_inferred = False
 
     @property
     def label(self) -> str:
@@ -388,6 +389,144 @@ def load_cursor(since: datetime, until: datetime) -> list[Session]:
     return out
 
 
+# ─── 役割（PM / manager / orchestrator / worker） ─────────────────────────────
+# 親子は cwd で決まる（worktree の中かどうか）。だが manager は checkout にも
+# worktree にも居るので、それでは「誰が何をしたか」にならない。harness の記録に
+# 残っている名前から役割を引き、名前が無いセッションだけコマンドで推定する。
+ROLE_PM = 'PM'
+ROLE_MANAGER = 'manager'
+ROLE_ORCH = 'orchestrator'
+ROLE_WORKER = 'worker'
+ROLE_CONSULT = 'consult'
+ROLE_NONE = '役割なし'
+ROLE_ORDER = (ROLE_PM, ROLE_MANAGER, ROLE_ORCH, ROLE_WORKER, ROLE_CONSULT, ROLE_NONE)
+# 自分で手を動かしてはいけない役割（逸脱を数える対象）
+COORD_ROLES = (ROLE_PM, ROLE_MANAGER, ROLE_ORCH)
+# 記録と cwd が一致するのは worktree のときだけ。checkout は一致しても別人のことがある。
+ASK_RX = re.compile(r'herdr-agent\.sh\s+(?:manager|ask|inbox)\b')
+DELEGATE_RX = re.compile(r'herdr-agent\.sh\s+(?:ensure|delegate)\b')
+ORCH_RX = re.compile(r'(orchestrate-parallel\.sh|phase-run\.sh)')
+
+
+def role_of_name(name: str) -> str:
+    if name.startswith('pm-'):
+        return ROLE_PM
+    if name.startswith('manager-'):
+        return ROLE_MANAGER
+    if name.startswith('orchestrate-') or '-orch-' in name:
+        return ROLE_ORCH
+    if name.startswith('consult'):
+        return ROLE_CONSULT
+    return ROLE_WORKER
+
+
+def role_from_commands(sess: Session) -> str:
+    """記録の無いセッション（Cursor の PM など）を、やったことから分類する。"""
+    body = '\n'.join(str(c['cmd']) for c in sess.cmds)
+    if ASK_RX.search(body):
+        return ROLE_PM
+    if DELEGATE_RX.search(body):
+        return ROLE_MANAGER
+    if ORCH_RX.search(body):
+        return ROLE_ORCH
+    return ROLE_NONE
+
+
+def harness_records() -> list[dict]:
+    """名前・cwd・作成時刻・種類（claude / pi / …）が残っている記録。
+
+    閉じたセッションの記録は消えるので、その日のものでも見えないことはある。
+    worktree のレジストリは checkout が消えるまで残る（cwd の一致で名前が決まる）。
+    """
+    out: list[dict] = []
+    state = HOME / '.cache/harness'
+    for d in ('herdr-agents', 'herdr-consult'):
+        for path in glob.glob(str(state / d / '*.json')):
+            try:
+                o = json.loads(Path(path).read_text(encoding='utf-8'))
+            except Exception:
+                continue
+            out.append(
+                {
+                    'name': str(o.get('agent') or Path(path).stem),
+                    'cwd': str(o.get('repo') or ''),
+                    'created': to_jst(o.get('created')),
+                    'kind': str(o.get('kind') or ''),
+                    'owner': str(o.get('owner') or ''),
+                    'boss': str(o.get('boss') or ''),
+                    'topology': str(o.get('topology') or ''),
+                    'src': 'record',
+                }
+            )
+    for path in glob.glob(str(state / 'herdr-worktrees' / '*.json')):
+        try:
+            o = json.loads(Path(path).read_text(encoding='utf-8'))
+        except Exception:
+            continue
+        if not o.get('agent'):
+            continue
+        out.append(
+            {
+                'name': str(o['agent']),
+                'cwd': str(o.get('path') or ''),
+                'created': to_jst(o.get('created')),
+                'kind': '',
+                'owner': str(o.get('owner') or ''),
+                'boss': '',
+                'topology': 'worktree',
+                'src': 'worktree',
+            }
+        )
+    return out
+
+
+def assign_roles(sessions: list[Session], records: list[dict]) -> None:
+    """worktree のパスが一致すれば、その checkout はそのセッションのものとして名前を引く。
+
+    checkout（リポジトリ直下）は名前で結ばない。同じリポジトリで PM と manager が
+    並行して動くので、cwd と時刻では取り違える（`docs/session-lifecycle.md`）。
+    そこは、何をしたかで役割を決める。"""
+    by_path: dict[str, list[dict]] = defaultdict(list)
+    for r in records:
+        if r['cwd']:
+            by_path[os.path.realpath(r['cwd'])].append(r)
+
+    for s in sessions:
+        path = os.path.realpath(s.cwd) if s.cwd else ''
+        if not path or not (WORKTREE_MARK in path or is_linked_worktree(path)):
+            continue
+        for r in by_path.get(path, []):
+            if r['kind'] and r['kind'] != s.source:
+                continue
+            s.name, s.role = r['name'], role_of_name(r['name'])
+            if r['kind']:
+                break
+
+    for s in sessions:
+        if not s.role:
+            s.role = role_from_commands(s)
+            s.role_inferred = True
+
+
+def print_chain(records: list[dict], since: datetime, until: datetime) -> None:
+    """その日に誰が誰を起こしたか。記録だけで組める（transcript が無い PM も出る）。"""
+    rows = [r for r in records if r['src'] == 'record' and r['created'] and since <= r['created'] <= until]
+    if not rows:
+        return
+    by_owner: dict[str, list[dict]] = defaultdict(list)
+    for r in rows:
+        by_owner[r['owner'] or '(記録なし)'].append(r)
+    print('\n■ 誰が起こしたか（harness の記録、その日ぶん）')
+    for owner in sorted(by_owner, key=lambda o: min(r['created'] for r in by_owner[o])):
+        print(f"  {owner.replace('agent:', '')}")
+        for r in sorted(by_owner[owner], key=lambda r: r['created']):
+            boss = f" boss={r['boss'].replace('agent:', '')}" if r['boss'] else ''
+            print(
+                f"    {r['created']:%H:%M}  {r['name']:<26} {role_of_name(r['name']):<13}"
+                f" {r['topology'] or '-':<9} {r['cwd'].replace(str(HOME), '~')}{boss}"
+            )
+
+
 # ─── 残骸 ────────────────────────────────────────────────────────────────────
 def unmanaged_worktrees() -> list[str]:
     """~/.herdr/worktrees の外に切られた linked worktree（herdr-cleanup が拾えない）。"""
@@ -425,7 +564,7 @@ def leftovers() -> dict:
 
 
 def herdr_children(since: datetime, until: datetime) -> list[str]:
-    """その日に herdr で立てた子・相談先（親が Cursor だとコマンドに残らないため）。"""
+    """その日に herdr で立てたセッション（PM が Cursor だとコマンドに残らないため）。"""
     out: list[str] = []
     state = HOME / '.cache/harness'
     for d in ('herdr-agents', 'herdr-consult'):
@@ -504,24 +643,33 @@ def main() -> int:
     if not sessions:
         print('\nその日のセッションは見つかりませんでした（--date を変えるか --repo を外す）。')
 
-    parents = [s for s in sessions if not s.child]
-    children = [s for s in sessions if s.child]
+    records = harness_records()
+    assign_roles(sessions, records)
+    by_role = {r: [s for s in sessions if s.role == r] for r in ROLE_ORDER}
+    coord = [s for s in sessions if s.role in COORD_ROLES]
+    workers = by_role[ROLE_WORKER]
     all_cmds = [c for s in sessions for c in s.cmds]
     failed = [c for c in all_cmds if c['failed']]
 
     def owner_label(s: Session) -> str:
-        return '親' if not s.child else '子'
+        return f"{s.role}{'?' if s.role_inferred else ''}"
 
-    print(f'\n■ セッション（{len(sessions)}） 親 {len(parents)} / 子 {len(children)}')
+    counts = ' / '.join(f'{r} {len(by_role[r])}' for r in ROLE_ORDER if by_role[r])
+    print(f'\n■ セッション（{len(sessions)}） {counts or "なし"}')
+    if any(s.role_inferred for s in sessions):
+        print('  ※ 役割の末尾の ? = harness の記録が無く、実行したコマンドから推定したセッション')
     shown = sessions if len(sessions) <= 30 else sessions[:30]
     for s in shown:
         fails = sum(1 for c in s.cmds if c['failed'])
+        name = f'{s.name} ' if s.name else ''
         print(
-            f"  {owner_label(s)}  {s.start:%m-%d %H:%M}  {s.source:<7}  {len(s.cmds):>4} cmds"
-            f"  fail {fails:<3} {s.short_cwd}"
+            f"  {owner_label(s):<13} {s.start:%m-%d %H:%M}  {s.source:<7}  {len(s.cmds):>4} cmds"
+            f"  fail {fails:<3} {name}{s.short_cwd}"
         )
     if len(sessions) > len(shown):
         print(f'  … ほか {len(sessions) - len(shown)} セッション（--repo で絞るか、下の集計を見る）')
+
+    print_chain(records, since, until)
 
     print(f'\n■ 失敗したコマンド（{len(failed)}）')
     owner_of = {id(c): s for s in sessions for c in s.cmds}
@@ -532,9 +680,9 @@ def main() -> int:
     if len(failed) > 30:
         print(f'  … ほか {len(failed) - 30} 件')
 
-    print('\n■ 役割の逸脱（親が自分でやった = 子に渡すべきもの）')
+    print('\n■ 役割の逸脱（PM / manager / orchestrator が自分でやった = worker に渡すべきもの）')
     violations = []
-    for s in parents:
+    for s in coord:
         for c in s.cmds:
             if c['cmd'].startswith('[編集]'):
                 path = c['cmd'][len('[編集] '):].strip()
@@ -552,26 +700,33 @@ def main() -> int:
     if not violations:
         print('  なし')
     else:
-        grouped: dict[tuple[str, str], Counter] = defaultdict(Counter)
+        grouped: dict[tuple[str, str, str], Counter] = defaultdict(Counter)
         first = {}
         for s, c, why in violations:
-            key = (s.source, s.short_cwd)
+            key = (owner_label(s), s.source, s.short_cwd)
             grouped[key][why] += 1
             if key not in first:
                 first[key] = c['ts']
         print(f'  {len(violations)} 件 / {len(grouped)} セッション')
-        for (source, cwd), kinds_by_why in sorted(grouped.items(), key=lambda kv: -sum(kv[1].values()))[:15]:
+        for (role, source, cwd), kinds_by_why in sorted(
+            grouped.items(), key=lambda kv: -sum(kv[1].values())
+        )[:15]:
             detail = ' / '.join(f'{w} {n}' for w, n in kinds_by_why.most_common())
-            print(f"  {first[(source, cwd)]:%H:%M}  {source:<7} {detail:<32} {cwd}")
+            print(f"  {first[(role, source, cwd)]:%H:%M}  {role:<13} {source:<7} {detail:<32} {cwd}")
 
     print('\n■ 指示フローの効率')
-    n_parent = sum(len(s.cmds) for s in parents)
-    n_child = sum(len(s.cmds) for s in children)
-    total = n_parent + n_child
-    ratio = (n_child / total * 100) if total else 0
-    print(f'  コマンド: 親 {n_parent} / 子 {n_child}（委譲比率 {ratio:.0f}%）')
+    per_role = {r: sum(len(s.cmds) for s in by_role[r]) for r in ROLE_ORDER}
+    total = sum(per_role.values())
+    own = per_role[ROLE_PM] + per_role[ROLE_NONE]
+    ratio = ((total - own) / total * 100) if total else 0
+    print(
+        '  コマンド: '
+        + ' / '.join(f'{r} {per_role[r]}' for r in ROLE_ORDER if per_role[r])
+        + f'（委譲比率 {ratio:.0f}%）'
+    )
+    print('  委譲比率 = PM と「役割なし」以外（manager / orchestrator / worker / consult）が実行した割合')
     kinds = Counter()
-    for s in parents:
+    for s in sessions:
         for c in s.cmds:
             for needle, name in DELEGATE_CMDS:
                 if needle in c['cmd']:
@@ -583,16 +738,16 @@ def main() -> int:
         print('  委譲の呼び出し: なし（自分で全部やっている可能性）')
     made = herdr_children(since, until)
     if made:
-        print(f'  herdr で立てた子: {len(made)} 本（' + ', '.join(made[:4]) + ('…' if len(made) > 4 else '') + '）')
-    elif not kinds and children:
-        print('  子は居るが delegate / phase の記録が無い（親が Cursor だとコマンドに残らない）')
+        print(f'  herdr で立てたセッション: {len(made)} 本（' + ', '.join(made[:4]) + ('…' if len(made) > 4 else '') + '）')
+    elif not kinds and workers:
+        print('  worker は居るが delegate / phase の記録が無い（PM が Cursor だとコマンドに残らない）')
     repeats = Counter(re.sub(r'\s+', ' ', c['cmd'])[:60] for c in all_cmds if not c['cmd'].startswith('['))
     hot = [(k, v) for k, v in repeats.most_common(5) if v >= 3]
     if hot:
         print('  繰り返し: ' + ', '.join(f'{k[:40]} ×{v}' for k, v in hot))
-    if children:
-        per = sorted(len(s.cmds) for s in children)
-        print(f'  子 1 セッションあたりのコマンド数: 中央 {per[len(per) // 2]} / 最大 {per[-1]}')
+    if workers:
+        per = sorted(len(s.cmds) for s in workers)
+        print(f'  worker 1 セッションあたりのコマンド数: 中央 {per[len(per) // 2]} / 最大 {per[-1]}')
 
     tstats = text_stats(sessions)
     drafts = draft_files(since, until)
