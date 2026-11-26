@@ -32,7 +32,7 @@ harness が起動したセッションは `~/.cache/harness/` に記録を残す
 
 | 区分 | 記録の場所 | 「片付ける」の意味 |
 |---|---|---|
-| `consult` | `~/.cache/harness/herdr-consult/*.json` | agent がもう居ない／idle な相談セッションの tab を閉じて記録を消す |
+| `consult` | `~/.cache/harness/herdr-consult/*.json` | 旧 consult.sh の記録。もう作られないが、残っていれば agent の居ない／idle な tab を閉じて記録を消す |
 | `agents` | `~/.cache/harness/herdr-agents/*.json` | 同上（`herdr-agent.sh close` 経由なので worktree も片付く） |
 | `locks` | `~/.local/share/harness/locks/*.lock` | TTL を過ぎた実行ロックを解放する |
 | `inbox` | `~/.cache/harness/inbox/<boss>/` | **何もしない（表示だけ）**。未読の報告と件数、`.watch/` のロック・`.since`・ログを並べる。片付けは `herdr-agent.sh inbox <boss> read` → `ack` → `clear` |
@@ -45,8 +45,8 @@ harness が起動したセッションは `~/.cache/harness/` に記録を残す
 ~/.claude/scripts/herdr-cleanup.sh --apply          # 一覧＋確認（TTY が無ければ何もせず停止）
 ~/.claude/scripts/herdr-cleanup.sh --apply --yes    # 了承後の実行
 ~/.claude/scripts/herdr-cleanup.sh --apply --yes --include-live
-~/.claude/scripts/herdr-cleanup.sh --only consult --only locks
-~/.claude/scripts/herdr-cleanup.sh --name consult-review --apply --yes
+~/.claude/scripts/herdr-cleanup.sh --only agents --only locks
+~/.claude/scripts/herdr-cleanup.sh --name codex-review-1983 --apply --yes
 ```
 
 - 先頭の `Scope:` 行に、解決した安定名（`agent:<name>` / `pane:<id>`）・pane id・inbox を見る boss が出る
@@ -87,5 +87,5 @@ harness が起動したセッションは `~/.cache/harness/` に記録を残す
 
 ## 終わったあと
 
-- まだ残っているものは `--status`（consult）/ `herdr-agent.sh list` で確認できる
-- タスク単位で閉じたいだけなら、このスキルではなく `claude-consult.sh --close` / `herdr-agent.sh close NAME`
+- まだ残っているものは `--status` / `herdr-agent.sh list` で確認できる
+- タスク単位で閉じたいだけなら、このスキルではなく `herdr-agent.sh close NAME`

@@ -53,7 +53,7 @@ $ARGUMENTS: "{task description} [--tier=S|M|L] [--task-file={TASK_FILE}] [--line
 - runner は自分の CLI 名（Cursor なら `--runner=cursor`）。ロックと `## Meta` の `runner:` に入る
 - **同じ issue を並列で回さない**（実行ロックが止める）。別 issue なら並列可
 - 報告は日本語。Linear を触ったか（投稿 / ステータス / description）を最後に 1 行で添える
-- 途中で相談が必要になったら `claude-consult.sh --text "..."`（前の回答を引き継ぐときだけ `--append {answer.md}`）
+- 途中で相談が必要になったら `~/.agents/skills/external-review/SKILL.md` の手順で別ファミリのセッションを 1 つ立て、`ask` で聞く（前の回答を引き継ぐときは、その回答を依頼文の冒頭に貼る）
 
 ## 並列で回す（複数タスク）
 
@@ -355,7 +355,7 @@ git switch {base}
 
 報告の事実には `（実測）` / `（推定）` / `（推測）` を付ける（実測 = 実行・計測した値、推定 = 根拠のある計算、推測 = 根拠の無い見立て）。
 
-`利用AI:` の値は `~/.claude/scripts/task-file.sh ai show --task-file={TASK_FILE}` の 1 行を使う（`phase-run.sh` が成功のたびに `{TASK_FILE}.ai.log` に書く。stderr の `LABEL=` を拾い損ねてもここから取れる）。`consult.sh` を使ったら stderr の `AI_MODEL=`、herdr の子に移譲したら `delegate` の `MODEL=` を併記する（`tool-routing.md`「移譲したら「誰がやったか」を書く」）。取れないときは `（不明）` と書く。
+`利用AI:` の値は `~/.claude/scripts/task-file.sh ai show --task-file={TASK_FILE}` の 1 行を使う（`phase-run.sh` が成功のたびに `{TASK_FILE}.ai.log` に書く。stderr の `LABEL=` を拾い損ねてもここから取れる）。`external-ask.sh` を使ったら stderr の `AI_MODEL=`、herdr の子に移譲したら `delegate` の `MODEL=` を併記する（`tool-routing.md`「移譲したら「誰がやったか」を書く」）。取れないときは `（不明）` と書く。
 
 ```bash
 ~/.claude/scripts/task-file.sh ai show --task-file={TASK_FILE}

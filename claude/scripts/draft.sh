@@ -5,7 +5,7 @@
 #   （どのオプションも `--opt VALUE` と `--opt=VALUE` の両方を受ける）
 #   cat notes.md | draft.sh --kind=commit
 #
-# 目的: `consult.sh --to pi -m google/gemini-4-carbon - <<'EOF' ... EOF` を毎回
+# 目的: `external-ask.sh --to pi -m google/gemini-3-flash-preview - <<'EOF' ... EOF` を毎回
 # 手で書かせない（heredoc・モデル名・空出力の検査をここに閉じる）。
 #
 #   stdout : 下書きの本文（そのまま貼れる）
@@ -18,8 +18,8 @@
 set -uo pipefail
 
 PROG=$(basename "$0")
-CONSULT="${CONSULT_SH:-$HOME/.claude/scripts/consult.sh}"
-MODEL_DEFAULT="google/gemini-4-carbon"
+CONSULT="${EXTERNAL_ASK:-$HOME/.claude/scripts/external-ask.sh}"
+MODEL_DEFAULT="google/gemini-3-flash-preview"
 
 die() {
   echo "$PROG: $*" >&2
@@ -33,7 +33,7 @@ usage: draft.sh --kind KIND [--material FILE] [--out FILE] [--model MODEL]
   --kind KIND      pr | comment | commit | section | reply（必須）
   --material FILE  材料。省略すると標準入力から読む（空なら exit 2）
   --out FILE       下書きの置き場所（既定: $TMPDIR/draft-KIND-<日時>.md）
-  --model MODEL    既定 google/gemini-4-carbon
+  --model MODEL    既定 google/gemini-3-flash-preview
 
   どのオプションも `--opt VALUE` と `--opt=VALUE` の両方を受ける。
 
@@ -64,7 +64,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ -n "$kind" ]] || die "--kind is required（pr|comment|commit|section|reply）"
-[[ -x "$CONSULT" ]] || die "consult.sh not found: $CONSULT"
+[[ -x "$CONSULT" ]] || die "external-ask.sh not found: $CONSULT"
 command -v pi >/dev/null 2>&1 || die "pi is not installed（gemini は pi 経由で走る）"
 
 case "$kind" in
@@ -117,7 +117,7 @@ fi
 [[ -n "$out" ]] || out="${TMPDIR:-/tmp}/draft-${kind}-$(date +%Y%m%d-%H%M%S).md"
 mkdir -p "$(dirname "$out")" 2>/dev/null
 
-err="$tmpdir/consult.err"
+err="$tmpdir/external-ask.err"
 if ! "$CONSULT" --to pi -m "$model" - < "$tmpdir/prompt.md" > "$out" 2> "$err"; then
   echo "$PROG: gemini が書けなかった（下書きは作っていない）。材料かネットワークを確かめる" >&2
   sed 's/^/  /' "$err" >&2

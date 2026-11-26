@@ -26,7 +26,7 @@ PASS を出すには、実装者と別モデルの独立レビューが取れて
 
 - 実装者の `利用AI:` が無い → BLOCKED（PASS にしない）
 - 実装者の `利用AI:` に `/` が無い（モデル部分が無い）→ BLOCKED
-- OpenCode Reviewer（`consult.sh --role review`）が動いた → `REVIEWER: {AI_MODEL}`、`INDEPENDENT: yes`（実装者と別ファミリ）
+- external-review（`~/.agents/skills/external-review/SKILL.md`）で別ファミリのモデルを 1 つ立てて動いた → `REVIEWER: {MODEL= の値}`、`INDEPENDENT: yes`（実装者と別ファミリ）
 - `{AI_MODEL}` が実装者と同じモデル名なら独立とみなさない（その場合は BLOCKED）
 - 動かなかった → 自分の `--label`（無ければ `claude/opus`）と実装者を比較。同じ → BLOCKED、違う → `REVIEWER: {自分の label}`、`INDEPENDENT: yes`
 - 実装者が `claude/best` のときは具体モデル名が無いので、ラベル比較で独立としない。OpenCode Reviewer があるときだけ `INDEPENDENT: yes`、無ければ BLOCKED
@@ -79,12 +79,15 @@ S は orchestrate から Skill（opus）で起動されるため、Claude レビ
 | Security | `$HOME/.claude/rules/security.md` のルールを変更コードに照合し、違反・懸念を severity 付きで列挙 |
 | Simplify | 変更ファイルを読み、過剰な複雑さ・重複・再利用できる既存コードの観点で指摘する（`/simplify` はコードを書き換えるので使わない） |
 
-### OpenCode Reviewer
+### external-review（別ファミリのレビュアー）
 
-変更内容が長いのでプロンプトはファイルに落として渡す。呼び出し形は `~/.claude/scripts/consult.sh --to claude --role review -`（実装者と別ファミリの CLI を 1 つ名指しする。連鎖は使わない）。呼び出し方と記録方法は `$HOME/.claude/rules/tool-routing.md` の「設計相談・セカンドオピニオン（consult.sh）」に従う。失敗したときだけこのレビュアーを飛ばし、結果に「セカンドオピニオン不可: {理由}」と書く（成功したら `AI_MODEL` を「利用AI」として残す）。
+変更内容が長いのでプロンプトはファイルに落として渡す。`~/.agents/skills/external-review/SKILL.md` の手順で、Herdr に**実装者と別ファミリのモデルを 1 つ**立てて `ask` で同期に受ける（連鎖は使わない）。記録は `$HOME/.claude/rules/tool-routing.md` の「external-review（独立レビュー）」に従う。失敗したときだけこのレビュアーを飛ばし、結果に「セカンドオピニオン不可: {理由}」と書く（成功したら `MODEL=` を「利用AI」として残す）。
 
 ```bash
-~/.claude/scripts/consult.sh --to claude --role review -
+~/.claude/scripts/herdr-agent.sh ensure codex-review-{LINEAR_ID 小文字} --kind codex \
+  --repo "$PWD" -- -s read-only -a never -m gpt-6-sol
+~/.claude/scripts/herdr-agent.sh ask codex-review-{LINEAR_ID 小文字} /tmp/review.md \
+  --answer-file /tmp/review.answer.md --timeout 20m
 ```
 
 プロンプトの中身:

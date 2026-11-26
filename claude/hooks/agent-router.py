@@ -444,8 +444,8 @@ def route_prompt(prompt: str) -> dict | None:
                 "hookEventName": "UserPromptSubmit",
                 "additionalContext": (
                     f"[Agent Routing] Detected '{trigger}' - consider "
-                    "`~/.claude/scripts/consult.sh --to codex -` for deep reasoning; "
-                    "run it directly with background Bash (no subagent)."
+                    "`external-review` (a Herdr session on another family) for deep "
+                    "reasoning; run it directly with background Bash (no subagent)."
                 ),
             }
         }
@@ -457,7 +457,7 @@ def route_prompt(prompt: str) -> dict | None:
                     f"[Agent Routing] Detected '{trigger}' - run external "
                     "research directly in the main session (no subagents): ask "
                     "gemini first with "
-                    "`~/.claude/scripts/consult.sh --to pi -m google/gemini-4-carbon -` "
+                    "`~/.claude/scripts/external-ask.sh --to pi -m google/gemini-3-flash-preview -` "
                     "for implementation know-how, and pull sourced facts with the "
                     "firecrawl MCP (firecrawl_search / firecrawl_scrape) only when "
                     "the question needs internet information. "

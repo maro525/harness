@@ -15,9 +15,8 @@ harness/
 │   ├── skills/manager/   # manager（PM の技術の脳）の Claude 用入口。手順の正本は agents/skills/manager（下記「PM・manager・worker の 3 層」）
 │   └── scripts/
 │       ├── linear-ask.sh   # OpenCode 版 orchestrate の質問の中継用（Linear API キーが要る）
-│       ├── consult.sh      # 相談の実装（--to claude|codex）。下の 2 本は薄いラッパー
-│       ├── claude-consult.sh  # 別の Claude セッションに相談 / レビュー / 実装を投げる（Cursor / pi / Cline 用。agents/skills/claude-consult が呼ぶ。Herdr 内では常駐 pane のセッションに送る）
-│       ├── codex-consult.sh   # 同じことを Codex セッションで（agents/skills/codex-consult。codex は read-only なのでマーカーで回答）
+│       ├── external-ask.sh  # 別のモデルに 1 回だけ聞く（pi / codex、セッションを作らない）。調べものと下書き
+│       ├── draft.sh        # 対外文書の下書きを gemini に 1 回だけ投げる（external-ask.sh のラッパー）
 │       ├── orchestrate-parallel.sh  # 複数タスクを worktree 分けで並列に orchestrate（1 タスク 1 ラン）
 │       ├── herdr-cleanup.sh   # 記録済みセッション・期限切れロックを突き合わせて整理し、未読 inbox も表示（既定はレポートのみ）
 │       ├── harness-daily.py   # その日のセッション・コマンド・失敗・役割逸脱・残骸を突き合わせて出す
@@ -36,7 +35,7 @@ harness/
 │   └── agents/
 ├── agents/                  # Claude 以外の CLI (pi / cline / opencode / codex) 向け Agent Skills (~/.agents/skills)
 │   ├── README.md            # 外部 CLI のフェーズ実行（orchestrate STEP 3P が直接読む）
-│   └── skills/              # 4 フェーズ + orchestrate + consult / manager / PM / 運用系（一覧の正本は sync-agents.sh の AGENT_SKILLS）
+│   └── skills/              # 4 フェーズ + orchestrate + external-review / manager / PM / 運用系（一覧の正本は sync-agents.sh の AGENT_SKILLS）
 ├── pi/                      # pi 専用 (~/.pi/agent)
 │   ├── README.md            # 配布と前提（permissions の許可リスト）
 │   └── prompts/
@@ -63,7 +62,7 @@ dotfiles と同じく HOME ⇄ リポジトリの双方向同期（対話モー�
 ```bash
 ./sync-claude.sh      # ~/.claude の harness ファイルだけ（commands / rules / hooks / scripts / skills/manager）
 ./sync-opencode.sh    # ~/.config/opencode の harness ファイルだけ
-./sync-agents.sh      # ~/.agents/skills の 4 フェーズ + orchestrate + claude-consult / codex-consult + manager + pm-mode（+ Cline 用 symlink）
+./sync-agents.sh      # ~/.agents/skills の 4 フェーズ + orchestrate + external-review + manager + pm-mode（+ Cline 用 symlink）
 ./sync-cursor.sh      # ~/.agents/skills を Cursor のユーザー skill ディレクトリへコピー（HOME ⇄ repo ではない）
 ./sync-pi.sh          # ~/.pi/agent/prompts の /orchestrate・/pm-mode
 ./sync-codex.sh       # ~/.codex/prompts の /orchestrate
@@ -75,7 +74,7 @@ dotfiles と同じく HOME ⇄ リポジトリの双方向同期（対話モー�
 
 `~/.claude` と `~/.config/opencode` は dotfiles と共有しているので、各スクリプトは**自分が持つファイルを名前で列挙**し、ディレクトリ全体は走査しない。dotfiles 側の `sync-claude.sh` / `sync-opencode.sh` は同じ名前を除外している。ファイルを足したり消したりしたら両方のリストを揃える。
 
-`sync-cursor.sh` だけは HOME ⇄ repo ではなく、**`~/.agents/skills` → Cursor のユーザー skill ディレクトリへの一方向コピー**。Cursor は `~/.agents/skills` を読まない（ユーザー skill は `~/.cursor/skills`、プロジェクト skill は `<repo>/.cursor/skills`）うえ、Cline のように symlink では済まない — WSL から `/mnt/c` 上に張った symlink は WSL 専用の reparse point で、Windows 版 Cursor からは解決できないため実コピーが要る。既定のコピー先は `/mnt/c/Users/*/.cursor` の最初のプロファイル（無ければ `~/.cursor`）。配布した skill は `<dest>/.harness-managed` に記録し、`~/.agents/skills` から消えたものを prune する（`--no-prune` で無効化、`--dest` でコピー先を明示、`--exclude NAME` / `--exclude-cloudflare` で絞れる）。Cursor 純正の skills は `~/.cursor/skills-cursor` に `.sync-manifest.json` ごと Cursor が置いているので触らず、名前が衝突したら警告だけ出す。`~/.claude/scripts` を呼ぶ skill（orchestrate / 4 フェーズ / claude-consult / herdr*）は Windows ネイティブの Cursor では動かないので、コピー時にその一覧を表示する。
+`sync-cursor.sh` だけは HOME ⇄ repo ではなく、**`~/.agents/skills` → Cursor のユーザー skill ディレクトリへの一方向コピー**。Cursor は `~/.agents/skills` を読まない（ユーザー skill は `~/.cursor/skills`、プロジェクト skill は `<repo>/.cursor/skills`）うえ、Cline のように symlink では済まない — WSL から `/mnt/c` 上に張った symlink は WSL 専用の reparse point で、Windows 版 Cursor からは解決できないため実コピーが要る。既定のコピー先は `/mnt/c/Users/*/.cursor` の最初のプロファイル（無ければ `~/.cursor`）。配布した skill は `<dest>/.harness-managed` に記録し、`~/.agents/skills` から消えたものを prune する（`--no-prune` で無効化、`--dest` でコピー先を明示、`--exclude NAME` / `--exclude-cloudflare` で絞れる）。Cursor 純正の skills は `~/.cursor/skills-cursor` に `.sync-manifest.json` ごと Cursor が置いているので触らず、名前が衝突したら警告だけ出す。`~/.claude/scripts` を呼ぶ skill（orchestrate / 4 フェーズ / external-review / herdr*）は Windows ネイティブの Cursor では動かないので、コピー時にその一覧を表示する。
 
 hook の登録（`settings.json` の `hooks.UserPromptSubmit`）と `Skill(orchestrate)` などの許可は `~/.claude/settings.json` にあり、dotfiles 側で管理する。
 
@@ -84,16 +83,18 @@ hook の登録（`settings.json` の `hooks.UserPromptSubmit`）と `Skill(orche
 kanban は `uv tool install --editable ~/src/harness/kanban`（詳細は `kanban/README.md`）。
 `taskboard --harness --open` で、エージェントの親子・inbox・ロック・フェーズの動きも同じ画面で見られる。
 
-## 設計相談（consult.sh）
+## 設計相談と独立レビュー（external-review）
 
-設計相談（startproject）とセカンドオピニオン（team-review）は、`consult.sh` で **1 つの CLI を名指しして 1 回聞く**。モデルの連鎖は使わない。セカンドオピニオンは `--role review` を付ける。
+設計相談（startproject）とセカンドオピニオン（team-review）は、`~/.agents/skills/external-review/SKILL.md` の手順で **別ファミリのモデルを 1 つ名指しして 1 回聞く**。モデルの連鎖は使わない。Herdr に読み取り専用のセッションを 1 つ立て、`ask --answer-file` で同期に受ける。
 
 ```bash
-~/.claude/scripts/consult.sh --to codex -                  # 設計相談（実装者と別ファミリを選ぶ）
-~/.claude/scripts/consult.sh --to claude --role review -   # セカンドオピニオン
+~/.claude/scripts/herdr-agent.sh ensure codex-review-{purpose} --kind codex \
+  --repo "$PWD" -- -s read-only -a never -m gpt-6-sol
+~/.claude/scripts/herdr-agent.sh ask codex-review-{purpose} /tmp/question.md \
+  --answer-file /tmp/question.answer.md --timeout 20m
 ```
 
-失敗しても別モデルに切り替えず、`設計相談不可: {理由}` / `セカンドオピニオン不可: {理由}` を書く。`利用AI:` には stderr の `AI_MODEL` を書く。ルールの正本は `claude/rules/tool-routing.md`「設計相談・セカンドオピニオン（consult.sh）」。
+一発だけでよい調べもの（gemini）と下書きは `external-ask.sh` を使う（`draft.sh` はそのラッパー）。失敗しても別モデルに切り替えず、`設計相談不可: {理由}` / `セカンドオピニオン不可: {理由}` を書く。`利用AI:` には `ensure` の `MODEL=` か `external-ask.sh` の `AI_MODEL=` を書く。ルールの正本は `claude/rules/tool-routing.md`「external-review（独立レビュー・設計相談）」。
 
 ## PM・manager・worker の 3 層
 

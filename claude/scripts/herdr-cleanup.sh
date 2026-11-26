@@ -39,7 +39,7 @@
 #   --all-owners     ignore the owner scope (every recorded session / lease)
 #   --boss NAME      whose inbox to report (default: $HERDR_BOSS, else the owner's
 #                    name, else this pane's id)
-#   --only WHAT      consult | agents | locks | inbox   (repeatable; default: all)
+#   --only WHAT      agents | locks | inbox | consult   (repeatable; default: all)
 #   --name NAME      limit to one session name
 #   --worktrees      also list and clean worktrees no live session is using (clean
 #                    ones are removed with --apply; dirty ones are only reported).
@@ -48,7 +48,8 @@
 #   -h, --help       this help
 #
 # What each category means:
-#   consult  ~/.cache/harness/herdr-consult/*.json  (consult.sh sessions)
+#   consult  ~/.cache/harness/herdr-consult/*.json  (old consult.sh sessions;
+#            nothing writes this any more, kept so leftovers can still be reaped)
 #   agents   ~/.cache/harness/herdr-agents/*.json   (herdr-agent.sh sessions)
 #   locks    ~/.local/share/harness/locks/*.lock    (task-file.sh leases, expired)
 #   inbox    ~/.cache/harness/inbox/<boss>/         (unread reports and watcher
@@ -127,7 +128,7 @@ pane_agent_name() {
 
 # The owner stamped on records at start time, as a name that outlives the pane:
 # $HERDR_AGENT_NAME, else the agent name Herdr has for this pane, else the pane
-# id (same rule as herdr-agent.sh and consult.sh).
+# id (same rule as herdr-agent.sh and the manager).
 current_owner() {
   local name=${HERDR_AGENT_NAME:-}
   [[ -n "$name" ]] || name=$(pane_agent_name "${HERDR_PANE_ID:-}")

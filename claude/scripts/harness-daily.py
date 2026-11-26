@@ -13,7 +13,7 @@
   ・誰が誰を起こしたか（harness の記録から。PM が Cursor でも出る）
   ・失敗したコマンド
   ・役割の逸脱（PM / manager が実行したが、本来は worker に渡すべきもの）
-  ・指示フローの効率（委譲比率、ensure/delegate/consult の回数、繰り返し）
+  ・指示フローの効率（委譲比率、ensure/delegate/external-ask の回数、繰り返し）
   ・残骸（記録・worktree・ロック）
 
 使い方:
@@ -83,7 +83,7 @@ EDIT_TOOLS = {'Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'edit', 'write', 'ap
 # 下書きはコマンド文字列では数えない（heredoc の中の用例と、実際の実行が同じ形に見える）。
 # `draft.sh` が書いたファイル（`$TMPDIR/draft-<kind>-<YYYYmmdd-HHMMSS>.md`）を実行の証拠にする。
 DRAFT_KINDS = ('pr', 'comment', 'commit', 'section', 'reply')
-RESEARCH_OPS = [(re.compile(r'consult\.sh[^\n]*--to\s+pi'), 'gemini 研究')]
+RESEARCH_OPS = [(re.compile(r'(?:consult|external-ask)\.sh[^\n]*--to\s+pi'), 'gemini 研究')]
 OUTWARD_OPS = [
     (re.compile(r'^\[mcp__\w+__save_comment\]'), 'Linear コメント'),
     (re.compile(r'^\[mcp__\w+__(save_issue|create_issue)\]'), 'Linear issue'),
@@ -95,9 +95,7 @@ OUTWARD_OPS = [
 DELEGATE_CMDS = [
     ('herdr-agent.sh ensure', 'ensure'),
     ('herdr-agent.sh delegate', 'delegate'),
-    ('claude-consult.sh', 'consult(claude)'),
-    ('codex-consult.sh', 'consult(codex)'),
-    ('consult.sh', 'consult'),
+    ('external-ask.sh', 'external-ask'),
     ('orchestrate-parallel.sh', 'parallel'),
     ('phase-run.sh', 'phase'),
 ]

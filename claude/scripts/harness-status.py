@@ -3,7 +3,7 @@
 
 見るもの（どれも読むだけ。bucket を作る task-file.sh や記録を変える herdr-cleanup.sh は呼ばない）:
   1. Herdr         サーバーの生存と agent 一覧（`herdr status server` / `herdr agent list`）
-  2. セッション記録  ~/.cache/harness/herdr-{agents,consult}/*.json と Herdr の実体の突き合わせ
+  2. セッション記録  ~/.cache/harness/herdr-agents/*.json（旧 consult.sh の herdr-consult/ もあれば見る）と Herdr の実体の突き合わせ
   3. ロック         ~/.local/share/harness/locks/*.lock（lease の更新時刻と TTL。*.lock.guard は数えない）
   4. タスクファイル  ~/.local/share/harness/tasks/<repo>/task-*.md の `## Meta` の status
   5. worktree      ~/.herdr/worktrees/<repo>/<branch>（記録のある・無い）
@@ -137,7 +137,7 @@ def repo_of_lock_key(key: str, repos: list[str]) -> str:
 
 
 def record_path(rec: dict) -> str:
-    """セッション記録の作業場所。herdr-agent.sh は repo、consult.sh は cwd に書く。"""
+    """セッション記録の作業場所。herdr-agent.sh は repo、旧 consult.sh は cwd に書く。"""
     return str(rec.get("repo") or rec.get("cwd") or "")
 
 

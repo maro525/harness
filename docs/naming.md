@@ -17,9 +17,8 @@ Herdr のセッション名は **agent 名・tab 名・（worktree のときは�
 
 | 対象 | 形式 | 例 |
 |---|---|---|
-| consult（claude、既定ロール） | `consult` | `consult` |
-| consult（claude、他のロール） | `consult-<role>` | `consult-review`, `consult-implement` |
-| consult（codex） | `consult-codex` / `consult-codex-<role>` | `consult-codex`, `consult-codex-review` |
+| consult（旧 consult.sh のセッション。新規には作られない） | `consult` / `consult-<role>` / `consult-codex[-<role>]` | `consult-review`, `consult-codex` |
+| external-review（別ファミリの独立レビュー。Herdr の 1 セッション） | `<kind>-review-<id>` | `codex-review-nsketch-1983`, `pi-review-1983` |
 | 並列 orchestrate | `orchestrate-<linear-id 小文字>[-<feature>]` | `orchestrate-nsketch-1983` |
 | issue 無しの orchestrate | `orchestrate-noissue-<feature>` | `orchestrate-noissue-quick-fix` |
 | delegate の子 | `<claude\|codex\|pi>-<purpose>` | `claude-review-1983`, `codex-research-cache` |
@@ -28,7 +27,7 @@ Herdr のセッション名は **agent 名・tab 名・（worktree のときは�
 | 実作業の子（`herdr-agent.sh worker`） | `<kind>-<purpose>`（manager が付ける。worktree に入っても名前は同じ） | `claude-review-1983`, `pi-seo-doc` |
 | 相談・配布以外の一時セッション | `<kind>-<purpose>-<短い id>` | `pi-repro-4f2a` |
 
-`<role>` は `consult` / `review` / `implement` のいずれか（`consult.sh` のロール名と一致させる）。**claude が既定**なので、codex のときだけ `-codex` を付ける。
+external-review のセッション名には CLI 名（`codex`、`pi`、`claude`）を入れる。同じ issue を複数のファミリに読ませたとき、sidebar で並べて見分けられる。
 
 ### 32 文字の扱い
 
@@ -58,7 +57,7 @@ Herdr の上限は 32 文字。`orchestrate-<id>-<feature>` が超えるとき�
 | TASK_FILE | `task-<LINEAR_ID\|NOLINEAR>-<feature>.md` | `task-NSKETCH-1983-ci-cache.md` |
 | 実行ロック | `<repo>-<LINEAR_ID>.lock` / `<repo>-task-<feature>.lock` / `<repo>-repo.lock` | `nanco-next-NSKETCH-1983.lock` |
 | inbox | `~/.cache/harness/inbox/<boss>/` | `~/.cache/harness/inbox/manager-nanco-next/` |
-| 回答ファイル（相談） | `<prompt 名>.answer.md` / インラインは `$TMPDIR/harness-consult/out/<target>-consult-<timestamp>.answer.md` | — |
+| 回答ファイル（相談） | `external-review` は `ask --answer-file` に渡したパス / `external-ask.sh` は `$TMPDIR/external-ask-<target>-<timestamp>.md` | — |
 
 TASK_FILE とロックは **ID を大文字のまま**使う（ブランチだけ小文字）。既存の `task-file.sh` / `lock` の挙動に合わせている。
 
@@ -71,7 +70,7 @@ TASK_FILE とロックは **ID を大文字のまま**使う（ブランチだ�
 | `herdr-agent.sh ensure` / `restart` / `delegate` | 名前を検証する。空白・`/` はエラー、小文字でない・32 文字超は警告 |
 | `herdr-agent.sh manager` | manager の名前を自分で決める（常に `~/src` の tab。名前が埋まっていれば `-<suffix>`）。`--label` で指定できるのは対象だけ（居場所・topology・suffix はスクリプトが決める） |
 | `herdr-agent.sh worker` | 実作業の子の居場所を決める（checkout が空いていれば tab、作業中の子が居れば worktree） |
-| `consult.sh` | `consult` / `consult-<role>`（codex は `consult-codex[-<role>]`）を自動で作る（`--name` で上書き可） |
+| `herdr-agent.sh ensure`（external-review） | セッション名は呼び出し側が決める（`<kind>-review-<id>`）。`ask --answer-file` で同期に受ける |
 | `orchestrate-parallel.sh` | `orchestrate-<id>[-<feature>]` と `feature/<id>-<feature>` を自動生成 |
 | 手で `ensure` するとき | この文書の表に従う |
 

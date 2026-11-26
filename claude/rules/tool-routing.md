@@ -1,7 +1,7 @@
 # Tool Routing Rules
 
 **どの操作をどのツール・エージェントに委譲するかを定める。**
-外部リサーチは **gemini が先**。インターネットの一次情報が要るときだけ firecrawl / WebFetch（pi は web fetch）を使う。設計相談とセカンドオピニオンは consult.sh で別の CLI を 1 つ名指しして聞く（連鎖は使わない）。使うかどうか自体は tier で決まる（`$HOME/.claude/rules/adaptive-execution.md` の「External Research」「OpenCode Design Consultation」）。本ファイルは「使う」となった場合の委譲先を定める。
+外部リサーチは **gemini が先**。インターネットの一次情報が要るときだけ firecrawl / WebFetch（pi は web fetch）を使う。設計相談とセカンドオピニオンは external-review（Herdr に別ファミリのセッションを 1 つ立てる）で 1 つ名指しして聞く（連鎖は使わない）。使うかどうか自体は tier で決まる（`$HOME/.claude/rules/adaptive-execution.md` の「External Research」「OpenCode Design Consultation」）。本ファイルは「使う」となった場合の委譲先を定める。
 
 **単発の作業はサブエージェント（Agent ツール）に振らず、メインセッションで直接実行する。** リサーチ・OpenCode・Linear・docker/uv/ruff・スクリプト作成などすべて対象。サブエージェントを使うのは `/orchestrate` 系（startproject / team-implement / team-review / deploy）と、それらの command が自分で定めている場合だけ。
 
@@ -21,8 +21,8 @@
 | 記事 (URL 1 本) | **WebFetch** | 読めないページは firecrawl（`firecrawl_scrape`） |
 | PDF (URL) / 複数ページ | **firecrawl MCP** | `firecrawl_parse` / `firecrawl_scrape` |
 | 音声・動画 | **未対応** | 委託先なし。ユーザーに扱い方を確認する |
-| Library research | **gemini（先）+ 必要時のみ firecrawl** | `consult.sh --to pi` で実装知見。一次情報が要るときだけ `firecrawl_search` |
-| Design decisions | **consult.sh（別 CLI を 1 つ指定）** | `~/.claude/scripts/consult.sh --to codex -`（下記「設計相談・セカンドオピニオン」） |
+| Library research | **gemini（先）+ 必要時のみ firecrawl** | `external-ask.sh --to pi` で実装知見。一次情報が要るときだけ `firecrawl_search` |
+| Design decisions | **external-review（別ファミリを 1 つ指定）** | `~/.agents/skills/external-review/SKILL.md`（下記「external-review」） |
 | git（書き込み系） | **`/deploy` skill** | Ad-hoc Git モード。読み取り系は Claude が直接 |
 | `/orchestrate` で作った PR への追加変更 | **`/orchestrate` 追加修正モード** | `/orchestrate "{追加の依頼} --task-file={TASK_FILE}"`。直接編集して Ad-hoc push しない（下記「Git Operations」） |
 | docker/ruff/uv | **Direct** | Bash で直接実行（長いものは `run_in_background: true`） |
@@ -35,7 +35,7 @@
 
 | 目的 | 使う | 使わない |
 |---|---|---|
-| 別エージェントに相談 | `claude-consult.sh` / `codex-consult.sh`／草案は `consult.sh --to pi` | `tmux new-session` で `claude`/`codex` を起動 |
+| 別エージェントに相談 | `external-review`（Herdr の別ファミリ 1 セッション）／草案は `external-ask.sh --to pi` | `tmux new-session` で `claude`/`codex` を起動 |
 | PM の manager を用意する（1 セッション 1 つ、名前と居場所は任せる） | `herdr-agent.sh manager` | `ensure manager-<repo>` を自分で組み立てる（同じリポジトリの別セッションと共有してしまう） |
 | 子に仕事を配る | `herdr-agent.sh ensure` ＋ `delegate` | `tmux` / `screen` / `nohup` / `claude --bg` |
 | 実作業の子を対象リポジトリで起こす | `herdr-agent.sh worker <name> --kind K --repo <repo>`（空いていれば checkout、作業中なら worktree） | `ensure --topology tab` を自分で選ぶ（2 体が同じ checkout を触る） |
@@ -44,7 +44,7 @@
 
 理由: 名前・状態・報告（inbox）・後始末（`close` / `reap` / `herdr-cleanup.sh`）が **Herdr の記録に一本化**されているため。tmux 等で立てると記録が残らず、片付けの対象外になる。
 
-- Herdr が使えないときは**止まって確認する**（黙って tmux に落ちない）。一回きりの文章作成なら `consult.sh --to pi`（`pi -p`）
+- Herdr が使えないときは**止まって確認する**（黙って tmux に落ちない）。一回きりの文章作成なら `external-ask.sh --to pi`（中で `pi -p` を呼ぶ）
 - `tmux` を Claude の状態表示（hooks）以外の目的で使わない
 
 ## External Research: gemini が先、一次情報は必要時だけ
@@ -53,7 +53,7 @@
 
 | 系統 | 担当 | 使う条件 |
 |------|-------|---------|
-| **実装知見** | **gemini**（`consult --to pi`） | まずこれ。最初に聞く |
+| **実装知見** | **gemini**（`external-ask.sh --to pi`） | まずこれ。最初に聞く |
 | **一次情報** | **自分**（firecrawl MCP / `WebFetch` / `curl`。pi は web fetch） | 出典 URL が要る / 最新版・リリースノート・公式仕様を確認する / gemini の答えを裏取りする |
 
 食い違ったら **一次情報を優先**し、相違点と採用した方を成果物に記録する（`/startproject` では OUTPUT の `DESIGN`）。
@@ -63,7 +63,7 @@
 まず gemini に聞く（材料がまだ無くてもよい）:
 
 ```bash
-~/.claude/scripts/consult.sh --to pi -m google/gemini-4-carbon - <<'EOF'
+~/.claude/scripts/external-ask.sh --to pi -m google/gemini-4-carbon - <<'EOF'
 {リサーチ質問}
 EOF
 ```
@@ -77,27 +77,26 @@ EOF
 - **gemini が 429 / 認証エラー / 無出力で落ちても、別のモデルに切り替えない。** 理由を書いて自分の知識で進む（`外部リサーチ不可: {理由}`）
 - 記録は `利用AI:` に使った方を書く（例: `利用AI: pi/google/gemini-4-carbon`。一次情報も取ったなら `+ claude/opus (firecrawl)`）
 
-### 設計相談・セカンドオピニオン（consult.sh）
+### external-review（独立レビュー・設計相談）
 
-設計相談（startproject）とセカンドオピニオン（team-review）は、`consult.sh` で **1 つの CLI を名指しして 1 回聞く**。モデルの連鎖は使わない。
+設計相談（startproject）とセカンドオピニオン（team-review）は、`~/.agents/skills/external-review/SKILL.md` の手順で **別ファミリのモデルを 1 つ名指しして 1 回聞く**。モデルの連鎖は使わない。セッションは Herdr に 1 つ立て（読み取り専用）、`ask --answer-file` で同期に受ける。
 
 ```bash
-# 設計相談（実装者と別ファミリを選ぶ。分からなければ codex）
-~/.claude/scripts/consult.sh --to codex - <<'EOF'
-{設計相談の内容}
-EOF
+# セッション（codex の例。実装者と別ファミリを選ぶ）
+~/.claude/scripts/herdr-agent.sh ensure codex-review-{purpose} --kind codex \
+  --repo "$PWD" -- -s read-only -a never -m gpt-6-sol
 
-# セカンドオピニオン（レビューのロール）
-~/.claude/scripts/consult.sh --to claude --role review - <<'EOF'
-{レビュー対象と観点}
-EOF
+# 設計相談・セカンドオピニオン
+~/.claude/scripts/herdr-agent.sh ask codex-review-{purpose} /tmp/question.md \
+  --answer-file /tmp/question.answer.md --timeout 20m
 ```
 
 - ターゲットは **そのフェーズを実行している CLI（`--label`）と別のファミリ**から選ぶ。`--label` が分からなければ `codex`
 - CLI の答えは鵜吞みにしない。コードを読まずに答えることがあるので、根拠は自分で確かめてから採用する
-- 1 回で終わり。失敗（quota / 認証 / timeout / 空出力）したら**別モデルに切り替えない**。`設計相談不可: {理由}` / `セカンドオピニオン不可: {理由}` を書いて、そのフェーズを飛ばすか自分の判断で進む
-- `利用AI:` には `consult.sh` の stderr `AI_MODEL=` を書く
-- Herdr が無い環境では `-b print` を付ける（`consult.sh` は Herdr があれば pane を作る）
+- 1 回で終わり。失敗（未認証 / quota / timeout / 空出力）したら**別モデルに切り替えない**。`設計相談不可: {理由}` / `セカンドオピニオン不可: {理由}` を書いて、そのフェーズを飛ばすか自分の判断で進む
+- `利用AI:` には `ensure` の stderr `MODEL=` を `<kind>/<model>` の形で書く（`ask` の前に控える）
+- manager が居る対話の文脈では、設計相談は manager に `ask` で聞いてもよい（同じリポジトリを読んでいる）
+- Herdr が無い環境では `external-ask.sh` を使う（一発だけで、セッションを作らない）
 
 ### Scope
 
@@ -127,7 +126,7 @@ firecrawl の無料枠は **15 req/min**。待たずに撃つと 429 で落ち�
 ~/.claude/scripts/firecrawl.sh batch /tmp/urls.txt --out /tmp/sources   # 1 本ずつ、間隔をあけて
 ```
 
-- 2 回続けて 429 なら、その URL は追わない。`curl` / gemini（`consult.sh --to pi`）/ 自分の知識で進み、`外部リサーチ不可: {理由}` を残す
+- 2 回続けて 429 なら、その URL は追わない。`curl` / gemini（`external-ask.sh --to pi`）/ 自分の知識で進み、`外部リサーチ不可: {理由}` を残す
 - API キーは `$FIRECRAWL_API_KEY`（MCP と同じもの）。`/v1/scrape` は非推奨（2026-12-10 で停止）なので、REST を直に叩くときは `/v2/scrape` を使う
 
 ### 調べものの記録の置き場所
@@ -143,7 +142,7 @@ firecrawl の無料枠は **15 req/min**。待たずに撃つと 429 で落ち�
 
 サブエージェントは使わず、メインセッションで進める。
 
-1. **まず gemini に聞く**: `~/.claude/scripts/consult.sh --to pi -m google/gemini-4-carbon -` を Bash で実行し、出力を `~/.local/share/harness/tasks/{repo}/research/{topic}-gemini.md` に落とす（`{repo}` の求め方は「調べものの記録の置き場所」。stderr の `AI_MODEL` を `利用AI:` として記録する）
+1. **まず gemini に聞く**: `~/.claude/scripts/external-ask.sh --to pi -m google/gemini-3-flash-preview -` を Bash で実行し、出力を `~/.local/share/harness/tasks/{repo}/research/{topic}-gemini.md` に落とす（`{repo}` の求め方は「調べものの記録の置き場所」。stderr の `AI_MODEL` を `利用AI:` として記録する）
 2. **インターネットの一次情報が要るときだけ**: `firecrawl_search` → 公式ドキュメント／リリースノートを `firecrawl_scrape`（pi は web fetch）。主張ごとに出典 URL を控え、`{topic}-sources.md` に置く
 3. 両方あるときは突き合わせて統合する（食い違いは一次情報を優先）。gemini が落ちたら一次情報だけで進み、理由を残す
 

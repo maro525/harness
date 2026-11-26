@@ -99,7 +99,7 @@ manager に「子を閉じて終われ」と `ask` し、`herdr-agent.sh close <
 - テスト・ビルド・状態を変える `git` 操作を自分で回す
 - TASK_FILE に書く（読むだけ。`## Meta` は orchestrate、各節はフェーズが書く）
 - `draft.sh` を直に呼ぶ
-- manager を介さず `consult` / `delegate` / `orchestrate` を直に使う
+- manager を介さず `external-review` / `delegate` / `orchestrate` を直に使う
 - サブエージェントを立てる（他の AI に渡すのは Herdr 経由だけ）
 - manager の名前・居場所・worktree を自分で決める（`herdr-agent.sh manager` が決める）
 - 子の報告をそのまま貼る

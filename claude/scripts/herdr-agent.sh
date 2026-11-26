@@ -1,9 +1,10 @@
 #!/bin/bash
 # herdr-agent.sh — run any coding agent in its own Herdr tab and talk to it.
 #
-# The generic counterpart of claude-consult.sh: that one is Claude-specific
-# (roles, claude flags), this one only needs "some agent, in a tab, that I can
-# send a request to". Used to hand work to another CLI (pi / codex / opencode)
+# The generic counterpart of the old consult scripts: that pair was
+# Claude/Codex-specific (roles, per-CLI flags), this one only needs "some agent,
+# in a tab, that I can send a request to". Used to hand work to another CLI
+# (pi / codex / opencode)
 # without leaving the current session.
 #
 # The agent is started once per (name, repo) and reused: its own tab, its
@@ -92,7 +93,7 @@
 #   --kind K          report: report (default) | question
 #   --no-watch        delegate: do not start the watcher
 #   --no-wait         ask: hand the request over and return (fan-out; poll yourself)
-#   --preset NAME     pi: writing | video — starts the session on google/gemini-4-carbon
+#   --preset NAME     pi: writing | video — starts the session on google/gemini-3-flash-preview
 #                     (prose and image/video work). A --model after `--` wins.
 #   --watch-timeout T delegate / watch: watcher lifetime (default: $HERDR_WATCH_TIMEOUT or 2h).
 #                     The watcher reports a child idle without a report after
@@ -208,7 +209,8 @@ done
 # Who started this agent, as a name that outlives the pane: $HERDR_AGENT_NAME,
 # else the agent name Herdr has for the calling pane, else the pane id (also when
 # Herdr cannot be asked). herdr-cleanup.sh uses it to keep a cleanup to the
-# sessions that the caller itself launched (same rule as consult.sh).
+# sessions that the caller itself launched (same rule as manager / worker /
+# external-review).
 owner_id() {
   local name=${HERDR_AGENT_NAME:-}
   [[ -n "$name" ]] || name=$(pane_agent_name "${HERDR_PANE_ID:-}")
@@ -279,15 +281,16 @@ if [[ -n "$PRESET" ]]; then
       if [[ "${KIND:-}" != "pi" ]]; then
         die "--preset $PRESET is defined for --kind pi (claude/codex have their own defaults)" 2
       fi
-      (( has_model )) || NATIVE_ARGS+=(--model google/gemini-4-carbon)
+      (( has_model )) || NATIVE_ARGS+=(--model google/gemini-3-flash-preview)
       ;;
     *) die "unknown --preset '$PRESET' (writing | video)" 2 ;;
   esac
 fi
 
 # Unless the caller picked a mode explicitly, start it in `auto` (the same default
-# consult sessions use). Without this, a caller that passes no flags inherits
-# nothing in particular and a caller copying an old example got `acceptEdits`.
+# the phase runners and the manager use). Without this, a caller that passes no
+# flags inherits nothing in particular and a caller copying an old example got
+# `acceptEdits`.
 if [[ "${KIND:-}" == "claude" ]]; then
   has_mode=0
   for arg in ${NATIVE_ARGS[@]+"${NATIVE_ARGS[@]}"}; do
@@ -807,14 +810,14 @@ cmd_manager() {
 #
 # Workers and orchestrators work inside the repository. The checkout holds one
 # of them at a time: a live worker already in it sends the next one to a
-# worktree of its own. Managers and consult sessions do not count (a manager
-# lives at the source root and only steers).
+# worktree of its own. Managers and reviewers do not count (a manager lives at
+# the source root and only steers; a reviewer only reads).
 #
 # stdout: the worker's name — safe to capture
 # stderr: AGENT= / TOPOLOGY= / REPO= / BRANCH= / STATE=
 
 # Who is already working in the checkout: live workers in it that are actually
-# running (working / blocked), minus managers and consults. An idle or done tab
+# running (working / blocked), minus managers and reviewers. An idle or done tab
 # does not hold the checkout — otherwise every finished worker would push the
 # next one into a worktree. One name per line.
 checkout_workers() {
@@ -825,7 +828,7 @@ checkout_workers() {
     repo=$(state_field "$f" repo)
     topo=$(state_field "$f" topology)
     [[ -n "$name" && "$repo" == "$root" && "$topo" != "worktree" ]] || continue
-    case "$name" in manager-* | consult*) continue ;; esac
+    case "$name" in manager-* | consult* | *-review-*) continue ;; esac
     state=$(agent_state "$name")
     case "$state" in working | blocked) ;; *) continue ;; esac
     printf '%s\n' "$name"
@@ -1356,7 +1359,7 @@ protocol_section() {
 - **始める前に 1 回だけ** \`~/.claude/scripts/preflight.sh .\` を実行し、\`MISS\` の行だけ報告に写す。\`command -v tsc\` や \`ls node_modules/.bin/*\` を個別に叩き直さない
 - \`node_modules\` が無い・\`pnpm install\` が要るなら、それを報告に書く。依頼文の完了条件に入っていない検証（ビルド・dev サーバの起動確認など）はやらない
 - 質問や判断が必要になったら、そこで作業を止め、質問を書いて \`--kind question\` を付けて送る。ターミナルで返事を待たない
-- 他のエージェントを起動しない・相談しない（\`herdr agent start\`、\`herdr-agent.sh ensure\` / \`delegate\`、\`claude-consult.sh\`、サブエージェント・タスク委譲系のツールはすべて使わない）
+- 他のエージェントを起動しない・相談しない（\`herdr agent start\`、\`herdr-agent.sh ensure\` / \`delegate\`、\`external-review\`、サブエージェント・タスク委譲系のツールはすべて使わない）
 - 依頼された範囲の外のファイルは変えない
 EOF
 }

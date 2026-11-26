@@ -13,14 +13,14 @@ Herdr 上のエージェント・セッションは、**閉じるまで残る**�
 
 | role | 開くタイミング | 閉じるタイミング |
 |---|---|---|
-| `consult` | 設計相談が発生したとき | **回答を採用 / 却下したら即**（既定では残るので、`--close` を習慣にする） |
+| `external-review` | 独立レビュー・設計相談が発生したとき | 回答を採用 / 却下したら即 `close`（同じ論点で続けて聞くなら残す） |
 | `review` | team-review に入るとき | PASS して deploy に進む直前、または FAIL 対応が終わったとき |
 | `implement` | team-implement に入るとき | PR 作成（deploy 完了）後 |
 | pi / codex（`herdr-agent.sh`） | そのタスクを任せるとき | コミット・PR が終わったとき |
 | manager の子（`herdr-agent.sh delegate`） | manager が最初の仕事を渡すとき（`ensure` → `delegate`） | 報告を `ack` した後、その子に続きを渡さないと決めたとき |
 
-`consult` だけは既定で残す（同じ相談者に文脈を保ってほしい場面があるため）。
-使い捨てでよいと分かっているときは `--close` を付けて 1 回で閉じる。
+`external-review` のセッションは既定で残す（同じ論点に文脈を保って続けて聞けるように）。
+使い捨てでよいなら回答を受けたら `close` する。
 
 ## manager は 1 セッションに 1 つ（常に `~/src`）
 
@@ -58,11 +58,11 @@ manager は子を `herdr-agent.sh worker <name> --kind claude --repo ~/src/<repo
 
 ## どこに開くか（topology）
 
-Herdr の構造は workspace → tab → pane。セッションをどこに作るかは `herdr-agent.sh ensure` の `--topology` で選ぶ（`claude-consult.sh` / `codex-consult.sh` は常に `tab`）。
+Herdr の構造は workspace → tab → pane。セッションをどこに作るかは `herdr-agent.sh ensure` の `--topology` で選ぶ（external-review のセッションも `tab`）。
 
-**エージェントを動かすセッションは必ず Herdr の中で立てる。** `tmux` / `screen` / `nohup` / `claude --bg` などの Herdr 外の手段は使わない — 記録が残らず、`--status` / `close` / `herdr-cleanup.sh` の対象外になる。Herdr が使えないときは止まって確認し、一回きりの文章作成だけ `consult.sh --to pi` を使う。
+**エージェントを動かすセッションは必ず Herdr の中で立てる。** `tmux` / `screen` / `nohup` / `claude --bg` などの Herdr 外の手段は使わない — 記録が残らず、`--status` / `close` / `herdr-cleanup.sh` の対象外になる。Herdr が使えないときは止まって確認し、一回きりの調べもの・下書きだけ `external-ask.sh`（セッションを作らない）を使う。
 
-相談先は 2 つで、実装は同じ `consult.sh`（`--to claude|codex`）。以下の `claude-consult.sh` は、Codex を相談先にするとき `codex-consult.sh` に読み替えればそのまま使える。Herdr の agent 名は claude が `consult` / `consult-<role>`、codex が `consult-codex` / `consult-codex-<role>` なので、両方を並べて残せる（引数なしの `--close` は両方閉じる）。
+相談とレビューのセッションは 1 種類になった。`external-review` の手順で `herdr-agent.sh ensure` に別ファミリのモデルを 1 つ名指しし、`ask --answer-file` で同期に受ける。名前は `<kind>-review-<id>` なので、codex と pi を並べて残せる。
 
 | topology | 何ができる | 向いている場面 |
 |---|---|---|
@@ -121,11 +121,11 @@ manager は子の完了を待たない。子 → manager の報告は **inbox �
 
 | フィールド | 書くもの | 書く場所 |
 |---|---|---|
-| `owner` | 起動元の**安定名** `agent:<name>`。名前が取れないときだけ `pane:<id>` | `herdr-agent.sh ensure`（状態ファイル・worktree レジストリ）/ `consult.sh`（状態ファイル） |
+| `owner` | 起動元の**安定名** `agent:<name>`。名前が取れないときだけ `pane:<id>` | `herdr-agent.sh ensure`（状態ファイル・worktree レジストリ。external-review のセッションもここ） |
 | `owner_pane` | `owner` を解決したときの生の pane id（照合・調査用） | 同上 |
-| `boss` | 子が報告するmanager の名前 | `herdr-agent.sh delegate`（子の状態ファイルと worktree レジストリに追記）/ `consult.sh`（`$HERDR_BOSS`、無ければ起動元の安定名。どちらも無ければ書かない） |
+| `boss` | 子が報告するmanager の名前 | `herdr-agent.sh delegate`（子の状態ファイルと worktree レジストリに追記） |
 
-`boss` はどちらの記録でも**結果の受け取り手**を指す。`herdr-agent.sh` では delegate したmanager（報告の宛先）、`consult.sh` では回答を受け取る起動元で、意味は同じ「報告先」。
+`boss` は**結果の受け取り手**を指す。同期で受ける `ask` / `external-review` は boss を書かない（回答はその場の stdout に返る）。
 
 - 安定名の解決順: `$HERDR_AGENT_NAME` → `herdr agent get "$HERDR_PANE_ID"` の agent 名 → `pane:$HERDR_PANE_ID`。Herdr に繋がらないときは pane id に落ちる（`report` / `inbox` / cleanup のレポートは Herdr 無しでも動く）
 - フィールドは追加だけ。`boss` の無い記録や、`owner` が `pane:<id>` の古い記録もそのまま読める
@@ -158,15 +158,13 @@ manager の pane が消えた後に残りを追うときは、別の pane から
 1. **開始時**: 前のタスクのセッションが残っていたら閉じる（または `--new` で作り直す）
 
    ```bash
-   ~/.claude/scripts/claude-consult.sh --status            # 残っているセッションを確認
-   ~/.claude/scripts/claude-consult.sh --close --roles implement,review
-   ~/.claude/scripts/herdr-agent.sh reap                    # pi / codex 側もまとめて
+   ~/.claude/scripts/herdr-agent.sh list                      # 残っているセッションを確認
+   ~/.claude/scripts/herdr-agent.sh reap                      # まとめて閉じる
    ```
 
 2. **終了時**（完了報告を書く前）: そのタスクで開いたものを閉じる
 
    ```bash
-   ~/.claude/scripts/claude-consult.sh --close --role implement
    ~/.claude/scripts/herdr-agent.sh close <name>
    ```
 
@@ -197,18 +195,17 @@ manager の pane が消えた後に残りを追うときは、別の pane から
 
 | やりたいこと | コマンド |
 |---|---|
-| 相談して答えを受け取りたい（同期） | `claude-consult.sh` / `codex-consult.sh --role {role}` |
+| 相談して答えを受け取りたい（同期） | `external-review`（別ファミリ）/ manager に `ask` |
 | 並行で走らせて報告で判断（非同期） | `herdr-agent.sh delegate` ＋ `close` / `reap` |
-| 記録済みセッションの一覧 | `claude-consult.sh --status` / `herdr-agent.sh list` |
-| 1 つ閉じる | `claude-consult.sh --close --role ROLE` / `herdr-agent.sh close NAME` |
-| 複数ロールを閉じる | `claude-consult.sh --close --roles implement,review` |
-| 全部閉じる | `claude-consult.sh --close` / `herdr-agent.sh reap` |
+| 記録済みセッションの一覧 | `herdr-agent.sh list` |
+| 1 つ閉じる | `herdr-agent.sh close NAME` |
+| 全部閉じる | `herdr-agent.sh reap` |
 | 記録を突き合わせて整理（推奨） | `herdr-cleanup.sh`（既定はレポート）/ `--apply`（確認）/ `--apply --yes`（了承後）/ `--apply --yes --include-live` |
 | pane が消えた manager の記録を追う | `herdr-cleanup.sh --owner BOSS`（`boss` 一致でも拾う） |
 | 未読の報告が溜まっていないか（読むだけ） | `herdr-cleanup.sh --only inbox [--boss BOSS]` |
 | 種類で絞って閉じる | `herdr-agent.sh reap --kind pi` |
-| 作り直す（文脈リセット） | `claude-consult.sh --new --role ROLE` / `herdr-agent.sh restart NAME` |
-| ターミナルの末尾を見る | `claude-consult.sh --show ROLE` / `herdr-agent.sh read NAME` |
+| 作り直す（文脈リセット） | `herdr-agent.sh restart NAME` |
+| ターミナルの末尾を見る | `herdr-agent.sh read NAME` |
 | 子に仕事を渡して戻る（manager） | `herdr-agent.sh delegate CHILD REQUEST --boss BOSS` |
 | 子から報告する | `herdr-agent.sh report BOSS FILE --from CHILD`（`--kind question`） |
 | inbox を見る / 読む / 既読にする / 掃除 | `herdr-agent.sh inbox [BOSS] [list\|read\|ack\|clear] [CHILD\|FILE]`（BOSS を省くと `--boss` / `HERDR_BOSS` / pane の名前） |

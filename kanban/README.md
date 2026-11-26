@@ -174,7 +174,7 @@ logs (JSONL) are never read.
 | Source | Gives |
 |---|---|
 | `herdr agent list` (every 3 s, 2 s timeout) | Which sessions are alive, and their status (`idle` / `working` / `done`) |
-| `~/.cache/harness/herdr-agents/*.json`, `herdr-consult/*.json` | Who started whom (`boss`, `owner`), kind, model, repo, `created` |
+| `~/.cache/harness/herdr-agents/*.json`, `herdr-consult/*.json`（旧 consult.sh の記録） | Who started whom (`boss`, `owner`), kind, model, repo, `created` |
 | `~/.cache/harness/inbox/<boss>/` (and `done/`, newest 50) | Reports and questions; header plus a 300-character preview |
 | `$HARNESS_LOCKS_DIR` or `~/.local/share/harness/locks/*.lock` | Held task locks (`updated_epoch + ttl` judges expiry, in the browser) |
 | `~/.cache/harness/herdr-worktrees/*.json` | Worktrees handed to agents (path, branch) |

@@ -16,12 +16,11 @@ agents/
     ├── team-implement/SKILL.md  # 実装: feature ブランチ + TDD、### {m}回目 + 利用AI 行、Meta の branch/base
     ├── team-review/SKILL.md     # レビュー: 観点別（Quality/Logic → Security → Simplify）、判定 PASS/FAIL
     ├── manager/SKILL.md      # フェーズではない。PM の技術の脳: コードを読んで答え、実装は名前付きの子に delegate する。子の報告は inbox、終わったら PM に report する（~/.claude/scripts/herdr-agent.sh delegate / report / inbox）
-    ├── claude-consult/SKILL.md  # フェーズではない。Claude 以外のエージェントから Claude セッションに相談 / レビュー / 実装を投げる（~/.claude/scripts/claude-consult.sh。Herdr 内は pane 常駐セッション、外は claude -p）
-    ├── codex-consult/SKILL.md   # 同上を Codex セッションで（consult.sh --to codex。read-only なのでマーカーで回答）
+    ├── external-review/SKILL.md  # フェーズではない。別ファミリのモデルに独立レビュー・設計相談を頼む（Herdr に読み取り専用のセッションを 1 つ立て、herdr-agent.sh ask --answer-file で同期に受ける）
     ├── herdr-cleanup/SKILL.md  # フェーズではない。記録済みセッション・期限切れロック・孤児 worktree を整理する（既定はレポートのみ）
     ├── harness-daily/SKILL.md  # フェーズではない。1 日の振り返り（セッション・失敗・役割の逸脱・委譲比率・残骸）
     ├── harness-status/SKILL.md # フェーズではない。harness の現況を読み取り専用で一望する（片付けは herdr-cleanup）
-    ├── pm-mode/SKILL.md        # フェーズではない。PM 専任: 自分では手を動かさず（コードも読まず）、判断と実行は delegate / consult / orchestrate-parallel / ask で他の AI に渡す
+    ├── pm-mode/SKILL.md        # フェーズではない。PM 専任: 自分では手を動かさず（コードも読まず）、判断と実行は delegate / external-review / orchestrate-parallel / ask で他の AI に渡す
     └── deploy/SKILL.md          # commit → push → PR/MR（gh / glab）、#### PR / MR + 利用AI 行 + 紐づけ行。作業ブランチに留まる（TASK_FILE のコミットと分岐元への復帰は呼び出し元）
 ```
 
@@ -29,7 +28,7 @@ agents/
 
 ## 共通規約
 
-フェーズの SKILL.md（claude-consult / codex-consult / manager / pm-mode を除く）はすべて同じ規約で書かれている。
+フェーズの SKILL.md（external-review / manager / pm-mode を除く）はすべて同じ規約で書かれている。
 
 | 項目 | 規約 |
 |---|---|
@@ -60,27 +59,27 @@ orchestrate のフェーズ指定モードは探索に頼らず、プロンプ�
 
 ## どの道具をいつ使うか
 
-境界は 2 つだけ。**「待って答えを受け取る（同期）＝ consult」「待たずに配る（非同期）＝ delegate」**。manager として動いているセッションでも、相談は consult に寄せる。
+境界は 2 つだけ。**「待って答えを受け取る（同期）＝ ask か external-review」「待たずに配る（非同期）＝ delegate」**。manager として動いているセッションでも、相談は同期側に寄せる。
 
 | 目的 | 使う | 使わない |
 |---|---|---|
-| 設計相談・レビュー（回答を読んで自分で決める） | `claude-consult.sh` / `codex-consult.sh`（`consult` / `review`） | `herdr-agent.sh delegate` |
-| 実装を同じブランチでやらせて結果を受け取る | `claude-consult.sh --role implement` | delegate（worktree が分かれる） |
-| 実装を別ブランチ / worktree で並行、報告を inbox で受ける | `herdr-agent.sh ensure --topology worktree --branch feature/<name>` + `delegate`（`manager`） | consult |
-| 4 フェーズを回す | `phase-run.sh`（orchestrate 経由） | consult / delegate の直呼び |
+| 設計相談・レビュー（回答を読んで自分で決める） | `external-review`（Herdr の別ファミリ 1 セッション ＋ `ask --answer-file`）、対話なら manager に `ask` | `herdr-agent.sh delegate` |
+| 実装を同じブランチでやらせて結果を受け取る | `herdr-agent.sh worker` ＋ `delegate`（回答は inbox で受ける） | 相談（同期）として扱う |
+| 実装を別ブランチ / worktree で並行、報告を inbox で受ける | `herdr-agent.sh ensure --topology worktree --branch feature/<name>` + `delegate`（`manager`） | 相談（同期）として扱う |
+| 4 フェーズを回す | `phase-run.sh`（orchestrate 経由） | `delegate` / `ask` の直呼び |
 | PM として回す（自分では手を動かさない） | `pm-mode` の振り分け（`ask` で manager に渡す。manager が子を選ぶ） | 自分でコードを読む・直す・テストを回す |
 | PM の manager を用意する（1 セッション 1 つ。名前も場所もスクリプトが決める） | `herdr-agent.sh manager`（常に `~/src`。別セッションが先に居れば `manager-<repo>-<suffix>`） | `ensure manager-<repo>` を自分で組み立てる（同じリポジトリの別セッションと共有してしまう） |
 | 実作業の子を対象リポジトリで起こす | `herdr-agent.sh worker <name> --kind K --repo <repo>`（checkout が空いていれば tab、作業中の子が居れば worktree） | `ensure --topology tab` を自分で選ぶ（2 体が同じ checkout を触る） |
-| セッションを立てて何かをさせる（すべて Herdr 経由） | **Herdr 経由**: `herdr-agent.sh ensure` / `consult.sh` / `orchestrate-parallel.sh` | **`tmux` / `screen` / `nohup` / `claude --bg` で立てる**（記録が残らず、片付けの対象外になる） |
-| 外部リサーチ（Web・別モデルの解釈） | 自分（firecrawl / `curl`）＋ **gemini**（`consult.sh --to pi -m google/gemini-4-carbon`） | consult だけ（自分が調べない） |
-| 文章作成・推敲、動画や画像の分析を pi に任せる | `herdr-agent.sh ensure --kind pi --preset writing`（動画は `--preset video`）→ `google/gemini-4-carbon` | 既定の pi（deepseek）で文章を書かせる |
+| セッションを立てて何かをさせる（すべて Herdr 経由） | **Herdr 経由**: `herdr-agent.sh ensure` / `external-review` / `orchestrate-parallel.sh` | **`tmux` / `screen` / `nohup` / `claude --bg` で立てる**（記録が残らず、片付けの対象外になる） |
+| 外部リサーチ（Web・別モデルの解釈） | 自分（firecrawl / `curl`）＋ **gemini**（`external-ask.sh --to pi -m google/gemini-3-flash-preview`） | 外部モデルだけに任せる（自分で調べない） |
+| 文章作成・推敲、動画や画像の分析を pi に任せる | `herdr-agent.sh ensure --kind pi --preset writing`（動画は `--preset video`）→ `google/gemini-3-flash-preview` | 既定の pi（deepseek）で文章を書かせる |
 | 文章の下書き（コミットメッセージ / Linear や **Notion** の文面 / PR・MR 本文 / TASK_FILE の節） | `draft.sh --kind=pr｜comment｜commit｜section｜reply`（gemini。stdout が本文） | 書き込みまでそのモデルに任せない（作成・投稿は MCP を持つ自分が行う）。往復 1〜4 分 |
 
-- `pi` の既定は `ollama-cloud/deepseek-v4.1-flash:1017`（コード向け）。**文章作成・推敲・動画/画像の分析**は `--preset writing` / `--preset video` で `google/gemini-4-carbon`（1M context・images 対応）を使う。`--` の後ろに `--model` を書けばそちらが優先
-- `--preset` は `--kind pi` 専用。claude は consult / 4 フェーズが自分の既定を持つ
+- `pi` の既定は `ollama-cloud/deepseek-v4.1-flash:1017`（コード向け）。**文章作成・推敲・動画/画像の分析**は `--preset writing` / `--preset video` で `google/gemini-3-flash-preview`（1M context・images 対応）を使う。`--` の後ろに `--model` を書けばそちらが優先
+- `--preset` は `--kind pi` 専用。claude は 4 フェーズと manager が自分の既定を持つ
 
-- `delegate` は**待たない・子の画面は見ない**。判断材料は inbox の報告（やったこと / 変えたファイル / 実行したコマンドと結果 / 未解決）。過程を見たいなら consult を使う
-- 委任も相談も **tab は閉じるまで残る**。フローの最後に `herdr-agent.sh close {name}` / `reap`、consult は `--close`
+- `delegate` は**待たない・子の画面は見ない**。判断材料は inbox の報告（やったこと / 変えたファイル / 実行したコマンドと結果 / 未解決）。過程を見たいなら `ask` か `external-review` を使う
+- 委任も相談も **tab は閉じるまで残る**。フローの最後に `herdr-agent.sh close {name}` / `reap`
 
 ## 外部 CLI のフェーズ実行
 
@@ -120,7 +119,7 @@ orchestrate のフェーズ指定モードは探索に頼らず、プロンプ�
 - cline の `--json` は 1 行 1 JSON のストリーム（`text` はエスケープ済み）。最終メッセージは `"type":"run_result"` 行の `text`（下記「最終メッセージの取り出し」）
 - どのフェーズも CLI が TASK_FILE に直接書く（`written: yes`）。サンドボックス等で書けなかったとき（`written: no`）だけ orchestrate が `### SECTION` から代筆する（STEP 3P P4）。startproject / team-review では起動前後で作業ツリー・HEAD・ref・stash を比べ、TASK_FILE 以外に変化があれば報告する（P5）
 - codex 0.80.0 は ChatGPT アカウントで使えるモデルが無く全モデル失敗する（2026-09-28 実測）。`npm i -g @openai/codex@latest` で更新してから使う（下の「実機の状態」）
-- opencode は quota 切れ（429）だと無出力に見える。ログ（`~/.local/share/opencode/log/`）の 429 を先に確認する。Claude 版のリサーチは「gemini (`consult.sh --to pi`) が先、インターネット情報が要るときだけ firecrawl」、設計相談・セカンドオピニオンは `~/.claude/scripts/consult.sh` で別 CLI を 1 つ名指しして聞く（`../claude/rules/tool-routing.md` の「External Research」/「設計相談・セカンドオピニオン（consult.sh）」）。**フェーズ指定モード（`--ai=opencode`）は CLI 直呼びなので連鎖は効かず、429 なら `--ai=pi:{model}` で回す**
+- opencode は quota 切れ（429）だと無出力に見える。ログ（`~/.local/share/opencode/log/`）の 429 を先に確認する。Claude 版のリサーチは「gemini (`external-ask.sh --to pi`) が先、インターネット情報が要るときだけ firecrawl」、設計相談・セカンドオピニオンは `external-review` で別ファミリのモデルを 1 つ名指しして聞く（`../claude/rules/tool-routing.md` の「External Research」/「external-review（独立レビュー）」）。**フェーズ指定モード（`--ai=opencode`）は CLI 直呼びなので連鎖は効かず、429 なら `--ai=pi:{model}` で回す**
 - **v1 と v2 でフラグが違う**: v2（`opencode2`）は `--auto`（v1 は `--dangerously-skip-permissions`）、`--log-level` は小文字、モデルは `provider/model#variant`。この環境の v1 は `run` が `session_message.seq` で全滅するので、入っていれば **v2 を使う**（`--ai=opencode2`）
 - **pi の許可リストにワークフローのスクリプトを入れる**: pi は `~/.pi/agent/extensions/permissions/` の `ALLOW_PATTERNS` に無いコマンドを TTY 無しで拒否する。`"~/.claude/scripts/**"`（および `/home/dev/.claude/scripts/**`）と `git switch` を入れておかないと、`phase-run.sh` の起動やブランチ復帰で止まる（未登録の場合の回避策は `for _ in 1; do <script> ...; done`、というより追加する）
 

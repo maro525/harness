@@ -52,7 +52,7 @@ $ARGUMENTS: "{task description} --task-file={TASK_FILE} [--tier=S|M|L] [--linear
 
 - ユーザーに質問できる環境なら質問してよい。できない（非対話実行）なら止まらず妥当な推定で続行し、置いた前提を節内に `#### 前提（推定）` として残す
 - サブエージェント・ブラウザ・Linear 連携は「使えるなら使う、無ければ自分で行い、その旨を節に書く」
-- 外部 AI にレビューを頼むときは `~/.claude/scripts/consult.sh --to claude --role review -` を優先する（実装者と別ファミリの CLI を 1 つ名指しし、連鎖は使わない）。呼び出し方は `$HOME/.claude/rules/tool-routing.md`「設計相談・セカンドオピニオン（consult.sh）」。失敗したら `セカンドオピニオン不可: {理由}` と書き、別モデルに切り替えない
+- 外部 AI にレビューを頼むときは `~/.agents/skills/external-review/SKILL.md` の手順を使う（`herdr-agent.sh ensure` で実装者と別ファミリのモデルを 1 つ立て、`ask --answer-file` で同期に受ける）。呼び出し方は `$HOME/.claude/rules/tool-routing.md`「external-review（独立レビュー）」。失敗したら `セカンドオピニオン不可: {理由}` と書き、別モデルに切り替えない
 - Linear: 連携ツールがあれば `LINEAR_ID` にレビュー結果コメントを投稿し、無ければ投稿しない。Linear のステータスは変えない
 
 ---
