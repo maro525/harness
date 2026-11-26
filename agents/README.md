@@ -69,6 +69,7 @@ orchestrate のフェーズ指定モードは探索に頼らず、プロンプ�
 | 実装を別ブランチ / worktree で並行、報告を inbox で受ける | `herdr-agent.sh ensure --topology worktree --branch feature/<name>` + `delegate`（`manager`） | consult |
 | 4 フェーズを回す | `phase-run.sh`（orchestrate 経由） | consult / delegate の直呼び |
 | PM として回す（自分では手を動かさない） | `pm-mode` の振り分け（`ask` で manager に渡す。manager が子を選ぶ） | 自分でコードを読む・直す・テストを回す |
+| PM の manager を用意する（1 セッション 1 つ。名前も居場所もスクリプトが決める） | `herdr-agent.sh manager`（同じリポジトリに別セッションがいれば worktree の `manager-<repo>-<suffix>`） | `ensure manager-<repo>` を自分で組み立てる（同じリポジトリの別セッションと共有してしまう） |
 | セッションを立てて何かをさせる（すべて Herdr 経由） | **Herdr 経由**: `herdr-agent.sh ensure` / `consult.sh` / `orchestrate-parallel.sh` | **`tmux` / `screen` / `nohup` / `claude --bg` で立てる**（記録が残らず、片付けの対象外になる） |
 | 外部リサーチ（Web・別モデルの解釈） | 自分（firecrawl / `curl`）＋ **gemini**（`consult.sh --to pi -m google/gemini-4-carbon`） | consult だけ（自分が調べない） |
 | 文章作成・推敲、動画や画像の分析を pi に任せる | `herdr-agent.sh ensure --kind pi --preset writing`（動画は `--preset video`）→ `google/gemini-4-carbon` | 既定の pi（deepseek）で文章を書かせる |

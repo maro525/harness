@@ -20,6 +20,11 @@
 #   herdr-agent.sh reap   [--kind KIND]                   close every recorded session
 #   herdr-agent.sh list
 #
+# Manager placement (one manager per caller session, no name to choose):
+#   herdr-agent.sh manager [--repo DIR] [--plan|--explain] [-- ARGS...]
+#                                                       start or reuse this session's
+#                                                       manager and print its name
+#
 # Boss pattern (a boss delegates and never waits; children report back):
 #   herdr-agent.sh delegate <child> <request-file|-> [--boss B] [--no-watch] [--watch-timeout T]
 #                                                       hand work over and return at once
@@ -61,6 +66,14 @@
 #   --lines N         read: how much scrollback (default 200)
 #   --boss B          delegate / watch: who the child reports to (default: $HERDR_BOSS,
 #                     else the calling pane's agent name, else $HERDR_PANE_ID)
+#   --session KEY     manager: this caller's identity (default: $HARNESS_SESSION_KEY,
+#                     else the calling Herdr pane, else the agent process the caller
+#                     runs in — a Cursor chat is one cursor-agent process). Pass it
+#                     explicitly when neither is available
+#   --plan            manager: print the decision (PLAN name=… topology=… repo=…) and
+#                     create nothing
+#   --explain         manager: print how this caller's session is decided (SESSION=, SOURCE=,
+#                     ANCESTORS=) and create nothing — paste it when no manager starts
 #   --from CHILD      report: who is reporting (default: this pane's agent name / pane id)
 #   --kind K          report: report (default) | question
 #   --no-watch        delegate: do not start the watcher
@@ -124,6 +137,9 @@ WATCH=1
 NO_WAIT=0
 PRESET=""
 WATCH_TIMEOUT=${HERDR_WATCH_TIMEOUT:-2h}
+SESSION_KEY=""
+PLAN=0
+EXPLAIN=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -142,6 +158,9 @@ while [[ $# -gt 0 ]]; do
     --preset) PRESET=$2; shift 2 ;;
     --no-wait) NO_WAIT=1; shift ;;
     --watch-timeout) WATCH_TIMEOUT=$2; shift 2 ;;
+    --session) SESSION_KEY=$2; shift 2 ;;
+    --plan) PLAN=1; shift ;;
+    --explain) EXPLAIN=1; shift ;;
     --) shift; NATIVE_ARGS=("$@"); break ;;
     -h|--help) usage; exit 0 ;;
     --*) die "unknown option: $1" 2 ;;
@@ -490,6 +509,251 @@ cmd_ensure() {
   echo "STATE=started" >&2
 }
 
+# --- manager: one manager per caller session --------------------------------
+#
+# A PM never names its manager. The script decides, so that two chats in the same
+# repository cannot end up sharing one manager:
+#
+#   1. this session already holds a manager of this repository -> reuse it
+#   2. nobody holds the checkout   -> manager-<repo>, in the checkout
+#   3. another live session holds it -> manager-<repo>-<suffix>, on a scratch
+#                                      worktree of the same repository
+#
+# A session is the caller's Herdr pane ($HERDR_PANE_ID) when it has one, else the
+# agent process it runs in (the Cursor agent is one process per chat; a Cursor
+# session is not in Herdr). --session / $HARNESS_SESSION_KEY overrides both;
+# HARNESS_SESSION_PROC=0 turns the process lookup off (a shared parent process
+# would group sessions that must stay apart, so name them explicitly).
+#
+# stdout: the manager's name — safe to capture: M=$(herdr-agent.sh manager)
+# stderr: MANAGER= / PM= / TOPOLOGY= / REPO= / SESSION= / STATE=reused|started
+# log:    every attempt appends one line to $XDG_CACHE_HOME/harness/manager.log
+#         (<time> <result> <session> <repo> <name>), failures included
+
+checkout_root() { git -C "$1" rev-parse --show-toplevel 2>/dev/null || true; }
+
+# The first entry of `git worktree list` is the main checkout: every session of a
+# repository shares that name, whichever worktree the caller sits in.
+main_checkout() {
+  git -C "$1" worktree list --porcelain 2>/dev/null |
+    awk '/^worktree /{print substr($0, 10); exit}'
+}
+
+# <text> <max>: [a-z0-9-], no leading or trailing '-', at most <max> chars.
+short_name() {
+  local s
+  s=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]' |
+    sed -e 's/[^a-z0-9-]/-/g' -e 's/--*/-/g' -e 's/^-//' -e 's/-$//')
+  s=${s:0:$2}
+  printf '%s' "${s%-}"
+}
+
+# A 4 hex suffix that stays with a session across calls (no counter to keep).
+session_suffix() {
+  if command -v sha1sum >/dev/null 2>&1; then
+    printf '%s' "$1" | sha1sum | cut -c1-4
+  else
+    printf '%s' "$1" | md5sum | cut -c1-4
+  fi
+}
+
+# The nearest ancestor that is a known agent runtime, as proc:<pid>:<starttime>.
+# A Cursor chat runs as its own `cursor-agent` process (the Herdr-independent
+# case), so that process is the session. starttime keeps the key from colliding
+# with a reused pid. Sets PROC_KEY (empty when nothing matches) and PROC_CHAIN
+# (what was looked at, for `manager --explain`).
+PROC_KEY=""
+PROC_CHAIN=""
+proc_session_key() {
+  local pid=$$ line rest comm cmd base start depth=0
+  PROC_KEY=""
+  PROC_CHAIN=""
+  while ((depth < 16)); do
+    [[ -r "/proc/$pid/stat" ]] || return 1
+    IFS= read -r line < "/proc/$pid/stat" || return 1
+    comm=${line#*(}
+    comm=${comm%)*}
+    rest=${line##*)}
+    start=$(awk '{print $20}' <<<"$rest")
+    cmd=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)
+    PROC_CHAIN+="$pid  $comm  ${cmd:0:70}"$'\n'
+    base=${cmd%% *}
+    base=${base##*/}
+    case "$base $cmd" in
+      # The command name decides, not the path: cursor's bundled node also sits
+      # under .../cursor-agent/ and would otherwise be taken for a session.
+      cursor-agent*|agent\ *|claude\ *|codex\ *|pi\ *|opencode\ *)
+        PROC_KEY="proc:$pid:$start"
+        return 0
+        ;;
+    esac
+    pid=$(awk '{print $2}' <<<"$rest")
+    depth=$((depth + 1))
+  done
+  return 1
+}
+
+# Fields that let the next call from the same session find this manager again.
+tag_manager() {
+  local f
+  f=$(state_file "$1")
+  set_record_field "$f" session "$2"
+  set_record_field "$f" manager_repo "$3"
+}
+
+# <name> <session> <state>. PM= mirrors the manager's suffix, so the PM and its
+# manager sort next to each other in the sidebar.
+print_manager() {
+  local f
+  f=$(state_file "$1")
+  printf 'MANAGER=%s\n' "$1" >&2
+  printf 'PM=pm-%s\n' "${1#manager-}" >&2
+  printf 'TOPOLOGY=%s\n' "$(state_field "$f" topology)" >&2
+  printf 'REPO=%s\n' "$(state_field "$f" repo)" >&2
+  printf 'SESSION=%s\n' "$2" >&2
+  printf 'STATE=%s\n' "$3" >&2
+}
+
+# A recorded manager that Herdr still has. A name Herdr does not know is a
+# leftover: the caller replaces it.
+manager_live() {
+  [[ -f "$(state_file "$1")" ]] || return 1
+  herdr agent get "$1" >/dev/null 2>&1
+}
+
+# One line per attempt. A manager that does not start still leaves a mark here,
+# which matters when the caller's transcript is not readable (a Cursor chat).
+# Format: <time> <result> <session> <repo> <name>
+MANAGER_LOG="${XDG_CACHE_HOME:-$HOME/.cache}/harness/manager.log"
+manager_log() {
+  mkdir -p "$(dirname "$MANAGER_LOG")" 2>/dev/null || return 0
+  printf '%s\t%s\t%s\t%s\t%s\n' "$(date -Iseconds)" "$1" "${2:--}" "${3:--}" "${4:--}" \
+    >>"$MANAGER_LOG" 2>/dev/null || true
+}
+
+cmd_manager() {
+  [[ -n "$KIND" ]] || KIND=claude
+  [[ -z "$NAME" ]] ||
+    die "manager takes no name — it decides one from the caller's session (docs/naming.md)" 2
+  local dir root main short canonical suffix name key f rec_session source
+
+  key=${SESSION_KEY:-${HARNESS_SESSION_KEY:-}}
+  if [[ -n "$key" ]]; then
+    source='explicit (--session / HARNESS_SESSION_KEY)'
+  elif [[ -n "${HERDR_PANE_ID:-}" ]]; then
+    key="pane:$HERDR_PANE_ID"
+    source=pane
+  elif [[ "${HARNESS_SESSION_PROC:-1}" != "0" ]]; then
+    proc_session_key || true
+    key=$PROC_KEY
+    source=process
+  else
+    source='off (HARNESS_SESSION_PROC=0)'
+  fi
+
+  # --explain: how this caller's session was decided, and what was looked at.
+  # Creates nothing. This is what to paste when a manager will not start.
+  if ((EXPLAIN)); then
+    printf 'SESSION=%s\n' "${key:-（なし）}"
+    printf 'SOURCE=%s\n' "$source"
+    printf 'PANE=%s\n' "${HERDR_PANE_ID:-（なし）}"
+    if [[ -n "$PROC_CHAIN" ]]; then
+      printf 'ANCESTORS=\n%s' "$PROC_CHAIN"
+    else
+      printf 'ANCESTORS=（探索していない）\n'
+    fi
+    return 0
+  fi
+
+  if [[ -z "$key" ]]; then
+    [[ -z "$PROC_CHAIN" ]] || printf 'herdr-agent: 先祖（自分→上へ）:\n%s' "$PROC_CHAIN" >&2
+    manager_log no-session - "$PWD" -
+    die "no session identity: pass --session <token> (docs/naming.md)。何を見たかは \`manager --explain\` で出る" 2
+  fi
+
+  dir=${REPO:-$PWD}
+  dir=$(cd "$dir" && pwd) || die "not a directory: $dir"
+  root=$(checkout_root "$dir")
+  if [[ -z "$root" ]]; then
+    manager_log no-repo "$key" "$dir" -
+    die "not a git checkout: $dir — a manager needs a repository (its worktrees come from one)" 1
+  fi
+  main=$(main_checkout "$root")
+  [[ -n "$main" ]] || main=$root
+
+  short=$(short_name "$(basename "$main")" 19)
+  [[ -n "$short" ]] || die "cannot derive a manager name from $main" 2
+  canonical="manager-$short"
+  check_name "$canonical"
+
+  # 1. this session already holds a manager of this repository: keep it, even
+  #    when it lives on a worktree (REPO= then differs from the checkout).
+  #    A record from before sessions were written down has no session: the first
+  #    caller adopts it, so existing managers are neither abandoned nor shared.
+  for f in "$STATE_DIR"/manager-*.json; do
+    [[ -f "$f" ]] || continue
+    name=$(state_field "$f" agent)
+    [[ "$name" == "$canonical" || "$name" == "$canonical"-???? ]] || continue
+    rec_session=$(state_field "$f" session)
+    if [[ "$rec_session" != "$key" ]]; then
+      [[ -z "$rec_session" ]] || continue
+    fi
+    if manager_live "$name"; then
+      if ((PLAN)); then
+        printf 'PLAN name=%s topology=%s repo=%s session=%s adopt\n' "$name" \
+          "$(state_field "$f" topology)" "$(state_field "$f" repo)" "$key"
+      else
+        tag_manager "$name" "$key" "$root"
+        print_manager "$name" "$key" reused
+        manager_log reused "$key" "$root" "$name"
+      fi
+      printf '%s\n' "$name"
+      return 0
+    fi
+    close_named "$name" >/dev/null 2>&1 || true
+  done
+
+  # 2. the checkout is free: take it, the way a PM always has.
+  if ! manager_live "$canonical"; then
+    if ((PLAN)); then
+      printf 'PLAN name=%s topology=tab repo=%s session=%s\n' "$canonical" "$root" "$key"
+      printf '%s\n' "$canonical"
+      return 0
+    fi
+    NAME=$canonical TOPOLOGY=tab REPO=$root
+    cmd_ensure
+    tag_manager "$canonical" "$key" "$root"
+    print_manager "$canonical" "$key" started
+    manager_log started "$key" "$root" "$canonical"
+    printf '%s\n' "$canonical"
+    return 0
+  fi
+
+  # 3. another live session holds it: this session gets its own, on a worktree.
+  suffix=$(session_suffix "$key")
+  name="manager-$short-$suffix"
+  check_name "$name"
+  [[ -n "$BRANCH" ]] || BRANCH="pm/$short-$suffix"
+  if manager_live "$name" &&
+    [[ "$(state_field "$(state_file "$name")" session)" == "$key" ]]; then
+    print_manager "$name" "$key" reused
+    manager_log reused "$key" "$root" "$name"
+    printf '%s\n' "$name"
+    return 0
+  fi
+  if ((PLAN)); then
+    printf 'PLAN name=%s topology=worktree repo=%s branch=%s session=%s\n' "$name" "$root" "$BRANCH" "$key"
+    printf '%s\n' "$name"
+    return 0
+  fi
+  NAME=$name TOPOLOGY=worktree REPO=$root
+  cmd_ensure
+  tag_manager "$name" "$key" "$root"
+  print_manager "$name" "$key" started
+  manager_log worktree "$key" "$root" "$name"
+  printf '%s\n' "$name"
+}
+
 cmd_ask() {
   [[ -n "$NAME" ]] || die "ask needs a name" 2
   [[ -n "$REQUEST" ]] || die "ask needs a request file (or -)" 2
@@ -765,8 +1029,8 @@ cmd_reap() {
 cmd_list() {
   [[ -d "$STATE_DIR" ]] || { echo "no agents registered" >&2; return 0; }
   local f name pane tab kind repo state
-  printf '%-14s %-8s %-10s %-10s %-8s %-25s %s\n' \
-    NAME KIND STATE PANE TAB CREATED REPO
+  printf '%-14s %-8s %-10s %-10s %-8s %-25s %-14s %s\n' \
+    NAME KIND STATE PANE TAB CREATED SESSION REPO
   for f in "$STATE_DIR"/*.json; do
     [[ -f "$f" ]] || continue
     name=$(state_field "$f" agent)
@@ -775,8 +1039,9 @@ cmd_list() {
     kind=$(state_field "$f" kind)
     repo=$(state_field "$f" repo)
     state=$(agent_state "$name")
-    printf '%-14s %-8s %-10s %-10s %-8s %-25s %s\n' \
-      "$name" "$kind" "$state" "$pane" "$tab" "$(state_field "$f" created)" "$repo"
+    printf '%-14s %-8s %-10s %-10s %-8s %-25s %-14s %s\n' \
+      "$name" "$kind" "$state" "$pane" "$tab" "$(state_field "$f" created)" \
+      "$(state_field "$f" session)" "$repo"
   done
 }
 
@@ -1356,6 +1621,7 @@ cmd_watch() {
 
 case "$CMD" in
   ensure) cmd_ensure ;;
+  manager) cmd_manager ;;
   restart) cmd_restart ;;
   send) cmd_send ;;
   ask) cmd_ask ;;

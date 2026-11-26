@@ -36,6 +36,7 @@
 | 目的 | 使う | 使わない |
 |---|---|---|
 | 別エージェントに相談 | `claude-consult.sh` / `codex-consult.sh`／草案は `consult.sh --to pi` | `tmux new-session` で `claude`/`codex` を起動 |
+| PM の manager を用意する（1 セッション 1 つ、名前と居場所は任せる） | `herdr-agent.sh manager` | `ensure manager-<repo>` を自分で組み立てる（同じリポジトリの別セッションと共有してしまう） |
 | 子に仕事を配る | `herdr-agent.sh ensure` ＋ `delegate` | `tmux` / `screen` / `nohup` / `claude --bg` |
 | 並列に回す | `orchestrate-parallel.sh`（worktree 分け） | ターミナルを手で並べる |
 | フェーズ実行 | `phase-run.sh`（tab を作らない設計） | 手で `claude -p` を並べる |
