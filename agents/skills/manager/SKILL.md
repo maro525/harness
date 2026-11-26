@@ -65,12 +65,15 @@ PM の技術の脳。**質問と設計相談には自分で答える**（コー�
 - 範囲が広くて 1 人で見切れないときは、**子 manager に分ける**（1 体で複数持てる）。同じ親・同じ label は同じ子が返る（聞き直しても tab は増えない）
 
 ```bash
-# 子 manager: 自分の範囲を「api」「web」に分ける。居場所も名前もスクリプトが決める
-api=$(~/.claude/scripts/herdr-agent.sh manager --parent manager-<repo> --label api)
-web=$(~/.claude/scripts/herdr-agent.sh manager --parent manager-<repo> --label web)
+# 子 manager: 自分の範囲を「api」「web」に分ける。親は自分
+me=manager-nanco-next   # 自分の名前（`herdr-agent.sh list` か、起こされたときの名前）
+api=$(~/.claude/scripts/herdr-agent.sh manager --parent "$me" --label api)
+web=$(~/.claude/scripts/herdr-agent.sh manager --parent "$me" --label web)
 # 最初の依頼は worker と同じく delegate（protocol 節が manager 用になる）
-~/.claude/scripts/herdr-agent.sh delegate "$api" /tmp/req-api.md --boss manager-<repo>
+~/.claude/scripts/herdr-agent.sh delegate "$api" /tmp/req-api.md --boss "$me"
 ```
+
+- `--parent` に自分を渡すのが正しい呼び方（断るのは、子の名前が親と同じになるラベルだけ。自分の記録は変わらない）
 
 - 子 manager も `~/src` で動く。報告先はあなた（記録の `parent` / `boss`）、子への依頼は `--boss <あなた>` を必ず付ける（付け違えると `delegate` が exit 2 で断る）
 - 深さの上限は `HARNESS_MANAGER_MAX_DEPTH`（既定 3 段）。それ以上に分けたいときは worker を増やす（manager を増やさない）

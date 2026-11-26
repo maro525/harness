@@ -61,7 +61,8 @@ M=$(~/.claude/scripts/herdr-agent.sh manager)                       # PM 直下�
 | 同じ（親, ラベル） | 同じ子を再利用（`STATE=reused`）。聞き直しても tab は増えない |
 | 深さ | `depth` = 親 + 1。`HARNESS_MANAGER_MAX_DEPTH`（既定 3 段）を超える `--parent` は exit 2。それ以上は worker に振る |
 | 親になれるのは manager だけ | `--parent` は `manager-*` の記録が生きていることを確かめる（PM が子 manager を直に作らない） |
-| 自分自身の起動 | manager の pane から `--parent` 無しの `manager` は exit 2（自分の記録が返るだけで子が増えない）。`--parent <自分>` を促す |
+| 親は自分自身 | 自分の子を分けるときは `--parent <自分の名前>` を渡す。これが通常の呼び方で、スクリプトは通す。断るのは、子の名前が親と同じになるラベルだけ |
+| 自分自身の起動 | manager の pane から `--parent` 無しの `manager` は exit 2（自分の記録が返るだけで子が増えない）。メッセージどおり `--parent <自分の名前>` を付ける |
 | 片付け | 親を `herdr-cleanup.sh --owner <親>` で見ると、子 manager と worker が `via:boss` で並ぶ |
 
 ## 実作業はリポジトリの中で（`worker`）
